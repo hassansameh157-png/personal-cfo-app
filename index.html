@@ -357,6 +357,17 @@ class Engine {
     this.state.data = d;
     this.state.saved = "Saved " + new Date().toLocaleTimeString();
   }
+  // Real bug, found late: this was called by exportJson()/exportCsv() but
+  // never actually defined, so both buttons threw "app.download is not a
+  // function" and silently did nothing — neither export had ever worked.
+  download(filename, content, mimeType) {
+    const blob = new Blob([content], { type: mimeType });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = filename;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
 
   // ---- helpers ---------------------------------------------------------
   uid(p) { return p + "_" + Math.random().toString(36).slice(2, 9); }
@@ -494,6 +505,12 @@ class Engine {
     "Income": "إيراد", "Expense": "مصروف",
     "Stocks": "أسهم", "Gold": "ذهب", "Mutual fund": "صندوق", "Fixed deposit": "وديعة", "Certificate": "شهادة", "Crypto": "عملات رقمية", "Business": "مشروع",
     "Edit person": "تعديل شخص", "Edit account": "تعديل حساب", "Delete ": "حذف ", "Has ledger records": "له حركات مسجلة",
+    "Edit": "تعديل", "Delete": "حذف", "Edit investment": "تعديل استثمار",
+    "Has payments recorded — reverse the payments first, or leave the plan as-is.": "له دفعات مسجلة — اعكس الدفعات الأول، أو سيب الخطة زي ما هي.",
+    "Has a purchase transaction recorded — reverse it first, or leave the investment as-is.": "له حركة شراء مسجلة — اعكسها الأول، أو سيب الاستثمار زي ما هو.",
+    "Delete plan": "حذف الخطة", "Delete investment": "حذف الاستثمار",
+    "Restore from this backup? This replaces everything currently stored.": "الاستعادة من النسخة دي؟ هيستبدل كل البيانات المحفوظة حالياً.",
+    "Couldn't read that file.": "معرفتش أقرأ الملف ده.",
     // P1 fix: expense/income categories used to be a hardcoded English list
     // with no Arabic translations, so the Arabic UI showed a mixed-language
     // dropdown ("Salary, Freelance, مشروع, Commission, ..."). FORMS() already
@@ -804,6 +821,7 @@ class Engine {
       installment_payment: { title: t.recordPayment, fields: [D("date", t.date, "date"), D("planId", "Plan", "select", { options: d.plans.map(p => ({ v: p.id, l: p.title })) }), D("amount", t.amount, "number", { hint: "Partial, exact or several installments at once — allocation is automatic." }), D("accountId", "Account", "select", { options: accs }), D("desc", t.details, "text", { wide: true })] },
       investment: { title: t.aInvest, fields: [D("name", t.name, "text"), D("type", t.type, "select", { options: ["Stocks", "Gold", "Mutual fund", "Fixed deposit", "Certificate", "Crypto", "Business", "Other"].map(v => ({ v, l: v })) }), D("invested", "Amount invested", "number"), D("value", "Current value", "number"), D("date", "Purchase date", "date"), D("accountId", "Funded from", "select", { options: [{ v: "", l: "No cash movement" }].concat(accs) })] },
       invest_update: { title: t.updateValue, fields: [D("investmentId", "Investment", "select", { options: d.investments.map(i => ({ v: i.id, l: i.name })) }), D("value", "New current value", "number"), D("date", "As of", "date")] },
+      investment_edit: { title: this.L("Edit investment"), fields: [D("name", t.name, "text"), D("type", t.type, "select", { options: ["Stocks", "Gold", "Mutual fund", "Fixed deposit", "Certificate", "Crypto", "Business", "Other"].map(v => ({ v, l: v })) }), D("invested", "Amount invested", "number")] },
       person: { title: t.aPerson, fields: [D("name", t.name, "text"), D("phone", t.phone, "text"), D("notes", "Notes", "text", { wide: true })] },
       person_edit: { title: this.L("Edit person"), fields: [D("name", t.name, "text"), D("phone", t.phone, "text"), D("notes", "Notes", "text", { wide: true })] },
       account: { title: t.aAccount, fields: [D("name", t.name, "text"), D("type", t.type, "select", { options: [{ v: "cash", l: "Cash" }, { v: "bank", l: "Bank" }, { v: "wallet", l: "Smart wallet" }, { v: "card", l: "Credit card" }, { v: "other", l: "Other" }] }), D("bank", "Bank / issuer", "text"), D("opening", "Opening balance", "number"), D("limit", "Credit limit", "number", { hint: "Leave 0 for non-card accounts." }), D("desc", "Reference / notes", "text", { wide: true })] },
@@ -890,6 +908,12 @@ class Engine {
       const iv = data.investments.find(i => i.id === f.investmentId);
       if (!need(iv, "Pick an investment.")) return false;
       iv.value = N("value"); note = "Revalued " + iv.name + " to " + this.fmt(iv.value);
+    } else if (k === "investment_edit") {
+      if (!need(f.name, "Give the investment a name.")) return false;
+      const iv = data.investments.find(i => i.id === f.id);
+      if (!need(iv, "Pick an investment.")) return false;
+      iv.name = f.name; iv.type = f.type; iv.invested = N("invested");
+      note = "Updated investment " + iv.name;
     } else if (k === "person") {
       if (!need(f.name, "Name is required.")) return false;
       data.people.push({ id: this.uid("p"), name: f.name, phone: f.phone || "", notes: f.notes || "" }); note = "Added person " + f.name;
@@ -946,6 +970,45 @@ class Engine {
     const p = data.people.find(x => x.id === id); if (!p) return;
     data.people = data.people.filter(x => x.id !== id);
     this.persist(data, "Deleted person " + p.name);
+  }
+  // A plan can be removed only before any payment is recorded against it —
+  // once money has moved, it stays in the ledger like everything else and
+  // gets corrected the same way transactions do (Reverse), not deleted.
+  planCanDelete(id) {
+    const plan = this.state.data.plans.find(p => p.id === id);
+    return !!plan && this.planState(plan).collected === 0;
+  }
+  deletePlan(id) {
+    if (!this.planCanDelete(id)) return;
+    const data = JSON.parse(JSON.stringify(this.state.data));
+    const plan = data.plans.find(p => p.id === id); if (!plan) return;
+    data.plans = data.plans.filter(p => p.id !== id);
+    // also remove the "plan created" transaction it posted (down payment, if any)
+    data.tx = data.tx.filter(t => t.planId !== id);
+    this.persist(data, "Deleted plan " + plan.title);
+  }
+  investmentCanDelete(id) {
+    return !this.state.data.tx.some(t => !t.void && t.investmentId === id);
+  }
+  deleteInvestment(id) {
+    if (!this.investmentCanDelete(id)) return;
+    const data = JSON.parse(JSON.stringify(this.state.data));
+    const iv = data.investments.find(i => i.id === id); if (!iv) return;
+    data.investments = data.investments.filter(i => i.id !== id);
+    this.persist(data, "Deleted investment " + iv.name);
+  }
+  // Settings → Restore from JSON. Only accepts a snapshot this app itself
+  // produced (exportJson) — validated by shape, not just "is it JSON" — and
+  // replaces everything currently stored, same as reseed()/wipe().
+  restoreFromJson(text) {
+    let parsed;
+    try { parsed = JSON.parse(text); } catch (e) { return { ok: false, error: this.L("That file isn't valid JSON.", "الملف ده مش JSON صحيح.") }; }
+    const required = ["accounts", "people", "tx", "plans"];
+    if (!parsed || typeof parsed !== "object" || required.some(k => !Array.isArray(parsed[k]))) {
+      return { ok: false, error: this.L("That doesn't look like a Personal CFO backup file.", "الملف ده مش نسخة احتياطية من Personal CFO.") };
+    }
+    this.persist(parsed, this.L("Restored from backup", "تم الاستعادة من نسخة احتياطية"));
+    return { ok: true };
   }
   reverse(id) {
     const data = JSON.parse(JSON.stringify(this.state.data));
@@ -1028,6 +1091,14 @@ const UI = {
   deletePersonC(id) {
     if (!this.app.personHasRecords(id) && confirm(this.app.L("Delete ") + this.app.personName(id) + "?")) { this.app.deletePerson(id); this.render(); }
   },
+  deletePlanC(id) {
+    const plan = this.app.state.data.plans.find(p => p.id === id); if (!plan) return;
+    if (this.app.planCanDelete(id) && confirm(this.app.L("Delete ") + plan.title + "?")) { this.app.deletePlan(id); this.render(); }
+  },
+  deleteInvestmentC(id) {
+    const iv = this.app.state.data.investments.find(i => i.id === id); if (!iv) return;
+    if (this.app.investmentCanDelete(id) && confirm(this.app.L("Delete ") + iv.name + "?")) { this.app.deleteInvestment(id); this.render(); }
+  },
   postRecurringC(id) {
     const r = this.app.state.data.recurring.find(x => x.id === id); if (!r) return;
     this.app.postRecurring(r); this.render();
@@ -1037,6 +1108,18 @@ const UI = {
   exportJson() {
     const d = this.app.state.data;
     this.app.download("personal-cfo-backup.json", JSON.stringify(d, null, 2), "application/json");
+  },
+  restoreJsonFile(input) {
+    const file = input.files && input.files[0]; if (!file) return;
+    if (!confirm(this.app.L("Restore from this backup? This replaces everything currently stored.", "الاستعادة من النسخة دي؟ هيستبدل كل البيانات المحفوظة حالياً."))) { input.value = ""; return; }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const res = this.app.restoreFromJson(String(reader.result));
+      if (!res.ok) alert(res.error); else this.render();
+      input.value = "";
+    };
+    reader.onerror = () => { alert(this.app.L("Couldn't read that file.", "معرفتش أقرأ الملف ده.")); input.value = ""; };
+    reader.readAsText(file);
   },
   exportCsv() {
     const d = this.app.state.data;
@@ -1259,11 +1342,13 @@ const UI = {
     const rows = accs.map(a => {
       const bal = D.bal[a.id];
       const extra = a.type === "card" ? '<div class="acc-sub">' + app.L("Limit", "الحد") + " " + app.fmt(a.limit) + " · " + app.fmt(Math.max(0, a.limit + bal)) + app.L(" left", " متاح") + "</div>" : (a.bank ? '<div class="acc-sub">' + esc(a.bank) + "</div>" : "");
+      const editArgs = JSON.stringify({ id: a.id, name: a.name, bank: a.bank || "", limit: a.limit || 0, desc: a.desc || "" }).replace(/"/g, "&quot;");
       return '<div class="card-row">' +
         '<div class="card-row-top"><span class="acc-swatch" style="background:' + a.color + '"></span><div><div class="card-row-title">' + esc(a.name) + '</div><div class="card-row-sub">' + typeLabel[a.type] + "</div></div>" +
         '<div class="card-row-amt ' + (bal < 0 ? "tone-neg" : "tone-pos") + '">' + app.fmt(bal) + "</div></div>" +
         '<div class="bar-track thin"><div class="bar-fill" style="width:' + Math.max(2, Math.abs(bal) / maxAbs * 100) + '%;background:' + (bal < 0 ? "var(--c-neg)" : a.color) + '"></div></div>' +
         extra +
+        '<button class="link-btn small" onclick="UI.openModal(\'account_edit\',' + editArgs + ')">' + esc(app.L("Edit")) + "</button>" +
       "</div>";
     }).join("");
     return this.tabHeader(t.accounts, accs.length + app.L(" accounts · transfers never hit income or expense", " حساب · التحويلات لا تُحسب إيراداً ولا مصروفاً"),
@@ -1353,19 +1438,24 @@ const UI = {
       return { p, r, y, net: r - y, canDelete };
     }).sort((a, b) => Math.abs(b.net) - Math.abs(a.net));
 
+    const editArgs = (p) => JSON.stringify({ id: p.id, name: p.name, phone: p.phone || "", notes: p.notes || "" }).replace(/"/g, "&quot;");
+    const personActions = ({ p, canDelete }) =>
+      '<button class="link-btn small" onclick="UI.openModal(\'person_edit\',' + editArgs(p) + ')">' + esc(app.L("Edit")) + "</button>" +
+      (canDelete ? '<button class="link-btn small" onclick="UI.deletePersonC(\'' + p.id + '\')">' + esc(app.L("Delete")) + "</button>" : "");
+
     const table = '<div class="table-wrap desktop-only"><table class="table"><thead><tr>' +
       "<th>" + esc(t.name) + "</th><th>" + esc(t.phone) + "</th><th class=\"num\">" + esc(t.owesMe) + "</th><th class=\"num\">" + esc(t.iOwe) + "</th><th class=\"num\">" + esc(t.net) + "</th><th></th>" +
-      "</tr></thead><tbody>" + rows.map(({ p, r, y, net, canDelete }) =>
-        "<tr><td>" + esc(p.name) + "</td><td>" + esc(p.phone || "—") + '</td><td class="num tone-pos">' + app.fmt(r) + '</td><td class="num tone-neg">' + app.fmt(y) + '</td><td class="num ' + (net >= 0 ? "tone-pos" : "tone-neg") + '">' + app.fmt(net) + "</td>" +
-        '<td><button class="link-btn small" onclick="UI.setPage(\'transactions\');UI.setFilter(\'q\',\'' + esc(p.name).replace(/'/g, "\\'") + '\')">' + esc(t.viewTx) + "</button></td></tr>"
-      ).join("") + "</tbody></table></div>";
+      "</tr></thead><tbody>" + rows.map((row) => { const { p, r, y, net } = row;
+        return "<tr><td>" + esc(p.name) + "</td><td>" + esc(p.phone || "—") + '</td><td class="num tone-pos">' + app.fmt(r) + '</td><td class="num tone-neg">' + app.fmt(y) + '</td><td class="num ' + (net >= 0 ? "tone-pos" : "tone-neg") + '">' + app.fmt(net) + "</td>" +
+        '<td><button class="link-btn small" onclick="UI.setPage(\'transactions\');UI.setFilter(\'q\',\'' + esc(p.name).replace(/'/g, "\\'") + '\')">' + esc(t.viewTx) + "</button>" + personActions(row) + "</td></tr>";
+      }).join("") + "</tbody></table></div>";
 
-    const cards = '<div class="card-list mobile-only">' + rows.map(({ p, r, y, net }) =>
-      '<div class="card-row"><div class="card-row-top"><div><div class="card-row-title">' + esc(p.name) + '</div><div class="card-row-sub">' + esc(p.phone || "—") + "</div></div>" +
+    const cards = '<div class="card-list mobile-only">' + rows.map((row) => { const { p, r, y, net } = row;
+      return '<div class="card-row"><div class="card-row-top"><div><div class="card-row-title">' + esc(p.name) + '</div><div class="card-row-sub">' + esc(p.phone || "—") + "</div></div>" +
       '<div class="card-row-amt ' + (net >= 0 ? "tone-pos" : "tone-neg") + '">' + app.fmt(net) + "</div></div>" +
       '<div class="card-row-meta"><span>' + esc(t.owesMe) + ": " + app.fmt(r) + '</span><span>' + esc(t.iOwe) + ": " + app.fmt(y) + "</span></div>" +
-      '<button class="link-btn small" onclick="UI.setPage(\'transactions\');UI.setFilter(\'q\',\'' + esc(p.name).replace(/'/g, "\\'") + '\')">' + esc(t.viewTx) + "</button></div>"
-    ).join("") + "</div>";
+      '<div class="btn-row"><button class="link-btn small" onclick="UI.setPage(\'transactions\');UI.setFilter(\'q\',\'' + esc(p.name).replace(/'/g, "\\'") + '\')">' + esc(t.viewTx) + "</button>" + personActions(row) + "</div></div>";
+    }).join("") + "</div>";
 
     return this.tabHeader(t.people, d.people.length + app.L(" people · balances computed from the ledger", " شخص · الأرصدة محسوبة من السجل"), [[t.aPerson, "UI.openModal('person')"]]) + table + cards;
   },
@@ -1403,7 +1493,10 @@ const UI = {
         (p.overdue > 0 ? '<span class="tone-neg">' + esc(app.L("Overdue: ")) + p.overdue + "</span>" : '<span>' + esc(app.L("No overdue")) + "</span>") + "</div>" +
         '<button class="link-btn small" onclick="UI.togglePlanRows(\'' + p.id + '\')">' + esc(app.L(open ? "Hide schedule" : "Show schedule")) + "</button>" +
         (open ? '<div class="sched-list">' + rowsHtml + "</div>" : "") +
+        '<div class="btn-row wrap">' +
         '<button class="btn btn-secondary small" onclick="UI.openModal(\'installment_payment\',{planId:\'' + p.id + '\'})">' + esc(t.recordPayment) + "</button>" +
+        (app.planCanDelete(p.id) ? '<button class="link-btn small" onclick="UI.deletePlanC(\'' + p.id + '\')">' + esc(app.L("Delete plan")) + "</button>" : "") +
+        "</div>" +
       "</div>";
     }).join("");
 
@@ -1455,10 +1548,16 @@ const UI = {
     const app = this.app, d = app.state.data;
     const cards = d.investments.map(v => {
       const pnl = v.value - v.invested;
+      const editArgs = JSON.stringify({ id: v.id, name: v.name, type: v.type, invested: v.invested }).replace(/"/g, "&quot;");
+      const canDelete = app.investmentCanDelete(v.id);
       return '<div class="card-row"><div class="card-row-top"><div><div class="card-row-title">' + esc(v.name) + '</div><div class="card-row-sub">' + esc(v.type) + "</div></div>" +
         '<div class="card-row-amt">' + app.fmt(v.value) + "</div></div>" +
         '<div class="card-row-meta"><span>' + esc(t.invested) + ": " + app.fmt(v.invested) + '</span><span class="' + (pnl >= 0 ? "tone-pos" : "tone-neg") + '">' + esc(t.pnl) + ": " + app.fmtS(pnl) + "</span></div>" +
-        '<button class="btn btn-secondary small" onclick="UI.openModal(\'invest_update\',{investmentId:\'' + v.id + '\'})">' + esc(t.updateValue) + "</button></div>";
+        '<div class="btn-row wrap">' +
+        '<button class="btn btn-secondary small" onclick="UI.openModal(\'invest_update\',{investmentId:\'' + v.id + '\'})">' + esc(t.updateValue) + "</button>" +
+        '<button class="link-btn small" onclick="UI.openModal(\'investment_edit\',' + editArgs + ')">' + esc(app.L("Edit")) + "</button>" +
+        (canDelete ? '<button class="link-btn small" onclick="UI.deleteInvestmentC(\'' + v.id + '\')">' + esc(app.L("Delete")) + "</button>" : "") +
+        "</div></div>";
     }).join("");
     return this.tabHeader(t.investments, D.invValue.toFixed ? (app.fmt(D.invValue) + " · " + esc(t.pnl) + " " + app.fmtS(D.invValue - D.invCost)) : "", [[t.aInvest, "UI.openModal('investment')"]]) + '<div class="card-list">' + cards + "</div>";
   },
@@ -1538,7 +1637,10 @@ const UI = {
     ];
     return this.tabHeader(t.settings, app.L("Backup, restore and the calculation rules in force"), []) +
       '<section class="dash-section"><h2 class="section-title">' + esc(t.dataBackup) + '</h2><p class="muted small">' + esc(t.backupNote) + '</p>' +
-      '<div class="btn-row wrap"><button class="btn btn-secondary" onclick="UI.exportJson()">' + esc(t.exportJson) + '</button><button class="btn btn-secondary" onclick="UI.exportCsv()">' + esc(t.exportCsv) + "</button></div></section>" +
+      '<div class="btn-row wrap"><button class="btn btn-secondary" onclick="UI.exportJson()">' + esc(t.exportJson) + '</button><button class="btn btn-secondary" onclick="UI.exportCsv()">' + esc(t.exportCsv) + "</button>" +
+      '<button class="btn btn-secondary" onclick="document.getElementById(\'restoreFile\').click()">' + esc(t.importJson) + "</button>" +
+      '<input type="file" id="restoreFile" accept="application/json,.json" style="display:none" onchange="UI.restoreJsonFile(this)">' +
+      "</div></section>" +
       '<section class="dash-section"><h2 class="section-title">' + esc(t.rules) + '</h2><div class="rules-list">' + rules.map(r => '<div class="rule-row"><div class="rule-k">' + esc(r.k) + '</div><div class="rule-v">' + esc(r.v) + "</div></div>").join("") + "</div></section>" +
       '<section class="dash-section"><h2 class="section-title">' + esc(t.auditTrail) + '</h2><div class="audit-list">' + (d.audit || []).slice(0, 20).map(a => '<div class="audit-row"><span>' + esc(a.at) + '</span><span>' + esc(a.what) + "</span></div>").join("") + "</div></section>" +
       '<section class="dash-section"><h2 class="section-title tone-neg">' + esc(t.dangerZone) + '</h2><div class="btn-row wrap"><button class="btn btn-secondary" onclick="UI.reseed()">' + esc(t.reseed) + '</button><button class="btn btn-danger" onclick="UI.wipe()">' + esc(t.wipe) + "</button></div></section>";
