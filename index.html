@@ -457,7 +457,8 @@ class Engine {
     "Autosaves to this browser after every change": "يُحفظ تلقائياً في هذا المتصفح بعد كل تعديل",
     "Opening ": "رصيد افتتاحي ", " records": " حركة",
     "cash": "كاش", "bank": "بنك", "wallet": "محفظة", "card": "بطاقة", "other": "أخرى",
-    "Overdue collection · ": "تحصيل متأخر · ", "Overdue payment · ": "سداد متأخر · ",
+    "Overdue collection · ": "تحصيل متأخر · ", "Overdue payment · ": "سداد متأخر · ", " was due ": " كان مستحق ",
+    "Overdue since ": "متأخر من ", "Due ": "مستحق في ",
     " installment(s) past due — ": " قسط متأخر — ", " on ": " على ",
     "Largest open receivable": "أكبر مستحق مفتوح", " owes ": " عليه ", " outside any plan.": " خارج أي خطة.",
     "Credit card balance": "رصيد بطاقة الائتمان", " outstanding — counted as a liability, not as available money.": " مستحق — يُحسب التزاماً وليس مالاً متاحاً.",
@@ -753,6 +754,36 @@ class Engine {
       .reduce((s, g) => s + g.rows.filter(r => r.rem > 0 && r.due >= today.slice(0, 8) + "01" && r.due < monthEnd).reduce((s2, r) => s2 + r.rem, 0), 0);
     return { installments: Math.round(fromInstallments * 100) / 100, groups: Math.round(fromGroups * 100) / 100, total: Math.round((fromInstallments + fromGroups) * 100) / 100 };
   }
+  // Plain loans — "receivable" (money owed to me) / "payable" (money I owe),
+  // entered as a one-off, not part of an installment plan. Each is its own
+  // row with its own due date; repayments settle the OLDEST open one first
+  // (FIFO), the same allocation rule installment plans already use. Before
+  // this, the due date typed in at creation was captured and then never
+  // looked at again — this is what makes it mean something afterward.
+  loanRows(personId, kind) {
+    const d = this.state.data, today = this.today();
+    const settleType = kind === "receivable" ? "receivable_payment" : "debt_payment";
+    const loans = d.tx.filter(t => !t.void && t.personId === personId && t.type === kind)
+      .sort((a, b) => a.date < b.date ? -1 : (a.date > b.date ? 1 : 0));
+    let pool = d.tx.filter(t => !t.void && t.personId === personId && t.type === settleType).reduce((s, t) => s + t.amount, 0);
+    return loans.map(t => {
+      const paid = Math.min(pool, t.amount); pool = Math.round((pool - paid) * 100) / 100;
+      const rem = Math.round((t.amount - paid) * 100) / 100;
+      const due = t.due || t.date;
+      const status = rem <= 0 ? "paid" : (paid > 0 ? (due < today ? "overdue" : "partial") : (due < today ? "overdue" : "pending"));
+      return { id: t.id, personId, date: t.date, due, amount: t.amount, paid, rem, status, desc: t.desc };
+    });
+  }
+  // All people's still-open plain loans of one direction, for Needs
+  // Attention (overdue) and Forecast (upcoming) — the two places installment
+  // plans already surface their due dates.
+  allLoanRows(kind) {
+    const d = this.state.data;
+    const ids = Array.from(new Set(d.tx.filter(t => !t.void && t.type === kind).map(t => t.personId)));
+    const out = [];
+    ids.forEach(pid => this.loanRows(pid, kind).filter(r => r.rem > 0).forEach(r => out.push(r)));
+    return out;
+  }
   nextOccurrence(r, from) {
     const base = new Date(from);
     if (r.freq === "weekly") { return this.addDays(base, 7); }
@@ -788,6 +819,14 @@ class Engine {
         date: g.payoutDue < this.today() ? this.today() : g.payoutDue,
         title: this.L("Gam3ya payout · ") + g.name, amount: g.payout, kind: "income" });
     });
+    // Plain loans (not part of an installment plan) — same treatment as
+    // plans/gam3eya: their due date now actually shows up somewhere.
+    this.allLoanRows("payable").filter(r => r.due <= this.iso(end)).forEach(r => ev.push({
+      date: r.due < this.today() ? this.today() : r.due,
+      title: this.L("Pay · ") + this.personName(r.personId), amount: -r.rem, kind: "expense" }));
+    this.allLoanRows("receivable").filter(r => r.due <= this.iso(end)).forEach(r => ev.push({
+      date: r.due < this.today() ? this.today() : r.due,
+      title: this.L("Collect · ") + this.personName(r.personId), amount: r.rem, kind: "income" }));
     ev.sort((a, b) => a.date < b.date ? -1 : 1);
     let run = D.available; const pts = [[0, D.available]];
     ev.forEach(e => { run = Math.round((run + e.amount) * 100) / 100; e.running = run; pts.push([(new Date(e.date) - start) / (end - start), run]); });
@@ -1284,6 +1323,19 @@ const UI = {
       title: app.L("Largest open receivable"), body: esc(app.personName(k)) + app.L(" owes ") + app.fmt(v) + app.L(" outside any plan."),
       cta: t.collect + " →", act: "UI.openModal('receivable_payment',{personId:'" + k + "'})"
     }));
+    // Plain loans past their due date — this is what makes the due date
+    // typed in at "+ Debt"/"+ Receivable" actually surface somewhere,
+    // instead of being captured and never looked at again.
+    app.allLoanRows("payable").filter(r => r.status === "overdue").sort((a, b) => b.rem - a.rem).slice(0, 2).forEach(r => alerts.push({
+      title: app.L("Overdue payment · ") + app.personName(r.personId),
+      body: app.fmt(r.rem) + app.L(" was due ") + r.due,
+      cta: t.pay + " →", act: "UI.openModal('debt_payment',{personId:'" + r.personId + "'})"
+    }));
+    app.allLoanRows("receivable").filter(r => r.status === "overdue").sort((a, b) => b.rem - a.rem).slice(0, 2).forEach(r => alerts.push({
+      title: app.L("Overdue collection · ") + app.personName(r.personId),
+      body: app.fmt(r.rem) + app.L(" was due ") + r.due,
+      cta: t.collect + " →", act: "UI.openModal('receivable_payment',{personId:'" + r.personId + "'})"
+    }));
     if (D.cards < 0) alerts.push({ title: app.L("Credit card balance"), body: app.fmt(Math.abs(D.cards)) + app.L(" outstanding — counted as a liability, not as available money."), cta: t.accounts + " →", go: "accounts" });
 
     const needsAttention = '<section class="dash-section">' +
@@ -1541,12 +1593,22 @@ const UI = {
     });
     const owedToMe = withNet.filter(x => x.r > 0).sort((a, b) => b.r - a.r);
     const iOwe = withNet.filter(x => x.y > 0).sort((a, b) => b.y - a.y);
-    const list = (arr, key, tone) => '<div class="card-list">' + (arr.length ? arr.map(x =>
-      '<div class="card-row"><div class="card-row-top"><div class="card-row-title">' + esc(x.p.name) + '</div><div class="card-row-amt tone-' + tone + '">' + app.fmt(x[key]) + "</div></div></div>"
+    // Next open due date among this person's plain loans (not installment
+    // plans, which already show their own due dates on the Installments
+    // tab) — the earliest unpaid row, FIFO, per loanRows().
+    const nextDue = (personId, kind) => app.loanRows(personId, kind).find(r => r.rem > 0);
+    const dueMeta = (personId, kind) => {
+      const r = nextDue(personId, kind);
+      if (!r) return "";
+      const label = r.status === "overdue" ? app.L("Overdue since ") : app.L("Due ");
+      return '<div class="card-row-meta"><span class="' + (r.status === "overdue" ? "tone-neg" : "") + '">' + esc(label) + r.due + "</span></div>";
+    };
+    const list = (arr, key, tone, kind) => '<div class="card-list">' + (arr.length ? arr.map(x =>
+      '<div class="card-row"><div class="card-row-top"><div class="card-row-title">' + esc(x.p.name) + '</div><div class="card-row-amt tone-' + tone + '">' + app.fmt(x[key]) + "</div></div>" + dueMeta(x.p.id, kind) + "</div>"
     ).join("") : '<p class="muted">' + esc(app.L("Fully settled")) + "</p>") + "</div>";
     return this.tabHeader(t.ledgers, app.L("Open positions by person and by plan"), [[t.aReceivable, "UI.openModal('receivable')"], [t.aDebt, "UI.openModal('payable')"]]) +
-      '<h2 class="section-title">' + esc(t.receivables) + " · " + app.fmt(D.recvTotal) + "</h2>" + list(owedToMe, "r", "pos") +
-      '<h2 class="section-title" style="margin-top:20px">' + esc(t.payables) + " · " + app.fmt(D.payTotal) + "</h2>" + list(iOwe, "y", "neg");
+      '<h2 class="section-title">' + esc(t.receivables) + " · " + app.fmt(D.recvTotal) + "</h2>" + list(owedToMe, "r", "pos", "receivable") +
+      '<h2 class="section-title" style="margin-top:20px">' + esc(t.payables) + " · " + app.fmt(D.payTotal) + "</h2>" + list(iOwe, "y", "neg", "payable");
   },
 
   // ---- Investments -----------------------------------------------------------
