@@ -510,6 +510,7 @@ class Engine {
     "Has payments recorded — reverse the payments first, or leave the plan as-is.": "له دفعات مسجلة — اعكس الدفعات الأول، أو سيب الخطة زي ما هي.",
     "Has a purchase transaction recorded — reverse it first, or leave the investment as-is.": "له حركة شراء مسجلة — اعكسها الأول، أو سيب الاستثمار زي ما هو.",
     "Delete plan": "حذف الخطة", "Delete investment": "حذف الاستثمار",
+    "Edit savings group": "تعديل جمعية", "Delete group": "حذف الجمعية",
     "Restore from this backup? This replaces everything currently stored.": "الاستعادة من النسخة دي؟ هيستبدل كل البيانات المحفوظة حالياً.",
     "Couldn't read that file.": "معرفتش أقرأ الملف ده.",
     // P1 fix: expense/income categories used to be a hardcoded English list
@@ -867,6 +868,7 @@ class Engine {
       account_edit: { title: this.L("Edit account"), fields: [D("name", t.name, "text"), D("bank", "Bank / issuer", "text"), D("limit", "Credit limit", "number", { hint: "Leave 0 for non-card accounts." }), D("desc", "Reference / notes", "text", { wide: true })] },
       card: { title: t.aCard, fields: [D("bank", "Bank / issuer", "text"), D("name", "Card name", "text"), D("limit", "Credit limit", "number"), D("opening", "Current outstanding", "number", { hint: "What you owe on the card today." }), D("desc", "Reference / notes", "text", { wide: true })] },
       group: { title: this.L("+ Savings group (gam3ya)"), fields: [D("name", "Group name", "text", { wide: true }), D("amount", "Contribution per period", "number"), D("periods", "Number of periods", "number"), D("myTurn", "My turn (position)", "number"), D("freq", "Frequency", "select", { options: [{ v: "monthly", l: "Monthly" }, { v: "weekly", l: "Weekly" }] }), D("first", "First contribution date", "date"), D("accountId", "Paid from", "select", { options: accs })] },
+      group_edit: { title: this.L("Edit savings group"), fields: [D("name", "Group name", "text", { wide: true }), D("amount", "Contribution per period", "number"), D("periods", "Number of periods", "number"), D("myTurn", "My turn (position)", "number"), D("freq", "Frequency", "select", { options: [{ v: "monthly", l: "Monthly" }, { v: "weekly", l: "Weekly" }] }), D("first", "First contribution date", "date")] },
       group_payment: { title: this.L("Record contribution"), fields: [D("date", t.date, "date"), D("groupId", "Group", "select", { options: (d.groups || []).map(g => ({ v: g.id, l: g.name })) }), D("amount", t.amount, "number"), D("accountId", "Paid from", "select", { options: accs })] },
       group_payout: { title: this.L("Record payout received"), fields: [D("date", t.date, "date"), D("groupId", "Group", "select", { options: (d.groups || []).map(g => ({ v: g.id, l: g.name })) }), D("amount", t.amount, "number"), D("accountId", "Into account", "select", { options: accs })] },
       recurring: { title: t.aRecurring, fields: [D("name", t.name, "text"), D("type", t.type, "select", { options: [{ v: "income", l: "Income" }, { v: "expense", l: "Expense" }] }), D("amount", t.amount, "number"), D("accountId", t.account, "select", { options: accs }), D("category", t.category, "select", { options: inc.concat(cats) }), D("freq", t.frequency, "select", { options: [{ v: "daily", l: "Daily" }, { v: "weekly", l: "Weekly" }, { v: "monthly", l: "Monthly" }, { v: "quarterly", l: "Quarterly" }, { v: "yearly", l: "Yearly" }] }), D("day", "Day of month", "number")] }
@@ -983,6 +985,15 @@ class Engine {
       if (!need(turn >= 1 && turn <= per, "Your turn must be between 1 and " + per + ".")) return false;
       data.groups = (data.groups || []).concat([{ id: this.uid("g"), name: f.name || "Savings group", amount: amt, periods: per, myTurn: turn, freq: f.freq || "monthly", first: f.first || f.date, accountId: f.accountId }]);
       note = "Savings group " + (f.name || "") + " · " + this.fmt(amt) + " × " + per;
+    } else if (k === "group_edit") {
+      const amt = N("amount"), per = Math.round(N("periods")), turn = Math.round(N("myTurn"));
+      if (!need(amt > 0, "Contribution must be greater than zero.")) return false;
+      if (!need(per >= 2, "A group needs at least two periods.")) return false;
+      if (!need(turn >= 1 && turn <= per, "Your turn must be between 1 and " + per + ".")) return false;
+      const g = (data.groups || []).find(x => x.id === f.id);
+      if (!need(g, "Pick a group.")) return false;
+      g.name = f.name || g.name; g.amount = amt; g.periods = per; g.myTurn = turn; g.freq = f.freq || g.freq; g.first = f.first || g.first;
+      note = "Updated savings group " + g.name;
     } else if (k === "group_payment" || k === "group_payout") {
       if (!need(N("amount") > 0, "Amount must be greater than zero.")) return false;
       const g = (data.groups || []).find(x => x.id === f.groupId);
@@ -1041,6 +1052,16 @@ class Engine {
     const iv = data.investments.find(i => i.id === id); if (!iv) return;
     data.investments = data.investments.filter(i => i.id !== id);
     this.persist(data, "Deleted investment " + iv.name);
+  }
+  groupCanDelete(id) {
+    return !this.state.data.tx.some(t => !t.void && t.groupId === id);
+  }
+  deleteGroup(id) {
+    if (!this.groupCanDelete(id)) return;
+    const data = JSON.parse(JSON.stringify(this.state.data));
+    const g = (data.groups || []).find(x => x.id === id); if (!g) return;
+    data.groups = (data.groups || []).filter(x => x.id !== id);
+    this.persist(data, "Deleted savings group " + g.name);
   }
   // Settings → Restore from JSON. Only accepts a snapshot this app itself
   // produced (exportJson) — validated by shape, not just "is it JSON" — and
@@ -1143,6 +1164,10 @@ const UI = {
   deleteInvestmentC(id) {
     const iv = this.app.state.data.investments.find(i => i.id === id); if (!iv) return;
     if (this.app.investmentCanDelete(id) && confirm(this.app.L("Delete ") + iv.name + "?")) { this.app.deleteInvestment(id); this.render(); }
+  },
+  deleteGroupC(id) {
+    const g = (this.app.state.data.groups || []).find(x => x.id === id); if (!g) return;
+    if (this.app.groupCanDelete(id) && confirm(this.app.L("Delete ") + g.name + "?")) { this.app.deleteGroup(id); this.render(); }
   },
   postRecurringC(id) {
     const r = this.app.state.data.recurring.find(x => x.id === id); if (!r) return;
@@ -1568,6 +1593,8 @@ const UI = {
     const cards = D.groups.map(g => {
       const open = app.state.openPlan === g.id;
       const rowsHtml = g.rows.map(r => '<div class="sched-row status-' + r.status + (r.mine ? " mine" : "") + '"><span>#' + r.no + " · " + r.due + (r.mine ? " · " + esc(app.L("My turn")) : "") + '</span><span>' + app.fmt(r.amount) + '</span></div>').join("");
+      const editArgs = JSON.stringify({ id: g.id, name: g.group.name, amount: g.group.amount, periods: g.group.periods, myTurn: g.group.myTurn, freq: g.group.freq, first: g.group.first }).replace(/"/g, "&quot;");
+      const canDelete = app.groupCanDelete(g.id);
       return '<div class="card-row">' +
         '<div class="card-row-top"><div><div class="card-row-title">' + esc(g.name) + '</div><div class="card-row-sub">' + esc(app.L("Turn ") + g.group.myTurn + app.L(" of ") + g.periods) + "</div></div>" +
         '<div class="card-row-amt ' + (g.net >= 0 ? "tone-pos" : "tone-neg") + '">' + app.fmt(g.net) + "</div></div>" +
@@ -1575,7 +1602,10 @@ const UI = {
         '<div class="card-row-meta"><span>' + esc(g.taken ? app.L("Payout collected") : app.L("Payout not collected yet")) + '</span>' + (g.overdue > 0 ? '<span class="tone-neg">' + esc(app.L("Overdue: ")) + g.overdue + "</span>" : "") + "</div>" +
         '<button class="link-btn small" onclick="UI.togglePlanRows(\'' + g.id + '\')">' + esc(app.L(open ? "Hide schedule" : "Show schedule")) + "</button>" +
         (open ? '<div class="sched-list">' + rowsHtml + "</div>" : "") +
-        '<div class="btn-row"><button class="btn btn-secondary small" onclick="UI.openModal(\'group_payment\',{groupId:\'' + g.id + '\'})">' + esc(t.gContribute) + '</button><button class="btn btn-secondary small" onclick="UI.openModal(\'group_payout\',{groupId:\'' + g.id + '\'})">' + esc(t.gCollect) + "</button></div>" +
+        '<div class="btn-row wrap"><button class="btn btn-secondary small" onclick="UI.openModal(\'group_payment\',{groupId:\'' + g.id + '\'})">' + esc(t.gContribute) + '</button><button class="btn btn-secondary small" onclick="UI.openModal(\'group_payout\',{groupId:\'' + g.id + '\'})">' + esc(t.gCollect) + "</button>" +
+        '<button class="link-btn small" onclick="UI.openModal(\'group_edit\',' + editArgs + ')">' + esc(app.L("Edit")) + "</button>" +
+        (canDelete ? '<button class="link-btn small" onclick="UI.deleteGroupC(\'' + g.id + '\')">' + esc(app.L("Delete group")) + "</button>" : "") +
+        "</div>" +
       "</div>";
     }).join("");
     const due = app.duesThisMonth(D);
