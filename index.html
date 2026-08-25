@@ -972,11 +972,17 @@ class Engine {
     this.persist(data, "Deleted person " + p.name);
   }
   // A plan can be removed only before any payment is recorded against it —
-  // once money has moved, it stays in the ledger like everything else and
-  // gets corrected the same way transactions do (Reverse), not deleted.
+  // once an actual installment payment has been recorded, it stays in the
+  // ledger like everything else and gets corrected the same way
+  // transactions do (Reverse), not deleted. A real bug lived here: checking
+  // planState().collected (which also folds in the plan's down payment,
+  // since that's cash that already moved too) blocked deletion for any
+  // plan created with a down payment, even with zero actual payments made
+  // against the schedule — deletePlan() already removes the down-payment
+  // transaction along with the plan, so it's the schedule that must be
+  // untouched, not the down payment.
   planCanDelete(id) {
-    const plan = this.state.data.plans.find(p => p.id === id);
-    return !!plan && this.planState(plan).collected === 0;
+    return !this.state.data.tx.some(t => !t.void && t.planId === id && t.type === "installment_payment");
   }
   deletePlan(id) {
     if (!this.planCanDelete(id)) return;
