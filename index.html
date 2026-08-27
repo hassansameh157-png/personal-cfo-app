@@ -511,6 +511,8 @@ class Engine {
     "Has a purchase transaction recorded — reverse it first, or leave the investment as-is.": "له حركة شراء مسجلة — اعكسها الأول، أو سيب الاستثمار زي ما هو.",
     "Delete plan": "حذف الخطة", "Delete investment": "حذف الاستثمار",
     "Edit savings group": "تعديل جمعية", "Delete group": "حذف الجمعية",
+    "Categories": "الفئات", "Add expense category": "إضافة فئة مصروف", "e.g. Gym": "زي: جيم",
+    "Add income category": "إضافة فئة دخل", "e.g. Bonus": "زي: مكافأة", "Add": "إضافة", "Remove ": "حذف ",
     "Restore from this backup? This replaces everything currently stored.": "الاستعادة من النسخة دي؟ هيستبدل كل البيانات المحفوظة حالياً.",
     "Couldn't read that file.": "معرفتش أقرأ الملف ده.",
     // P1 fix: expense/income categories used to be a hardcoded English list
@@ -655,7 +657,7 @@ class Engine {
       { id: "r4", name: "Mobile line", type: "expense", amount: 250, accountId: "vf", category: "Mobile", freq: "monthly", day: 15 },
       { id: "r5", name: "Streaming bundle", type: "expense", amount: 300, accountId: "card", category: "Subscriptions", freq: "yearly", day: 8 }
     ];
-    return { accounts, people, tx, plans, groups, investments, recurring, audit: [{ at: new Date().toISOString().slice(0, 16).replace("T", " "), what: "Demo data seeded" }] };
+    return { accounts, people, tx, plans, groups, investments, recurring, customCategories: { income: [], expense: [] }, audit: [{ at: new Date().toISOString().slice(0, 16).replace("T", " "), what: "Demo data seeded" }] };
   }
 
   // ---- engine: single source of truth ------------------------------------
@@ -770,8 +772,14 @@ class Engine {
     return loans.map(t => {
       const paid = Math.min(pool, t.amount); pool = Math.round((pool - paid) * 100) / 100;
       const rem = Math.round((t.amount - paid) * 100) / 100;
-      const due = t.due || t.date;
-      const status = rem <= 0 ? "paid" : (paid > 0 ? (due < today ? "overdue" : "partial") : (due < today ? "overdue" : "pending"));
+      // Real bug caught while building this: falling back to t.date (the
+      // entry date) when no due date is set meant an indefinite-term loan
+      // — an opening balance, money held for family with no fixed return
+      // date — silently became "overdue" the very next day. No due date now
+      // means no due date: never flagged, never forecast, just an open
+      // balance, same as before this feature existed.
+      const due = t.due || null;
+      const status = rem <= 0 ? "paid" : !due ? "open" : (paid > 0 ? (due < today ? "overdue" : "partial") : (due < today ? "overdue" : "pending"));
       return { id: t.id, personId, date: t.date, due, amount: t.amount, paid, rem, status, desc: t.desc };
     });
   }
@@ -822,10 +830,10 @@ class Engine {
     });
     // Plain loans (not part of an installment plan) — same treatment as
     // plans/gam3eya: their due date now actually shows up somewhere.
-    this.allLoanRows("payable").filter(r => r.due <= this.iso(end)).forEach(r => ev.push({
+    this.allLoanRows("payable").filter(r => r.due && r.due <= this.iso(end)).forEach(r => ev.push({
       date: r.due < this.today() ? this.today() : r.due,
       title: this.L("Pay · ") + this.personName(r.personId), amount: -r.rem, kind: "expense" }));
-    this.allLoanRows("receivable").filter(r => r.due <= this.iso(end)).forEach(r => ev.push({
+    this.allLoanRows("receivable").filter(r => r.due && r.due <= this.iso(end)).forEach(r => ev.push({
       date: r.due < this.today() ? this.today() : r.due,
       title: this.L("Collect · ") + this.personName(r.personId), amount: r.rem, kind: "income" }));
     ev.sort((a, b) => a.date < b.date ? -1 : 1);
@@ -839,8 +847,12 @@ class Engine {
     const d = this.state.data, t = this.T[this.state.lang];
     const accs = d.accounts.filter(a => a.active).map(a => ({ v: a.id, l: a.name }));
     const ppl = d.people.map(p => ({ v: p.id, l: p.name }));
-    const cats = ["Food", "Transportation", "Rent", "Electricity", "Water", "Internet", "Mobile", "Shopping", "Clothing", "Medical", "Education", "Entertainment", "Family", "Children", "Car", "Home", "Subscriptions", "Loans", "Other"].map(c => ({ v: c, l: c }));
-    const inc = ["Salary", "Freelance", "Business", "Commission", "Rental", "Interest", "Selling items", "Other"].map(c => ({ v: c, l: c }));
+    // Custom categories the user added in Settings — no ARW translation
+    // exists for these (they're free text the user typed), so the language
+    // pass below just leaves them as-is via its `|| o.l` fallback.
+    const custom = d.customCategories || { income: [], expense: [] };
+    const cats = ["Food", "Transportation", "Rent", "Electricity", "Water", "Internet", "Mobile", "Shopping", "Clothing", "Medical", "Education", "Entertainment", "Family", "Children", "Car", "Home", "Subscriptions", "Loans", "Other"].concat(custom.expense || []).map(c => ({ v: c, l: c }));
+    const inc = ["Salary", "Freelance", "Business", "Commission", "Rental", "Interest", "Selling items", "Other"].concat(custom.income || []).map(c => ({ v: c, l: c }));
     const D = (k, l, type, extra) => Object.assign({ k, label: l, type: type || "text" }, extra || {});
     const F = {
       income: { title: t.aIncome, fields: [D("date", t.date, "date"), D("amount", t.amount, "number"), D("accountId", t.account, "select", { options: accs }), D("category", t.category, "select", { options: inc }), D("personId", t.person + this.L(" (optional)", " (اختياري)"), "select", { options: [{ v: "", l: "—" }].concat(ppl) }), D("desc", t.details, "text", { wide: true })] },
@@ -1053,6 +1065,30 @@ class Engine {
     data.investments = data.investments.filter(i => i.id !== id);
     this.persist(data, "Deleted investment " + iv.name);
   }
+  // Custom income/expense categories — added from Settings, then show up
+  // in every category dropdown (FORMS()) right alongside the built-in ones.
+  addCategory(kind, name) {
+    const clean = (name || "").trim();
+    if (!clean) return { ok: false, error: this.L("Give the category a name.", "اكتب اسم للفئة.") };
+    const data = JSON.parse(JSON.stringify(this.state.data));
+    data.customCategories = data.customCategories || { income: [], expense: [] };
+    const list = data.customCategories[kind] || (data.customCategories[kind] = []);
+    const builtin = kind === "income"
+      ? ["Salary", "Freelance", "Business", "Commission", "Rental", "Interest", "Selling items", "Other"]
+      : ["Food", "Transportation", "Rent", "Electricity", "Water", "Internet", "Mobile", "Shopping", "Clothing", "Medical", "Education", "Entertainment", "Family", "Children", "Car", "Home", "Subscriptions", "Loans", "Other"];
+    if (builtin.concat(list).some(c => c.toLowerCase() === clean.toLowerCase())) {
+      return { ok: false, error: this.L("That category already exists.", "الفئة دي موجودة بالفعل.") };
+    }
+    list.push(clean);
+    this.persist(data, "Added category " + clean);
+    return { ok: true };
+  }
+  deleteCategory(kind, name) {
+    const data = JSON.parse(JSON.stringify(this.state.data));
+    data.customCategories = data.customCategories || { income: [], expense: [] };
+    data.customCategories[kind] = (data.customCategories[kind] || []).filter(c => c !== name);
+    this.persist(data, "Removed category " + name);
+  }
   groupCanDelete(id) {
     return !this.state.data.tx.some(t => !t.void && t.groupId === id);
   }
@@ -1168,6 +1204,15 @@ const UI = {
   deleteGroupC(id) {
     const g = (this.app.state.data.groups || []).find(x => x.id === id); if (!g) return;
     if (this.app.groupCanDelete(id) && confirm(this.app.L("Delete ") + g.name + "?")) { this.app.deleteGroup(id); this.render(); }
+  },
+  addCategoryC(kind) {
+    const input = document.getElementById(kind === "income" ? "newIncomeCat" : "newExpenseCat");
+    const res = this.app.addCategory(kind, input.value);
+    if (!res.ok) { alert(res.error); return; }
+    this.render();
+  },
+  deleteCategoryC(kind, name) {
+    if (confirm(this.app.L("Delete ") + name + "?")) { this.app.deleteCategory(kind, name); this.render(); }
   },
   postRecurringC(id) {
     const r = this.app.state.data.recurring.find(x => x.id === id); if (!r) return;
@@ -1522,7 +1567,15 @@ const UI = {
     }).sort((a, b) => Math.abs(b.net) - Math.abs(a.net));
 
     const editArgs = (p) => JSON.stringify({ id: p.id, name: p.name, phone: p.phone || "", notes: p.notes || "" }).replace(/"/g, "&quot;");
+    // "Add a balance for this person" — this is just the existing
+    // receivable/payable form pre-filled with who it's for, reachable
+    // directly from the person instead of only from Receivables & Payables.
+    // Same form, same fields (amount, date, description) — nothing new to
+    // learn, and it now leaves "due" blank by default, so an indefinite
+    // opening position doesn't get flagged overdue tomorrow.
     const personActions = ({ p, canDelete }) =>
+      '<button class="btn btn-secondary small" onclick="UI.openModal(\'receivable\',{personId:\'' + p.id + '\'})">' + esc(t.aReceivable) + "</button>" +
+      '<button class="btn btn-secondary small" onclick="UI.openModal(\'payable\',{personId:\'' + p.id + '\'})">' + esc(t.aDebt) + "</button>" +
       '<button class="link-btn small" onclick="UI.openModal(\'person_edit\',' + editArgs(p) + ')">' + esc(app.L("Edit")) + "</button>" +
       (canDelete ? '<button class="link-btn small" onclick="UI.deletePersonC(\'' + p.id + '\')">' + esc(app.L("Delete")) + "</button>" : "");
 
@@ -1537,7 +1590,7 @@ const UI = {
       return '<div class="card-row"><div class="card-row-top"><div><div class="card-row-title">' + esc(p.name) + '</div><div class="card-row-sub">' + esc(p.phone || "—") + "</div></div>" +
       '<div class="card-row-amt ' + (net >= 0 ? "tone-pos" : "tone-neg") + '">' + app.fmt(net) + "</div></div>" +
       '<div class="card-row-meta"><span>' + esc(t.owesMe) + ": " + app.fmt(r) + '</span><span>' + esc(t.iOwe) + ": " + app.fmt(y) + "</span></div>" +
-      '<div class="btn-row"><button class="link-btn small" onclick="UI.setPage(\'transactions\');UI.setFilter(\'q\',\'' + esc(p.name).replace(/'/g, "\\'") + '\')">' + esc(t.viewTx) + "</button>" + personActions(row) + "</div></div>";
+      '<div class="btn-row wrap"><button class="link-btn small" onclick="UI.setPage(\'transactions\');UI.setFilter(\'q\',\'' + esc(p.name).replace(/'/g, "\\'") + '\')">' + esc(t.viewTx) + "</button>" + personActions(row) + "</div></div>";
     }).join("") + "</div>";
 
     return this.tabHeader(t.people, d.people.length + app.L(" people · balances computed from the ledger", " شخص · الأرصدة محسوبة من السجل"), [[t.aPerson, "UI.openModal('person')"]]) + table + cards;
@@ -1629,7 +1682,7 @@ const UI = {
     const nextDue = (personId, kind) => app.loanRows(personId, kind).find(r => r.rem > 0);
     const dueMeta = (personId, kind) => {
       const r = nextDue(personId, kind);
-      if (!r) return "";
+      if (!r || !r.due) return "";
       const label = r.status === "overdue" ? app.L("Overdue since ") : app.L("Due ");
       return '<div class="card-row-meta"><span class="' + (r.status === "overdue" ? "tone-neg" : "") + '">' + esc(label) + r.due + "</span></div>";
     };
@@ -1725,6 +1778,20 @@ const UI = {
   // ---- Settings --------------------------------------------------------------
   renderSettings(D, t) {
     const app = this.app, d = app.state.data;
+    const custom = d.customCategories || { income: [], expense: [] };
+    const catChips = (kind, list) => list.length ?
+      '<div class="btn-row wrap">' + list.map(c =>
+        '<span class="pill">' + esc(c) + ' <button class="link-btn small" onclick="UI.deleteCategoryC(\'' + kind + '\',\'' + esc(c).replace(/'/g, "\\'") + '\')" aria-label="' + esc(app.L("Remove ") + c) + '">×</button></span>'
+      ).join("") + "</div>" :
+      '<p class="muted small">' + esc(app.L("No custom categories yet.", "مفيش فئات مخصصة لسه.")) + "</p>";
+    const categoriesSection = '<section class="dash-section"><h2 class="section-title">' + esc(app.L("Categories")) + '</h2><p class="muted small">' + esc(app.L("Add your own income and expense categories — they show up in every entry form alongside the built-in ones.", "ضيف فئات دخل ومصروف خاصة بيك — هتظهر في كل نموذج إدخال جمب الفئات الجاهزة.")) + '</p>' +
+      '<div class="field-grid">' +
+        '<label class="field"><span class="field-label">' + esc(app.L("Add expense category")) + '</span><div class="btn-row"><input class="input" id="newExpenseCat" type="text" placeholder="' + esc(app.L("e.g. Gym")) + '"><button class="btn btn-secondary" onclick="UI.addCategoryC(\'expense\')">' + esc(app.L("Add")) + "</button></div></label>" +
+        '<label class="field"><span class="field-label">' + esc(app.L("Add income category")) + '</span><div class="btn-row"><input class="input" id="newIncomeCat" type="text" placeholder="' + esc(app.L("e.g. Bonus")) + '"><button class="btn btn-secondary" onclick="UI.addCategoryC(\'income\')">' + esc(app.L("Add")) + "</button></div></label>" +
+      "</div>" +
+      '<div style="margin-top:12px"><div class="field-label" style="margin-bottom:6px">' + esc(t.expenses) + "</div>" + catChips("expense", custom.expense || []) + "</div>" +
+      '<div style="margin-top:12px"><div class="field-label" style="margin-bottom:6px">' + esc(t.income) + "</div>" + catChips("income", custom.income || []) + "</div>" +
+    "</section>";
     const rules = [
       { k: app.L("Receivables & assets"), v: app.L("Money owed to you counts as an asset toward net worth by default.") },
       { k: app.L("Installment allocation"), v: app.L("payments fill schedule rows oldest first; a short payment leaves the row partial, an overpayment rolls into the next rows.") },
@@ -1739,6 +1806,7 @@ const UI = {
       '<button class="btn btn-secondary" onclick="document.getElementById(\'restoreFile\').click()">' + esc(t.importJson) + "</button>" +
       '<input type="file" id="restoreFile" accept="application/json,.json" style="display:none" onchange="UI.restoreJsonFile(this)">' +
       "</div></section>" +
+      categoriesSection +
       '<section class="dash-section"><h2 class="section-title">' + esc(t.rules) + '</h2><div class="rules-list">' + rules.map(r => '<div class="rule-row"><div class="rule-k">' + esc(r.k) + '</div><div class="rule-v">' + esc(r.v) + "</div></div>").join("") + "</div></section>" +
       '<section class="dash-section"><h2 class="section-title">' + esc(t.auditTrail) + '</h2><div class="audit-list">' + (d.audit || []).slice(0, 20).map(a => '<div class="audit-row"><span>' + esc(a.at) + '</span><span>' + esc(a.what) + "</span></div>").join("") + "</div></section>" +
       '<section class="dash-section"><h2 class="section-title tone-neg">' + esc(t.dangerZone) + '</h2><div class="btn-row wrap"><button class="btn btn-secondary" onclick="UI.reseed()">' + esc(t.reseed) + '</button><button class="btn btn-danger" onclick="UI.wipe()">' + esc(t.wipe) + "</button></div></section>";
