@@ -1573,7 +1573,15 @@ const UI = {
     // Same form, same fields (amount, date, description) — nothing new to
     // learn, and it now leaves "due" blank by default, so an indefinite
     // opening position doesn't get flagged overdue tomorrow.
-    const personActions = ({ p, canDelete }) =>
+    // Real gap this closes: "Repay"/"Collect" used to only be reachable
+    // through a Needs Attention alert — which (correctly, after the
+    // due-date fix above) never fires for an open-ended balance with no due
+    // date. That left no way at all to pay down something like a family
+    // loan you deliberately never gave a due date. Now they're always here
+    // whenever there's an actual balance to settle, regardless of due date.
+    const personActions = ({ p, r, y, canDelete }) =>
+      (y > 0 ? '<button class="btn btn-primary small" onclick="UI.openModal(\'debt_payment\',{personId:\'' + p.id + '\'})">' + esc(t.pay) + "</button>" : "") +
+      (r > 0 ? '<button class="btn btn-primary small" onclick="UI.openModal(\'receivable_payment\',{personId:\'' + p.id + '\'})">' + esc(t.collect) + "</button>" : "") +
       '<button class="btn btn-secondary small" onclick="UI.openModal(\'receivable\',{personId:\'' + p.id + '\'})">' + esc(t.aReceivable) + "</button>" +
       '<button class="btn btn-secondary small" onclick="UI.openModal(\'payable\',{personId:\'' + p.id + '\'})">' + esc(t.aDebt) + "</button>" +
       '<button class="link-btn small" onclick="UI.openModal(\'person_edit\',' + editArgs(p) + ')">' + esc(app.L("Edit")) + "</button>" +
