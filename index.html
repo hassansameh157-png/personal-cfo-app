@@ -338,7 +338,7 @@ class Engine {
     this.props = props || { defaultHorizon: "30", receivablesAreAssets: true, privacyDefault: false };
     this.state = { page: "dashboard", lang: "en", modal: null, form: {}, err: "", privacy: false,
       horizon: 30, filt: { q: "", type: "all", account: "all", preset: "all" }, openPlan: null, saved: "",
-      data: null, txVisible: 25, moreOpen: false };
+      data: null, txVisible: 25, moreOpen: false, arabicNumerals: false, personDetailId: null };
   }
 
   // ---- bootstrap -----------------------------------------------------
@@ -387,16 +387,26 @@ class Engine {
   moneyStr(sign, s, t) {
     return this.state.lang === "ar" ? sign + s + " " + t.cur : sign + t.cur + " " + s;
   }
+  // Opt-in, Arabic mode only: render ١٢٣ instead of 123. A per-viewer
+  // display preference, not app data — same as lang/privacy above, it isn't
+  // persisted and just resets to off on a fresh load.
+  arabicDigits(s) {
+    const map = { "0": "٠", "1": "١", "2": "٢", "3": "٣", "4": "٤", "5": "٥", "6": "٦", "7": "٧", "8": "٨", "9": "٩" };
+    return String(s).replace(/[0-9]/g, (d) => map[d]);
+  }
+  numStr(s) {
+    return (this.state.lang === "ar" && this.state.arabicNumerals) ? this.arabicDigits(s) : s;
+  }
   fmt(v) {
     const t = this.T[this.state.lang];
     if (this.state.privacy) return "••••";
-    const s = Math.round(Math.abs(v)).toLocaleString("en-US");
+    const s = this.numStr(Math.round(Math.abs(v)).toLocaleString("en-US"));
     return this.bidiWrap(this.moneyStr(v < 0 ? "−" : "", s, t));
   }
   fmtS(v) {
     if (this.state.privacy) return "••••";
     const t = this.T[this.state.lang];
-    const s = Math.round(Math.abs(v)).toLocaleString("en-US");
+    const s = this.numStr(Math.round(Math.abs(v)).toLocaleString("en-US"));
     return this.bidiWrap(this.moneyStr(v < 0 ? "−" : "+", s, t));
   }
   L(en, ar) { if (this.state.lang !== "ar") return en; return ar || this.ARW[en] || en; }
@@ -511,6 +521,7 @@ class Engine {
     "Has a purchase transaction recorded — reverse it first, or leave the investment as-is.": "له حركة شراء مسجلة — اعكسها الأول، أو سيب الاستثمار زي ما هو.",
     "Delete plan": "حذف الخطة", "Delete investment": "حذف الاستثمار",
     "Edit savings group": "تعديل جمعية", "Delete group": "حذف الجمعية",
+    "Display": "العرض",
     "Categories": "الفئات", "Add expense category": "إضافة فئة مصروف", "e.g. Gym": "زي: جيم",
     "Add income category": "إضافة فئة دخل", "e.g. Bonus": "زي: مكافأة", "Add": "إضافة", "Remove ": "حذف ",
     "Restore from this backup? This replaces everything currently stored.": "الاستعادة من النسخة دي؟ هيستبدل كل البيانات المحفوظة حالياً.",
@@ -1123,6 +1134,21 @@ class Engine {
     this.persist(data, "Added category " + clean);
     return { ok: true };
   }
+  // A light autocomplete, not a rule engine: whenever the description
+  // typed into "+ Expense" / "+ Income" contains (or is contained in) an
+  // earlier entry's description, suggest whichever category that earlier
+  // entry used most often. No matches, or a description too short to be
+  // meaningful, and it simply suggests nothing.
+  suggestCategory(desc, kind) {
+    const q = (desc || "").trim().toLowerCase();
+    if (q.length < 2 || !["income", "expense"].includes(kind)) return null;
+    const matches = this.state.data.tx.filter(t => !t.void && t.type === kind && t.category &&
+      t.desc && (t.desc.toLowerCase().includes(q) || q.includes(t.desc.toLowerCase())));
+    if (!matches.length) return null;
+    const counts = {};
+    matches.forEach(t => { counts[t.category] = (counts[t.category] || 0) + 1; });
+    return Object.keys(counts).sort((a, b) => counts[b] - counts[a])[0];
+  }
   deleteCategory(kind, name) {
     const data = JSON.parse(JSON.stringify(this.state.data));
     data.customCategories = data.customCategories || { income: [], expense: [] };
@@ -1242,9 +1268,16 @@ const UI = {
 
   // ---- generic actions ---------------------------------------------------
   setPage(p) { this.app.state.page = p; this.app.state.moreOpen = false; this.app.state.txVisible = 25; this.render(); window.scrollTo({ top: 0 }); },
+  // A person's own page: every loan and installment plan tied to them (both
+  // directions) in one place, instead of scattered across Receivables &
+  // Payables and Installments — the gap that made juggling several loans
+  // with the same person (e.g. a normal loan plus money held in trust) hard
+  // to see at a glance.
+  viewPerson(id) { this.app.state.personDetailId = id; this.app.state.page = "person_detail"; this.app.state.moreOpen = false; this.render(); window.scrollTo({ top: 0 }); },
   toggleMore() { this.app.state.moreOpen = !this.app.state.moreOpen; this.render(); },
   setLang(l) { this.app.state.lang = l; this.render(); },
   togglePrivacy() { this.app.state.privacy = !this.app.state.privacy; this.render(); },
+  toggleArabicNumerals() { this.app.state.arabicNumerals = !this.app.state.arabicNumerals; this.render(); },
   openModal(kind, pre) { this.app.open(kind, pre); this.render(); },
   closeModal() { this.app.state.modal = null; this.app.state.err = ""; this.render(); },
   submitModal() {
@@ -1276,6 +1309,20 @@ const UI = {
     const t = this.app.state.data.tx.find(x => x.id === id);
     if (!this.app.txEditable(t)) return;
     this.openModal(this.app.txEditKind(t), Object.assign({}, t));
+  },
+  suggestCategoryFromDesc(desc) {
+    const app = this.app, kind = app.state.modal;
+    const cat = app.suggestCategory(desc, kind);
+    if (!cat) return;
+    const sel = document.getElementById("f_category");
+    if (!sel) return;
+    // suggestCategory reads it off past transactions, which can outlive the
+    // category itself — deleteCategory() has no in-use guard, unlike
+    // deletePlan/deleteInvestment/deleteGroup. Setting a value with no
+    // matching <option> would silently blank the field instead of leaving
+    // the user's own selection alone.
+    const stillExists = Array.prototype.some.call(sel.options, (o) => o.value === cat);
+    if (stillExists && sel.value !== cat) sel.value = cat;
   },
   deleteTxC(id) {
     const app = this.app, t = app.state.data.tx.find(x => x.id === id);
@@ -1408,12 +1455,16 @@ const UI = {
   },
   renderPrimaryNav(t) {
     const S = this.app.state;
+    // person_detail is reached only from the People tab (there's no nav
+    // entry of its own) — it counts as "People" here so the nav doesn't
+    // wrongly light up "More" while looking at one person's page.
+    const effectivePage = S.page === "person_detail" ? "people" : S.page;
     const items = this.app.PRIMARY.map(id => {
       const path = this.app.NAV.find(n => n[0] === id)[1];
-      const on = S.page === id;
+      const on = effectivePage === id;
       return '<button class="navbtn' + (on ? " on" : "") + '" aria-current="' + (on ? "page" : "false") + '" onclick="UI.setPage(\'' + id + '\')">' + svgIcon(path, 20) + '<span>' + esc(t[id]) + "</span></button>";
     }).join("");
-    const moreOn = !this.app.PRIMARY.includes(S.page);
+    const moreOn = !this.app.PRIMARY.includes(effectivePage);
     return '<nav class="primary-nav" aria-label="' + esc(t.primaryNav) + '">' + items +
       '<button class="navbtn' + (moreOn ? " on" : "") + '" aria-current="' + (moreOn ? "page" : "false") + '" aria-expanded="' + (S.moreOpen ? "true" : "false") + '" onclick="UI.toggleMore()">' + svgIcon("M5 12h.01M12 12h.01M19 12h.01", 20) + '<span>' + esc(t.more) + "</span></button>" +
     "</nav>";
@@ -1439,6 +1490,7 @@ const UI = {
       case "accounts": return this.renderAccounts(D, t);
       case "transactions": return this.renderTransactions(D, t);
       case "people": return this.renderPeople(D, t);
+      case "person_detail": return this.renderPersonDetail(D, t);
       case "installments": return this.renderInstallments(D, t);
       case "groups": return this.renderGroups(D, t);
       case "ledgers": return this.renderLedgers(D, t);
@@ -1692,18 +1744,95 @@ const UI = {
     const table = '<div class="table-wrap desktop-only"><table class="table"><thead><tr>' +
       "<th>" + esc(t.name) + "</th><th>" + esc(t.phone) + "</th><th class=\"num\">" + esc(t.owesMe) + "</th><th class=\"num\">" + esc(t.iOwe) + "</th><th class=\"num\">" + esc(t.net) + "</th><th></th>" +
       "</tr></thead><tbody>" + rows.map((row) => { const { p, r, y, net } = row;
-        return "<tr><td>" + esc(p.name) + "</td><td>" + esc(p.phone || "—") + '</td><td class="num tone-pos">' + app.fmt(r) + '</td><td class="num tone-neg">' + app.fmt(y) + '</td><td class="num ' + (net >= 0 ? "tone-pos" : "tone-neg") + '">' + app.fmt(net) + "</td>" +
+        return "<tr><td><button class=\"link-btn\" onclick=\"UI.viewPerson('" + p.id + "')\">" + esc(p.name) + "</button></td><td>" + esc(p.phone || "—") + '</td><td class="num tone-pos">' + app.fmt(r) + '</td><td class="num tone-neg">' + app.fmt(y) + '</td><td class="num ' + (net >= 0 ? "tone-pos" : "tone-neg") + '">' + app.fmt(net) + "</td>" +
         '<td><button class="link-btn small" onclick="UI.setPage(\'transactions\');UI.setFilter(\'q\',\'' + esc(p.name).replace(/'/g, "\\'") + '\')">' + esc(t.viewTx) + "</button>" + personActions(row) + "</td></tr>";
       }).join("") + "</tbody></table></div>";
 
     const cards = '<div class="card-list mobile-only">' + rows.map((row) => { const { p, r, y, net } = row;
-      return '<div class="card-row"><div class="card-row-top"><div><div class="card-row-title">' + esc(p.name) + '</div><div class="card-row-sub">' + esc(p.phone || "—") + "</div></div>" +
+      return '<div class="card-row"><div class="card-row-top"><div><button class="link-btn card-row-title" onclick="UI.viewPerson(\'' + p.id + '\')">' + esc(p.name) + '</button><div class="card-row-sub">' + esc(p.phone || "—") + "</div></div>" +
       '<div class="card-row-amt ' + (net >= 0 ? "tone-pos" : "tone-neg") + '">' + app.fmt(net) + "</div></div>" +
       '<div class="card-row-meta"><span>' + esc(t.owesMe) + ": " + app.fmt(r) + '</span><span>' + esc(t.iOwe) + ": " + app.fmt(y) + "</span></div>" +
       '<div class="btn-row wrap"><button class="link-btn small" onclick="UI.setPage(\'transactions\');UI.setFilter(\'q\',\'' + esc(p.name).replace(/'/g, "\\'") + '\')">' + esc(t.viewTx) + "</button>" + personActions(row) + "</div></div>";
     }).join("") + "</div>";
 
     return this.tabHeader(t.people, d.people.length + app.L(" people · balances computed from the ledger", " شخص · الأرصدة محسوبة من السجل"), [[t.aPerson, "UI.openModal('person')"]]) + table + cards;
+  },
+
+  // ---- Person detail (everything tied to one person, in one place) --------
+  // The gap this closes: a person can carry a plain loan *and* an
+  // installment plan *and* money held in trust all at once (e.g. Dad: a
+  // normal loan, an amanah with no due date, and a phone bought on
+  // installments) — before this, seeing the whole picture meant checking
+  // Receivables & Payables and Installments separately and adding it up by
+  // hand. Gam3eya groups are deliberately not shown here: a group isn't
+  // tied to a specific person in the data model (see FORMS().group) — it's
+  // a circle you participate in, not a per-person balance.
+  renderPersonDetail(D, t) {
+    const app = this.app, S = app.state, d = app.state.data;
+    const p = d.people.find(x => x.id === S.personDetailId);
+    if (!p) { S.page = "people"; return this.renderPeople(D, t); }
+
+    const planIn = D.plans.filter(x => x.personId === p.id && x.direction === "in");
+    const planOut = D.plans.filter(x => x.personId === p.id && x.direction === "out");
+    const r = Math.max(0, D.recv[p.id] || 0) + planIn.reduce((s, x) => s + x.remaining, 0);
+    const y = Math.max(0, D.pay[p.id] || 0) + planOut.reduce((s, x) => s + x.remaining, 0);
+    const net = r - y;
+    const canDelete = !app.personHasRecords(p.id);
+    const editArgs = JSON.stringify({ id: p.id, name: p.name, phone: p.phone || "", notes: p.notes || "" }).replace(/"/g, "&quot;");
+
+    const summary = '<div class="tile-grid three">' +
+      '<div class="pos-tile"><div class="pos-label">' + esc(t.owesMe) + '</div><div class="pos-value tone-pos">' + app.fmt(r) + "</div></div>" +
+      '<div class="pos-tile"><div class="pos-label">' + esc(t.iOwe) + '</div><div class="pos-value tone-neg">' + app.fmt(y) + "</div></div>" +
+      '<div class="pos-tile"><div class="pos-label">' + esc(t.net) + '</div><div class="pos-value ' + (net >= 0 ? "tone-pos" : "tone-neg") + '">' + app.fmt(net) + "</div></div>" +
+    "</div>";
+
+    // Every open plain loan/amanah row this person is party to, either
+    // direction, oldest first (loanRows() is already FIFO-ordered) — each
+    // with its own Edit/Delete via the Transactions tab if it was a mistake,
+    // but settled right from here via Pay/Collect on the section below.
+    const loanSection = (kind, label) => {
+      const rows = app.loanRows(p.id, kind).filter(row => row.rem > 0.001);
+      if (!rows.length) return "";
+      const items = rows.map(row => {
+        const dueTxt = !row.due ? "" : (row.status === "overdue" ? app.L("Overdue since ") + row.due : app.L("Due ") + row.due);
+        return '<div class="card-row"><div class="card-row-top"><div><div class="card-row-title">' + esc(row.desc || "—") + '</div><div class="card-row-sub">' + row.date + (dueTxt ? " · " + esc(dueTxt) : "") + "</div></div>" +
+          '<div class="card-row-amt ' + (row.status === "overdue" ? "tone-neg" : "") + '">' + app.fmt(row.rem) + "</div></div></div>";
+      }).join("");
+      return '<h2 class="section-title" style="margin-top:20px">' + esc(label) + '</h2><div class="card-list">' + items + "</div>";
+    };
+
+    const planSection = (plans, label) => {
+      if (!plans.length) return "";
+      // Same installment_payment modal handles both directions everywhere
+      // else (Installments tab shows it unconditionally) — a plan someone
+      // owes *me* on still needs a way to record their payment from here too.
+      const items = plans.map(pl =>
+        '<div class="card-row"><div class="card-row-top"><div><div class="card-row-title">' + esc(pl.title) + '</div><div class="card-row-sub">' + esc(t.remaining) + ": " + app.fmt(pl.remaining) + " / " + app.fmt(pl.total) + "</div></div>" +
+        '<div class="card-row-amt">' + app.fmt(pl.remaining) + "</div></div>" +
+        (pl.remaining > 0.001 ? '<button class="btn btn-secondary small" onclick="UI.openModal(\'installment_payment\',{planId:\'' + pl.id + '\'})">' + esc(t.recordPayment) + "</button>" : "") +
+        "</div>"
+      ).join("");
+      return '<h2 class="section-title" style="margin-top:20px">' + esc(label) + '</h2><div class="card-list">' + items + "</div>";
+    };
+
+    const actions = '<div class="btn-row wrap">' +
+      (y > 0 ? '<button class="btn btn-primary small" onclick="UI.openModal(\'debt_payment\',{personId:\'' + p.id + '\'})">' + esc(t.pay) + "</button>" : "") +
+      (r > 0 ? '<button class="btn btn-primary small" onclick="UI.openModal(\'receivable_payment\',{personId:\'' + p.id + '\'})">' + esc(t.collect) + "</button>" : "") +
+      '<button class="btn btn-secondary small" onclick="UI.openModal(\'receivable\',{personId:\'' + p.id + '\'})">' + esc(t.aReceivable) + "</button>" +
+      '<button class="btn btn-secondary small" onclick="UI.openModal(\'payable\',{personId:\'' + p.id + '\'})">' + esc(t.aDebt) + "</button>" +
+      '<button class="link-btn small" onclick="UI.openModal(\'person_edit\',' + editArgs + ')">' + esc(app.L("Edit")) + "</button>" +
+      (canDelete ? '<button class="link-btn small" onclick="UI.deletePersonC(\'' + p.id + '\')">' + esc(app.L("Delete")) + "</button>" : "") +
+    "</div>";
+
+    const backBtn = '<button class="link-btn small" onclick="UI.setPage(\'people\')">← ' + esc(t.people) + "</button>";
+    const sub = esc(p.phone || app.L("No phone on file", "مفيش رقم متسجل")) + (p.notes ? " · " + esc(p.notes) : "");
+
+    return backBtn + this.tabHeader(p.name, sub, []) + summary + actions +
+      loanSection("receivable", app.L("Loans owed to me", "سلف ليّا")) +
+      loanSection("payable", app.L("Loans I owe", "ديون عليّا")) +
+      planSection(planIn, app.L("Installment plans owed to me", "أقساط ليّا")) +
+      planSection(planOut, app.L("Installment plans I owe", "أقساط عليّا")) +
+      (!r && !y && !planIn.length && !planOut.length ? '<p class="muted" style="margin-top:16px">' + esc(app.L("Nothing on record for this person yet.", "لسه مفيش أي حاجة مسجلة لهذا الشخص.")) + "</p>" : "");
   },
 
   // ---- Installments (P1 KPI quirk intentionally preserved) -----------------
@@ -1917,6 +2046,13 @@ const UI = {
       '<button class="btn btn-secondary" onclick="document.getElementById(\'restoreFile\').click()">' + esc(t.importJson) + "</button>" +
       '<input type="file" id="restoreFile" accept="application/json,.json" style="display:none" onchange="UI.restoreJsonFile(this)">' +
       "</div></section>" +
+      (app.state.lang === "ar" ?
+        '<section class="dash-section"><h2 class="section-title">' + esc(app.L("Display")) + "</h2>" +
+        '<label style="display:flex;align-items:center;gap:8px;cursor:pointer;min-height:44px">' +
+          '<input type="checkbox" id="arabicNumToggle" ' + (app.state.arabicNumerals ? "checked" : "") + ' onchange="UI.toggleArabicNumerals()">' +
+          "<span>" + esc(app.L("Use Arabic-Indic numerals (١٢٣) for amounts", "استخدم الأرقام العربية (١٢٣) في المبالغ")) + "</span>" +
+        "</label></section>"
+        : "") +
       categoriesSection +
       '<section class="dash-section"><h2 class="section-title">' + esc(t.rules) + '</h2><div class="rules-list">' + rules.map(r => '<div class="rule-row"><div class="rule-k">' + esc(r.k) + '</div><div class="rule-v">' + esc(r.v) + "</div></div>").join("") + "</div></section>" +
       '<section class="dash-section"><h2 class="section-title">' + esc(t.auditTrail) + '</h2><div class="audit-list">' + (d.audit || []).slice(0, 20).map(a => '<div class="audit-row"><span>' + esc(a.at) + '</span><span>' + esc(a.what) + "</span></div>").join("") + "</div></section>" +
@@ -1955,7 +2091,13 @@ const UI = {
       if (f.type === "select") {
         input = '<select class="input" id="f_' + f.k + '" name="' + f.k + '">' + f.options.map(o => '<option value="' + esc(o.v) + '"' + (String(val) === String(o.v) ? " selected" : "") + ">" + esc(o.l) + "</option>").join("") + "</select>";
       } else {
-        input = '<input class="input" id="f_' + f.k + '" name="' + f.k + '" type="' + f.type + '" value="' + esc(val) + '">';
+        // Description → category autocomplete, income/expense only: as the
+        // user types, suggest whatever category their past entries with a
+        // similar description used most. It only ever sets the <select>'s
+        // value directly (see suggestCategoryFromDesc) — never touches
+        // app.state, so it can't fight the user's own pick on submit.
+        const auto = (f.k === "desc" && ["income", "expense"].includes(S.modal)) ? ' oninput="UI.suggestCategoryFromDesc(this.value)"' : "";
+        input = '<input class="input" id="f_' + f.k + '" name="' + f.k + '" type="' + f.type + '" value="' + esc(val) + '"' + auto + '>';
       }
       return '<label class="field' + (f.wide ? " wide" : "") + '"><span class="field-label">' + esc(f.label) + "</span>" + input + (f.hint ? '<span class="field-hint">' + esc(f.hint) + "</span>" : "") + "</label>";
     };
@@ -1975,5 +2117,15 @@ window.addEventListener("DOMContentLoaded", function () {
   window.UI = UI;
   window.APP = engine;
   UI.init(engine);
+  // Home-screen icon shortcuts (long-press → "+ Expense" / "+ Income",
+  // wired via manifest.json's "shortcuts" — only reachable once the app is
+  // actually installed, see personal_cfo_app.html's __ICON_HEAD__ note)
+  // land here as ?action=expense / ?action=income. Open the matching modal
+  // once, then drop the param so a reload doesn't reopen it.
+  var action = new URLSearchParams(location.search).get("action");
+  if (action === "expense" || action === "income") {
+    UI.openModal(action);
+    history.replaceState(null, "", location.pathname);
+  }
 });
 </script>
