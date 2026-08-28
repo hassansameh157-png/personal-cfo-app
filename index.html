@@ -917,13 +917,28 @@ class Engine {
     if (["income", "expense", "receivable", "payable", "receivable_payment", "debt_payment"].includes(k)) {
       if (!need(N("amount") > 0, "Amount must be greater than zero.")) return false;
       if (["receivable", "payable", "receivable_payment", "debt_payment"].includes(k) && !need(f.personId, "Pick a person.")) return false;
-      push({ date: f.date, type: k, amount: N("amount"), accountId: f.accountId || null, fromId: null, toId: null, category: f.category || null, personId: f.personId || null, desc: f.desc || this.FORMS()[k].title, due: f.due || null });
-      note = this.FORMS()[k].title + " " + this.fmt(N("amount"));
+      const fields = { date: f.date, amount: N("amount"), accountId: f.accountId || null, fromId: null, toId: null, category: f.category || null, personId: f.personId || null, desc: f.desc || this.FORMS()[k].title, due: f.due || null };
+      if (f.id) {
+        const ex = data.tx.find(x => x.id === f.id);
+        if (!need(ex, "That transaction no longer exists.")) return false;
+        Object.assign(ex, fields);
+        note = "Updated " + this.FORMS()[k].title.toLowerCase() + " " + this.fmt(N("amount"));
+      } else {
+        push(Object.assign({ type: k }, fields));
+        note = this.FORMS()[k].title + " " + this.fmt(N("amount"));
+      }
     } else if (k === "transfer") {
       if (!need(N("amount") > 0, "Amount must be greater than zero.")) return false;
       if (!need(f.fromId !== f.toId, "Pick two different accounts.")) return false;
-      push({ date: f.date, type: "transfer", amount: N("amount"), fromId: f.fromId, toId: f.toId, desc: f.desc || "Transfer" });
-      note = "Transfer " + this.fmt(N("amount"));
+      if (f.id) {
+        const ex = data.tx.find(x => x.id === f.id);
+        if (!need(ex, "That transaction no longer exists.")) return false;
+        Object.assign(ex, { date: f.date, amount: N("amount"), fromId: f.fromId, toId: f.toId, desc: f.desc || "Transfer" });
+        note = "Updated transfer " + this.fmt(N("amount"));
+      } else {
+        push({ date: f.date, type: "transfer", amount: N("amount"), fromId: f.fromId, toId: f.toId, desc: f.desc || "Transfer" });
+        note = "Transfer " + this.fmt(N("amount"));
+      }
     } else if (k === "sale" || k === "purchase") {
       const total = N("total"), down = N("down"), count = Math.max(1, Math.round(N("count"))), balloon = N("balloon");
       if (!need(total > 0, "Total must be greater than zero.")) return false;
@@ -947,10 +962,23 @@ class Engine {
       if (!need(N("amount") > 0, "Amount must be greater than zero.")) return false;
       const plan = data.plans.find(p => p.id === f.planId);
       if (!need(plan, "Pick a plan.")) return false;
+      const existing = f.id ? data.tx.find(x => x.id === f.id) : null;
       const st = this.planState(plan);
-      if (!need(N("amount") <= st.remaining + 0.001, "That is more than the " + this.fmt(st.remaining) + " still outstanding on this plan.")) return false;
-      push({ date: f.date, type: "installment_payment", amount: N("amount"), accountId: f.accountId, personId: plan.personId, planId: plan.id, desc: f.desc || "Installment payment" });
-      note = "Installment payment " + this.fmt(N("amount")) + " · " + plan.title;
+      // Editing a payment already counted in st.remaining for this same plan
+      // — add it back before capping, so shrinking or growing it validates
+      // against the schedule's real remaining balance, not remaining-minus-
+      // itself. Moving a payment onto a *different* plan (rare, but the plan
+      // picker allows it) gets no such allowance: it has to fit that plan's
+      // remaining as-is.
+      const cap = (existing && existing.planId === plan.id) ? st.remaining + existing.amount : st.remaining;
+      if (!need(N("amount") <= cap + 0.001, "That is more than the " + this.fmt(cap) + " still outstanding on this plan.")) return false;
+      if (existing) {
+        Object.assign(existing, { date: f.date, amount: N("amount"), accountId: f.accountId, personId: plan.personId, planId: plan.id, desc: f.desc || "Installment payment" });
+        note = "Updated installment payment " + this.fmt(N("amount")) + " · " + plan.title;
+      } else {
+        push({ date: f.date, type: "installment_payment", amount: N("amount"), accountId: f.accountId, personId: plan.personId, planId: plan.id, desc: f.desc || "Installment payment" });
+        note = "Installment payment " + this.fmt(N("amount")) + " · " + plan.title;
+      }
     } else if (k === "investment") {
       if (!need(f.name, "Give the investment a name.")) return false;
       const id = this.uid("iv");
@@ -1010,9 +1038,21 @@ class Engine {
       if (!need(N("amount") > 0, "Amount must be greater than zero.")) return false;
       const g = (data.groups || []).find(x => x.id === f.groupId);
       if (!need(g, "Pick a group.")) return false;
-      if (k === "group_payment") { const st = this.groupState(g); if (!need(N("amount") <= st.remainingPay + 0.001, "That is more than the " + this.fmt(st.remainingPay) + " left to pay into this group.")) return false; }
-      push({ date: f.date, type: k === "group_payment" ? "gam3ya_payment" : "gam3ya_payout", amount: N("amount"), accountId: f.accountId, groupId: g.id, desc: (k === "group_payment" ? "Contribution — " : "Payout collected — ") + g.name });
-      note = (k === "group_payment" ? "Gam3ya contribution " : "Gam3ya payout ") + this.fmt(N("amount")) + " · " + g.name;
+      const existing = f.id ? data.tx.find(x => x.id === f.id) : null;
+      if (k === "group_payment") {
+        const st = this.groupState(g);
+        const cap = (existing && existing.groupId === g.id) ? st.remainingPay + existing.amount : st.remainingPay;
+        if (!need(N("amount") <= cap + 0.001, "That is more than the " + this.fmt(cap) + " left to pay into this group.")) return false;
+      }
+      const type = k === "group_payment" ? "gam3ya_payment" : "gam3ya_payout";
+      const desc = f.desc || (k === "group_payment" ? "Contribution — " : "Payout collected — ") + g.name;
+      if (existing) {
+        Object.assign(existing, { date: f.date, amount: N("amount"), accountId: f.accountId, groupId: g.id, desc });
+        note = "Updated " + (k === "group_payment" ? "gam3ya contribution " : "gam3ya payout ") + this.fmt(N("amount")) + " · " + g.name;
+      } else {
+        push({ date: f.date, type, amount: N("amount"), accountId: f.accountId, groupId: g.id, desc });
+        note = (k === "group_payment" ? "Gam3ya contribution " : "Gam3ya payout ") + this.fmt(N("amount")) + " · " + g.name;
+      }
     } else if (k === "recurring") {
       if (!need(f.name && this.n(f.amount) > 0, "Name and amount are required.")) return false;
       data.recurring.push({ id: this.uid("r"), name: f.name, type: f.type, amount: N("amount"), accountId: f.accountId, category: f.category, freq: f.freq, day: Math.max(1, Math.min(28, Math.round(N("day")) || 1)) });
@@ -1120,6 +1160,43 @@ class Engine {
     data.tx.push(Object.assign({}, t, { id: this.uid("t"), void: false, reversalOf: id, type: "reversal_marker", amount: 0, desc: "Reversed: " + (t.desc || t.type), created: new Date().toISOString() }));
     this.persist(data, "Reversed " + (t.desc || t.type) + " " + this.fmt(t.amount || 0));
   }
+  // Plain money-movement entries — income, expense, transfer, a loan
+  // (receivable/payable) and a payment against one, or a single installment
+  // / gam3ya installment — can now be corrected in place or removed outright,
+  // same as accounts/people/investments/plans/groups already can be.
+  // This is deliberately different from reverse(): reverse() keeps the
+  // original row (voided) plus a marker, for a formal paper trail; edit/
+  // delete here actually change or remove the row, for when the entry was
+  // simply a mistake and shouldn't linger in the ledger at all.
+  // Excluded on purpose: installment_sale and investment_buy (the opening
+  // transaction of a plan/investment — corrected via that record's own Edit,
+  // or removed by deleting the plan/investment itself while nothing has been
+  // paid against it), investment_return/refund/adjustment (not yet exposed
+  // through an entry form of their own), and reversal_marker (a zero-amount
+  // marker row, nothing to edit). A voided (already-reversed) row is also
+  // excluded — it's already inactive, and its reversal marker points at it
+  // by id.
+  txEditableTypes() {
+    return ["income", "expense", "transfer", "receivable", "payable", "receivable_payment", "debt_payment", "installment_payment", "gam3ya_payment", "gam3ya_payout"];
+  }
+  txEditable(t) {
+    return !!t && !t.void && this.txEditableTypes().includes(t.type);
+  }
+  // The modal "kind" used to add a transaction isn't always its stored
+  // tx.type (gam3ya contributions/payouts are added via the group_payment /
+  // group_payout forms but stored as gam3ya_payment / gam3ya_payout) — this
+  // maps a tx back to the form that can edit it.
+  txEditKind(t) {
+    const map = { gam3ya_payment: "group_payment", gam3ya_payout: "group_payout" };
+    return map[t.type] || t.type;
+  }
+  deleteTx(id) {
+    const data = JSON.parse(JSON.stringify(this.state.data));
+    const t = data.tx.find(x => x.id === id);
+    if (!this.txEditable(t)) return;
+    data.tx = data.tx.filter(x => x.id !== id);
+    this.persist(data, "Deleted " + (t.desc || t.type) + " " + this.fmt(t.amount || 0));
+  }
   postRecurring(r) {
     const data = JSON.parse(JSON.stringify(this.state.data));
     data.tx.push({ id: this.uid("t"), date: this.today(), type: r.type, amount: r.amount, accountId: r.accountId, category: r.category, personId: null, desc: r.name + " (recurring)", void: false, created: new Date().toISOString(), recurringId: r.id });
@@ -1127,7 +1204,7 @@ class Engine {
   }
 }
 
-
+if (typeof module !== "undefined") module.exports = { Engine };
 </script>
 <script>
 /* Personal CFO — presentation layer (rebuilt).
@@ -1190,6 +1267,20 @@ const UI = {
   loadMoreTx() { this.app.state.txVisible += 25; this.render(true); },
   setFilter(k, v) { this.app.state.filt[k] = v; this.app.state.txVisible = 25; this.render(true); },
   reverseTx(id) { this.app.reverse(id); this.render(); },
+  // Opens the same add-modal a plain entry was created from (income,
+  // expense, transfer, a loan or a payment against it, an installment or a
+  // gam3ya installment), pre-filled from the transaction itself — submit()
+  // recognizes the carried-over `id` and updates that row in place instead
+  // of posting a new one.
+  openTxEdit(id) {
+    const t = this.app.state.data.tx.find(x => x.id === id);
+    if (!this.app.txEditable(t)) return;
+    this.openModal(this.app.txEditKind(t), Object.assign({}, t));
+  },
+  deleteTxC(id) {
+    const app = this.app, t = app.state.data.tx.find(x => x.id === id);
+    if (app.txEditable(t) && confirm(app.L("Delete this transaction? This cannot be undone.", "مسح الحركة دي؟ الإجراء ده لا يمكن التراجع عنه."))) { app.deleteTx(id); this.render(); }
+  },
   deletePersonC(id) {
     if (!this.app.personHasRecords(id) && confirm(this.app.L("Delete ") + this.app.personName(id) + "?")) { this.app.deletePerson(id); this.render(); }
   },
@@ -1509,6 +1600,17 @@ const UI = {
       const tone = r.void ? "muted-amt" : (signed > 0 ? "tone-pos" : signed < 0 ? "tone-neg" : "");
       return { r, isIn, signed, amtTxt, acc, tone };
     });
+    // Reverse stays available on every non-void row, for a formal audit-
+    // trail correction; Edit and Delete only show for the plain entry types
+    // txEditable() recognizes (a structural row like an installment sale or
+    // an investment purchase is corrected through its own record instead).
+    const rowActions = (r) => '<div class="btn-row wrap">' +
+      '<button class="link-btn small" onclick="UI.reverseTx(\'' + r.id + '\')" ' + (r.void ? "disabled" : "") + ">" + esc(r.void ? app.L("reversed") : app.L("reverse")) + "</button>" +
+      (app.txEditable(r) ?
+        '<button class="link-btn small" onclick="UI.openTxEdit(\'' + r.id + '\')">' + esc(app.L("Edit")) + "</button>" +
+        '<button class="link-btn small" onclick="UI.deleteTxC(\'' + r.id + '\')">' + esc(app.L("Delete")) + "</button>"
+        : "") +
+      "</div>";
 
     const table = '<div class="table-wrap desktop-only"><table class="table"><thead><tr>' +
       "<th>" + esc(t.date) + "</th><th>" + esc(t.type) + "</th><th>" + esc(t.details) + "</th><th>" + esc(t.person) + "</th><th>" + esc(t.account) + "</th><th class=\"num\">" + esc(t.amount) + "</th><th></th>" +
@@ -1520,7 +1622,7 @@ const UI = {
           "<td>" + esc(r.personId ? app.personName(r.personId) : "—") + "</td>" +
           "<td>" + esc(acc) + "</td>" +
           '<td class="num ' + tone + '">' + amtTxt + "</td>" +
-          '<td><button class="link-btn small" onclick="UI.reverseTx(\'' + r.id + '\')" ' + (r.void ? "disabled" : "") + ">" + esc(r.void ? app.L("reversed") : app.L("reverse")) + "</button></td>" +
+          "<td>" + rowActions(r) + "</td>" +
         "</tr>"
       ).join("") + "</tbody></table></div>";
 
@@ -1532,7 +1634,7 @@ const UI = {
           (r.personId ? '<span>' + esc(app.personName(r.personId)) + "</span>" : "") +
           '<span>' + esc(acc) + "</span>" +
         "</div>" +
-        '<button class="link-btn small" onclick="UI.reverseTx(\'' + r.id + '\')" ' + (r.void ? "disabled" : "") + ">" + esc(r.void ? app.L("reversed") : app.L("reverse")) + "</button>" +
+        rowActions(r) +
       "</div>"
     ).join("") + "</div>";
 
@@ -1803,7 +1905,8 @@ const UI = {
     const rules = [
       { k: app.L("Receivables & assets"), v: app.L("Money owed to you counts as an asset toward net worth by default.") },
       { k: app.L("Installment allocation"), v: app.L("payments fill schedule rows oldest first; a short payment leaves the row partial, an overpayment rolls into the next rows.") },
-      { k: app.L("Reversals"), v: app.L("nothing is deleted — a void flag plus a reversal marker keeps the audit trail intact.") },
+      { k: app.L("Editing & deleting"), v: app.L("a plain entry — income, expense, transfer, a loan or a payment against one — can be edited or deleted any time from the Transactions tab.", "أي حركة عادية — إيراد، مصروف، تحويل، أو دين/سلفة أو سداد ليهم — تقدر تعدلها أو تمسحها في أي وقت من تبويب الحركات.") },
+      { k: app.L("Reversals"), v: app.L("Reverse is the alternative to deleting: nothing is removed — a void flag plus a marker row keeps it visible in the record.", "Reverse هو البديل للمسح: مفيش حاجة بتتشال — بيتحط عليها علامة إلغاء وسطر توضيحي فيفضلوا ظاهرين في السجل.") },
       { k: app.L("Savings groups (gam3ya)"), v: app.L("contributions are cash out, the payout is cash in; your position is paid-in minus collected — an asset before your turn, a liability after it.") },
       { k: app.L("Opening positions"), v: app.L("receivables and debts carried in from before the system move no cash.") },
       { k: app.L("Forecast"), v: app.L("recurring rules plus unpaid installment rows, applied to today's available balance.") }
@@ -1840,6 +1943,12 @@ const UI = {
     const F = app.FORMS()[S.modal];
     if (!F) return "";
     const form = S.form;
+    // These kinds double as their own edit form (openTxEdit reopens them
+    // pre-filled with the original row's `id`) — while F.title always reads
+    // "+ Income" etc, the header should say "Edit" whenever a real id is
+    // riding along, i.e. this is a correction, not a new entry.
+    const txKinds = ["income", "expense", "transfer", "receivable", "payable", "receivable_payment", "debt_payment", "installment_payment", "group_payment", "group_payout"];
+    const title = (form.id && txKinds.includes(S.modal)) ? app.L("Edit transaction", "تعديل الحركة") : F.title;
     const field = (f) => {
       const val = form[f.k] !== undefined ? form[f.k] : "";
       let input;
@@ -1851,15 +1960,14 @@ const UI = {
       return '<label class="field' + (f.wide ? " wide" : "") + '"><span class="field-label">' + esc(f.label) + "</span>" + input + (f.hint ? '<span class="field-hint">' + esc(f.hint) + "</span>" : "") + "</label>";
     };
     return '<div class="sheet-backdrop" onclick="UI.closeModal()"></div>' +
-      '<div class="dialog" role="dialog" aria-label="' + esc(F.title) + '">' +
-        '<div class="dialog-title">' + esc(F.title) + "</div>" +
+      '<div class="dialog" role="dialog" aria-label="' + esc(title) + '">' +
+        '<div class="dialog-title">' + esc(title) + "</div>" +
         (S.err ? '<div class="dialog-err" role="alert" aria-live="assertive">' + esc(S.err) + "</div>" : "") +
         '<form id="modalForm" class="field-grid" onsubmit="event.preventDefault();UI.submitModal()">' + F.fields.map(field).join("") + "</form>" +
         '<div class="dialog-actions"><button class="btn btn-secondary" onclick="UI.closeModal()">' + esc(t.cancel) + '</button><button class="btn btn-primary" onclick="UI.submitModal()">' + esc(t.save) + "</button></div>" +
       "</div>";
   }
 };
-
 </script>
 <script>
 window.addEventListener("DOMContentLoaded", function () {
