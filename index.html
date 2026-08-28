@@ -338,7 +338,7 @@ class Engine {
     this.props = props || { defaultHorizon: "30", receivablesAreAssets: true, privacyDefault: false };
     this.state = { page: "dashboard", lang: "en", modal: null, form: {}, err: "", privacy: false,
       horizon: 30, filt: { q: "", type: "all", account: "all", preset: "all" }, openPlan: null, saved: "",
-      data: null, txVisible: 25, moreOpen: false, arabicNumerals: false, personDetailId: null };
+      data: null, txVisible: 25, moreOpen: false, arabicNumerals: false, personDetailId: null, whatIf: [] };
   }
 
   // ---- bootstrap -----------------------------------------------------
@@ -853,6 +853,70 @@ class Engine {
     return { events: ev, points: pts, projected: run, inflow: ev.filter(e => e.amount > 0).reduce((s, e) => s + e.amount, 0), outflow: ev.filter(e => e.amount < 0).reduce((s, e) => s + e.amount, 0) };
   }
 
+  // Expense descriptions that have come up at least twice, most-repeated
+  // first — the "repeat this" shortcuts on the Dashboard. Each carries the
+  // category and amount from its most recent occurrence, so the quick-add
+  // chip below opens pre-filled with what was actually paid last time, not
+  // an average or a guess.
+  frequentExpenses(limit) {
+    const byKey = {};
+    this.state.data.tx.filter(t => !t.void && t.type === "expense" && t.desc && t.desc.trim()).forEach(t => {
+      const key = t.desc.trim().toLowerCase();
+      const cur = byKey[key];
+      if (!cur) { byKey[key] = { desc: t.desc.trim(), category: t.category, amount: t.amount, count: 1, lastDate: t.date }; return; }
+      cur.count++;
+      if (t.date >= cur.lastDate) { cur.desc = t.desc.trim(); cur.category = t.category; cur.amount = t.amount; cur.lastDate = t.date; }
+    });
+    return Object.values(byKey).filter(x => x.count >= 2).sort((a, b) => b.count - a.count || (a.lastDate < b.lastDate ? 1 : (a.lastDate > b.lastDate ? -1 : 0))).slice(0, limit || 5);
+  }
+  // "What if" scenarios on the Forecast tab — a hypothetical income/expense
+  // the user is only considering, never recorded as a real transaction (it
+  // lives in this.state, not this.state.data, so it's never persisted and
+  // a page reload clears it same as a wiped scratchpad). addWhatIf/
+  // removeWhatIf/clearWhatIf mutate this.state.whatIf directly, matching
+  // the plain-field-toggle pattern used elsewhere (setFilter etc.) rather
+  // than going through persist()/submit(), since nothing here is real data.
+  addWhatIf(title, amount, date) {
+    const a = this.n(amount);
+    if (!a) return;
+    this.state.whatIf = (this.state.whatIf || []).concat([{ id: this.uid("wi"), title: title || this.L("Scenario", "سيناريو"), amount: a, date: date || this.today() }]);
+  }
+  removeWhatIf(id) {
+    this.state.whatIf = (this.state.whatIf || []).filter(w => w.id !== id);
+  }
+  // Same event list Forecast already shows, plus any active what-if
+  // scenarios merged in and re-sorted — kept as a separate method rather
+  // than a flag on forecast() itself so nothing else that calls forecast()
+  // (the Dashboard's "next 30 days", safeToSpend) ever sees a hypothetical
+  // number by accident.
+  forecastWithWhatIf(days, D) {
+    const base = this.forecast(days, D);
+    const start = new Date(), end = this.addDays(start, days);
+    // Bound both ends, as date *strings* (matching forecast()'s own
+    // convention for real events, e.g. `r.due <= this.iso(end)`) rather
+    // than comparing Date objects against `start` — `start` carries today's
+    // current time-of-day, so a same-day scenario would otherwise compare
+    // as "before start" and vanish. Unbounded below, a past-dated scenario
+    // would pass "<= end" for every horizon forever and never leave.
+    const today = this.today(), endStr = this.iso(end);
+    const wi = (this.state.whatIf || []).filter(w => w.date >= today && w.date <= endStr);
+    if (!wi.length) return base;
+    const ev = base.events.concat(wi.map(w => ({ date: w.date, title: w.title + " " + this.L("(what if)", "(افتراضي)"), amount: w.amount, kind: w.amount >= 0 ? "income" : "expense", whatIf: true })));
+    ev.sort((a, b) => a.date < b.date ? -1 : 1);
+    let run = D.available; const pts = [[0, D.available]];
+    ev.forEach(e => { run = Math.round((run + e.amount) * 100) / 100; e.running = run; pts.push([(new Date(e.date) - start) / (end - start), run]); });
+    return { events: ev, points: pts, projected: run, inflow: ev.filter(e => e.amount > 0).reduce((s, e) => s + e.amount, 0), outflow: ev.filter(e => e.amount < 0).reduce((s, e) => s + e.amount, 0) };
+  }
+  // "Available today" answers "what do I have"; this answers the more
+  // useful daily question — "what can I actually spend without setting up
+  // trouble" — by subtracting whatever's due in the next `days` (default a
+  // week) from it. Reuses forecast()'s own event list so it can never
+  // disagree with what Forecast itself shows.
+  safeToSpend(D, days) {
+    const fc = this.forecast(days || 7, D);
+    const outflow = fc.events.filter(e => e.amount < 0).reduce((s, e) => s + e.amount, 0);
+    return Math.round((D.available + outflow) * 100) / 100;
+  }
   // ---- forms --------------------------------------------------------------
   FORMS() {
     const d = this.state.data, t = this.T[this.state.lang];
@@ -1310,6 +1374,17 @@ const UI = {
     if (!this.app.txEditable(t)) return;
     this.openModal(this.app.txEditKind(t), Object.assign({}, t));
   },
+  addWhatIfC() {
+    const app = this.app, title = document.getElementById("wiTitle").value;
+    const amount = app.n(document.getElementById("wiAmount").value);
+    const kind = document.getElementById("wiKind").value;
+    const date = document.getElementById("wiDate").value;
+    if (!amount) return;
+    app.addWhatIf(title, kind === "expense" ? -Math.abs(amount) : Math.abs(amount), date);
+    this.render();
+  },
+  removeWhatIf(id) { this.app.removeWhatIf(id); this.render(); },
+  clearWhatIfC() { this.app.state.whatIf = []; this.render(); },
   suggestCategoryFromDesc(desc) {
     const app = this.app, kind = app.state.modal;
     const cat = app.suggestCategory(desc, kind);
@@ -1506,12 +1581,24 @@ const UI = {
   // ---- Dashboard (fix #5: single summary pass, Needs Attention promoted) --
   renderDashboard(D, t) {
     const app = this.app, S = app.state;
+    // "What do I have" (available) vs. "what can I actually spend" (safe to
+    // spend, minus the coming week's obligations) — the second number is
+    // the one that actually answers "can I afford this today" without
+    // walking through Forecast by hand first.
+    const safeToSpend = app.safeToSpend(D, 7);
     const hero =
       '<div class="hero-card">' +
         '<div class="hero-label">' + esc(t.availableBalance) + "</div>" +
         '<div class="hero-value">' + app.fmt(D.available) + "</div>" +
         '<div class="hero-note">' + esc(t.availableNote) + "</div>" +
         '<div class="hero-sub-row">' +
+          // Not tone-neg/tone-pos here on purpose: those colors are tuned
+          // for a light surface and read at ~1.9:1 against this card's dark
+          // background (var(--c-accent-900)) -- illegible, not a real
+          // negative-amount cue. The other hero-sub-row values (net worth,
+          // included below) already rely on the "−" sign alone for that,
+          // not color, so this one does too.
+          '<div><div class="hero-sub-label">' + esc(app.L("Safe to spend (7d)", "الآمن للصرف (٧ أيام)")) + '</div><div class="hero-sub-value">' + app.fmt(safeToSpend) + "</div></div>" +
           '<div><div class="hero-sub-label">' + esc(t.netWorth) + '</div><div class="hero-sub-value">' + app.fmt(D.netWorth) + "</div></div>" +
           '<div><div class="hero-sub-label">' + esc(t.receivables) + '</div><div class="hero-sub-value tone-pos">' + app.fmt(D.recvTotal) + "</div></div>" +
           '<div><div class="hero-sub-label">' + esc(t.payables) + '</div><div class="hero-sub-value tone-neg">' + app.fmt(D.payTotal) + "</div></div>" +
@@ -1559,6 +1646,19 @@ const UI = {
       ).join("") + "</div>" : '<p class="muted">' + esc(app.L("Nothing needs attention right now.", "مفيش حاجة محتاجة انتباه دلوقتي.")) + "</p>") +
     "</section>";
 
+    // Repeat a common expense with one tap, pre-filled with its last
+    // amount and category — only appears once a description has actually
+    // repeated (count >= 2 in frequentExpenses), so a one-off entry never
+    // clutters this row.
+    const frequent = app.frequentExpenses(6);
+    const quickAdd = frequent.length ? '<section class="dash-section">' +
+      '<h2 class="section-title">' + esc(app.L("Quick add", "إضافة سريعة")) + "</h2>" +
+      '<div class="pill-row">' + frequent.map(f => {
+        const pre = JSON.stringify({ desc: f.desc, category: f.category || "", amount: f.amount }).replace(/"/g, "&quot;");
+        return '<button class="pill" onclick="UI.openModal(\'expense\',' + pre + ')">' + esc(f.desc) + " · " + app.fmt(f.amount) + "</button>";
+      }).join("") + "</div>" +
+    "</section>" : "";
+
     // Where my money is — position breakdown, single instance only.
     const positionTiles = [
       [t.cash, D.cash], [t.bank, D.bank], [t.wallets, D.wallets],
@@ -1601,7 +1701,7 @@ const UI = {
       ).join("") + "</div>" : "") +
     "</section>";
 
-    return hero + needsAttention + whereMoney + next30 + thisMonth;
+    return hero + needsAttention + quickAdd + whereMoney + next30 + thisMonth;
   },
 
   // ---- Accounts -------------------------------------------------------------
@@ -1971,18 +2071,45 @@ const UI = {
   // ---- Forecast ------------------------------------------------------------
   renderForecast(D, t) {
     const app = this.app, S = app.state;
-    const fc = app.forecast(S.horizon, D);
+    // forecastWithWhatIf, not forecast() directly — merges in any active
+    // "what if" scenarios below so this page's own numbers reflect them,
+    // while every other caller of forecast() (Dashboard's next-30-days,
+    // safeToSpend) stays untouched.
+    const fc = app.forecastWithWhatIf(S.horizon, D);
     const horizons = ["7", "30", "90", "180", "365"];
     const pills = horizons.map(h => '<button class="pill' + (S.horizon == h ? " on" : "") + '" onclick="UI.setHorizon(' + h + ')">' + h + esc(app.L(" days", " يوم")) + "</button>").join("");
     const maxAbs = Math.max(Math.abs(D.available), Math.abs(fc.projected), 1);
     const track = '<div class="proj-bar"><div class="proj-fill" style="width:' + Math.min(100, Math.abs(fc.projected) / maxAbs * 100) + '%;background:' + (fc.projected >= 0 ? "var(--c-pos)" : "var(--c-neg)") + '"></div></div>';
     const events = fc.events.slice(0, 40).map(e => '<div class="event-row"><span class="event-dot ' + (e.amount > 0 ? "pos" : "neg") + '"></span><span class="event-title">' + esc(e.title) + '</span><span class="event-when">' + app.dshort(e.date) + '</span><span class="event-amt ' + (e.amount > 0 ? "tone-pos" : "tone-neg") + '">' + app.fmtS(e.amount) + "</span></div>").join("");
+
+    // "What if" — a hypothetical, never-saved income/expense the user can
+    // add to see its effect on the runway above. Lives in app.state.whatIf
+    // (not app.state.data), so it resets on reload same as any other
+    // scratch UI state.
+    const whatIf = S.whatIf || [];
+    const whatIfList = whatIf.length ? '<div class="pill-row">' + whatIf.map(w =>
+      '<span class="pill">' + esc(w.title) + " " + app.fmtS(w.amount) + ' <button class="link-btn small" onclick="UI.removeWhatIf(\'' + w.id + '\')" aria-label="' + esc(app.L("Remove ") + w.title) + '">×</button></span>'
+    ).join("") + "</div>" : "";
+    const whatIfPanel = '<section class="dash-section"><h2 class="section-title">' + esc(app.L("What if?", "لو حصل...؟")) + "</h2>" +
+      '<p class="muted small">' + esc(app.L("Add a hypothetical expense or income to see how it would change the runway above — nothing here is saved as a real transaction.", "ضيف مصروف أو إيراد افتراضي وشوف تأثيره على التوقعات فوق — مفيش حاجة هنا بتتسجل كحركة حقيقية.")) + "</p>" +
+      '<div class="field-grid">' +
+        '<label class="field wide"><span class="field-label">' + esc(app.L("What", "الوصف")) + '</span><input class="input" id="wiTitle" type="text" placeholder="' + esc(app.L("e.g. New car", "زي: عربية جديدة")) + '"></label>' +
+        '<label class="field"><span class="field-label">' + esc(t.amount) + '</span><input class="input" id="wiAmount" type="number" min="0"></label>' +
+        '<label class="field"><span class="field-label">' + esc(app.L("Type", "النوع")) + '</span><select class="input" id="wiKind"><option value="expense">' + esc(app.L("Expense")) + '</option><option value="income">' + esc(app.L("Income")) + '</option></select></label>' +
+        '<label class="field"><span class="field-label">' + esc(t.date) + '</span><input class="input" id="wiDate" type="date" value="' + app.today() + '"></label>' +
+      "</div>" +
+      '<button class="btn btn-secondary" onclick="UI.addWhatIfC()">' + esc(app.L("Add scenario", "أضف سيناريو")) + "</button>" +
+      whatIfList +
+      (whatIf.length ? '<button class="link-btn small" onclick="UI.clearWhatIfC()">' + esc(app.L("Clear all", "امسح الكل")) + "</button>" : "") +
+    "</section>";
+
     return this.tabHeader(t.forecast, app.L("If nothing changes, this is your runway"), []) +
       '<div class="pill-row">' + pills + "</div>" +
       '<div class="hero-card alt"><div class="hero-label">' + esc(t.timeline) + '</div><div class="hero-value">' + app.fmt(fc.projected) + "</div>" + track +
       '<div class="two-col" style="margin-top:14px"><div class="stat-box"><div class="pos-label">' + esc(app.L("Available today")) + '</div><div class="pos-value">' + app.fmt(D.available) + "</div></div>" +
       '<div class="stat-box"><div class="pos-label">' + esc(app.L("Expected inflows")) + '</div><div class="pos-value tone-pos">' + app.fmt(fc.inflow) + "</div></div></div></div>" +
-      '<h2 class="section-title">' + esc(app.L("Expected outflows")) + " " + app.fmt(Math.abs(fc.outflow)) + '</h2><div class="event-list">' + (events || '<p class="muted">—</p>') + "</div>";
+      '<h2 class="section-title">' + esc(app.L("Expected outflows")) + " " + app.fmt(Math.abs(fc.outflow)) + '</h2><div class="event-list">' + (events || '<p class="muted">—</p>') + "</div>" +
+      whatIfPanel;
   },
 
   // ---- Reports (uses derive(asOf) to build a real 6-month trend) --------
