@@ -163,6 +163,13 @@ h1,h2,h3{font-family:var(--font-head);font-weight:600;margin:0;text-wrap:balance
 
 /* ---- hero ---- */
 .hero-card{background:var(--c-accent-900);color:#f5efe8;border-radius:var(--radius);padding:22px 22px 20px;box-shadow:var(--shadow)}
+
+/* ---- app lock screen ---- */
+.lock-screen{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;background:var(--c-bg)}
+.lock-card{width:100%;max-width:320px;text-align:center;background:var(--c-surface);border:1px solid var(--c-line);border-radius:var(--radius);box-shadow:var(--shadow);padding:32px 24px}
+.lock-mark{font-family:var(--font-head);font-size:28px;color:var(--c-accent);margin-bottom:6px}
+.lock-title{font-family:var(--font-head);font-size:20px;margin:0 0 2px}
+.lock-input{text-align:center;font-size:22px;letter-spacing:10px;margin-top:14px}
 .hero-card.alt{background:var(--c-surface);color:var(--c-text);border:1px solid var(--c-line)}
 .hero-label{font-size:10px;letter-spacing:.12em;text-transform:uppercase;opacity:.75}
 .hero-value{font-family:var(--font-head);font-size:clamp(34px,9vw,46px);line-height:1.05;letter-spacing:-.01em;margin-top:4px;font-variant-numeric:tabular-nums}
@@ -323,7 +330,6 @@ h1,h2,h3{font-family:var(--font-head);font-weight:600;margin:0;text-wrap:balance
 @media (prefers-reduced-motion:no-preference){
   .dash-section, .card-row{transition:none}
 }
-
 </style>
 
 <div id="root"><p style="padding:40px;text-align:center;color:#7d7979">Loading…</p></div>
@@ -338,7 +344,84 @@ class Engine {
     this.props = props || { defaultHorizon: "30", receivablesAreAssets: true, privacyDefault: false };
     this.state = { page: "dashboard", lang: "en", modal: null, form: {}, err: "", privacy: false,
       horizon: 30, filt: { q: "", type: "all", account: "all", preset: "all" }, openPlan: null, saved: "",
-      data: null, txVisible: 25, moreOpen: false, arabicNumerals: false, personDetailId: null, whatIf: [], payoffOrder: "largest" };
+      data: null, txVisible: 25, moreOpen: false, arabicNumerals: false, personDetailId: null, whatIf: [], payoffOrder: "largest",
+      locked: false, lockErr: "", pinMsg: "" };
+  }
+  // ---- app lock (Settings -> App lock) -------------------------------
+  // A screen lock, not encryption: the PIN gates only whether render()
+  // draws the real UI or the lock screen (see UI.render()) — the
+  // financial data underneath sits in localStorage exactly as it always
+  // has, inspectable by anyone with direct access to this browser's
+  // storage (dev tools, etc). It's meant to stop a shoulder-surf or a
+  // quick look by whoever picks up the phone, not a real access-control
+  // boundary — Settings says this explicitly so nobody mistakes it for
+  // more than it is.
+  // Stored under its own localStorage key, deliberately separate from
+  // state.data, so Wipe/Reseed (which only ever touch state.data) can
+  // never accidentally clear or lock someone out via the PIN, and the PIN
+  // survives a data wipe the same way a device passcode would.
+  hasPin() {
+    try { return !!localStorage.getItem("pcfo.pinhash.v1"); } catch (e) { return false; }
+  }
+  // Returns null (rather than throwing) if Web Crypto isn't available —
+  // e.g. the app served over plain, non-localhost HTTP, which isn't a
+  // secure context. Every caller below treats null as "can't verify",
+  // never as "matches" or "silently do nothing".
+  async hashPin(pin) {
+    try {
+      const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(pin));
+      return Array.from(new Uint8Array(buf)).map((b) => b.toString(16).padStart(2, "0")).join("");
+    } catch (e) { return null; }
+  }
+  async setPin(pin) {
+    const hash = await this.hashPin(pin);
+    if (!hash) return false;
+    try { localStorage.setItem("pcfo.pinhash.v1", hash); } catch (e) {}
+    return true;
+  }
+  removePin() {
+    try { localStorage.removeItem("pcfo.pinhash.v1"); } catch (e) {}
+  }
+  // No PIN stored → any input "checks out" (nothing to gate), matching
+  // hasPin() === false meaning the lock screen never shows in the first
+  // place. hashPin() failing (crypto unavailable) is treated as a wrong
+  // PIN, not a pass — "Forgot PIN?" is still the way out.
+  async checkPin(pin) {
+    let stored;
+    try { stored = localStorage.getItem("pcfo.pinhash.v1"); } catch (e) { return true; }
+    if (!stored) return true;
+    const hash = await this.hashPin(pin);
+    return !!hash && hash === stored;
+  }
+  // ---- notifications (Settings -> Notifications) ----------------------
+  // Foreground-only, by necessity: this is a browser tab, not an installed
+  // app with a background push channel, so nothing can arrive while it's
+  // closed — Settings says so. The preference lives in localStorage too
+  // (not state.data), same reasoning as the PIN.
+  notifEnabled() {
+    try { return localStorage.getItem("pcfo.notif.v1") === "1"; } catch (e) { return false; }
+  }
+  setNotifEnabled(v) {
+    try { localStorage.setItem("pcfo.notif.v1", v ? "1" : "0"); } catch (e) {}
+  }
+  // How many things currently need attention — the same conditions the
+  // Dashboard's Needs Attention alerts check (overdue plans/loans, a
+  // negative card balance, budgets at 90%+, unusual spending), but a plain
+  // count rather than the built alert list (which also caps each category
+  // at its top 2) — this feeds the app icon's badge and the one-shot
+  // notification below, both of which want the real total, not a display cap.
+  attentionCount(D) {
+    let n = D.plans.filter((p) => p.overdue > 0).length;
+    n += this.allLoanRows("payable").filter((r) => r.status === "overdue").length;
+    n += this.allLoanRows("receivable").filter((r) => r.status === "overdue").length;
+    // Matches the Dashboard's "Largest open receivable" alert, which fires
+    // on any open receivable outside a plan — not only an overdue one.
+    n += Object.values(D.recv).filter((v) => v > 0).length;
+    if (D.cards < 0) n += 1;
+    const monthSpend = this.monthCategorySpend(), budgets = this.state.data.budgets || {};
+    n += Object.keys(budgets).filter((cat) => (monthSpend[cat] || 0) >= budgets[cat] * 0.9).length;
+    n += this.unusualSpending(monthSpend).length;
+    return n;
   }
 
   // ---- bootstrap -----------------------------------------------------
@@ -1414,8 +1497,29 @@ const UI = {
   init(engine) {
     this.app = engine;
     this.app.load();
+    this.app.state.locked = this.app.hasPin();
     window.addEventListener("resize", () => {});
     this.render();
+    this.maybeNotify();
+  },
+  // One-shot, on open only (not on every render) — a foreground summary
+  // notification of how many things need attention, gated on the user
+  // having opted in from Settings and actually granted permission. Skipped
+  // while locked; unlockC() calls this again once the PIN is entered.
+  maybeNotify() {
+    try {
+      const app = this.app;
+      if (app.state.locked || !app.notifEnabled() || !("Notification" in window) || Notification.permission !== "granted") return;
+      const D = app.derive();
+      const n = app.attentionCount(D);
+      if (n > 0) new Notification(app.T[app.state.lang].brand, { body: n + " " + app.L("item(s) need attention.", "بند محتاج انتباه.") });
+    } catch (e) {}
+  },
+  updateBadge(n) {
+    try {
+      if (!("setAppBadge" in navigator)) return;
+      if (n > 0) navigator.setAppBadge(n); else navigator.clearAppBadge();
+    } catch (e) {}
   },
 
   // ---- generic actions ---------------------------------------------------
@@ -1576,6 +1680,24 @@ const UI = {
 
     if (!S.data) { root.innerHTML = "<p>Loading…</p>"; return; }
     const D = this.app.derive();
+    // attentionCount() re-scans the transaction list (month spend, 3-month
+    // unusual-spending comparison) — too expensive to redo on every
+    // render(), which fires on things with no bearing on it (a keystroke in
+    // the transaction search, opening a modal, switching tabs). persist()
+    // always hands state.data a new object, so caching against that
+    // reference means this only recomputes when the data actually changed.
+    if (this._badgeDataRef !== S.data) {
+      this._badgeDataRef = S.data;
+      this._badgeCount = this.app.attentionCount(D);
+    }
+    this.updateBadge(this._badgeCount);
+
+    if (S.locked) {
+      root.innerHTML = this.renderLockScreen(t);
+      const el = document.getElementById("lockPin");
+      if (el) el.focus();
+      return;
+    }
 
     root.innerHTML =
       '<div class="shell">' +
@@ -2314,6 +2436,23 @@ const UI = {
       '<button class="btn btn-secondary" onclick="UI.setBudgetC()">' + esc(app.L("Set budget", "حدد الميزانية")) + "</button>" +
       '<div style="margin-top:12px">' + budgetRows + "</div>" +
     "</section>";
+    const pinSet = app.hasPin();
+    const appLockSection = '<section class="dash-section"><h2 class="section-title">' + esc(app.L("App lock")) + '</h2><p class="muted small">' + esc(app.L("A quick screen lock for this device — not encryption. It only gates the screen; the data underneath is still stored exactly as before, so anyone with direct access to this browser's storage can still see it. Locks each time the app is opened or reloaded.", "قفل سريع للشاشة على الجهاز ده — مش تشفير. بيقفل الشاشة بس؛ البيانات لسه متخزنة زي ما هي، فأي حد يقدر يوصل لتخزين المتصفح مباشرة يقدر يشوفها. بيقفل في كل مرة تفتح فيها الأبلكيشن أو تعمل ريلود.")) + "</p>" +
+      (pinSet ?
+        '<div class="field-grid">' +
+          '<label class="field"><span class="field-label">' + esc(app.L("Current PIN")) + '</span><input class="input" id="pinCurrent" type="password" inputmode="numeric" maxlength="6"></label>' +
+          '<label class="field"><span class="field-label">' + esc(app.L("New PIN (4–6 digits)", "رقم جديد (٤-٦ أرقام)")) + '</span><input class="input" id="pinNew" type="password" inputmode="numeric" maxlength="6"></label>' +
+        "</div>" +
+        '<div class="btn-row wrap"><button class="btn btn-secondary" onclick="UI.changePinC()">' + esc(app.L("Change PIN", "غيّر الرقم")) + '</button><button class="btn btn-danger" onclick="UI.removePinC()">' + esc(app.L("Remove PIN", "شيل الرقم")) + "</button></div>"
+        :
+        '<div class="field-grid"><label class="field"><span class="field-label">' + esc(app.L("Set a PIN (4–6 digits)", "حدد رقم (٤-٦ أرقام)")) + '</span><input class="input" id="pinNew" type="password" inputmode="numeric" maxlength="6"></label></div>' +
+        '<button class="btn btn-secondary" onclick="UI.setPinC()">' + esc(app.L("Set PIN", "حدد الرقم")) + "</button>"
+      ) +
+      (app.state.pinMsg ? '<p class="muted small" role="status">' + esc(app.state.pinMsg) + "</p>" : "") +
+    "</section>";
+    const notifSection = '<section class="dash-section"><h2 class="section-title">' + esc(app.L("Notifications")) + '</h2><p class="muted small">' + esc(app.L("Only fires while the app is open in a tab — this is a browser page, not an installed app with background push, so nothing arrives while it's closed.", "بيشتغل بس والأبلكيشن مفتوح في تاب — دي صفحة متصفح مش أبلكيشن مثبت بإشعارات في الخلفية، فمفيش حاجة توصل وهو مقفول.")) + "</p>" +
+      '<label style="display:flex;align-items:center;gap:8px;cursor:pointer;min-height:44px"><input type="checkbox" id="notifToggle" ' + (app.notifEnabled() ? "checked" : "") + ' onchange="UI.toggleNotifC()"><span>' + esc(app.L("Notify me about overdue items when I open the app", "نبهني بالبنود المتأخرة لما أفتح الأبلكيشن")) + "</span></label>" +
+    "</section>";
     const rules = [
       { k: app.L("Receivables & assets"), v: app.L("Money owed to you counts as an asset toward net worth by default.") },
       { k: app.L("Installment allocation"), v: app.L("payments fill schedule rows oldest first; a short payment leaves the row partial, an overpayment rolls into the next rows.") },
@@ -2329,6 +2468,8 @@ const UI = {
       '<button class="btn btn-secondary" onclick="document.getElementById(\'restoreFile\').click()">' + esc(t.importJson) + "</button>" +
       '<input type="file" id="restoreFile" accept="application/json,.json" style="display:none" onchange="UI.restoreJsonFile(this)">' +
       "</div></section>" +
+      appLockSection +
+      notifSection +
       (app.state.lang === "ar" ?
         '<section class="dash-section"><h2 class="section-title">' + esc(app.L("Display")) + "</h2>" +
         '<label style="display:flex;align-items:center;gap:8px;cursor:pointer;min-height:44px">' +
@@ -2356,6 +2497,62 @@ const UI = {
     "</div>";
   },
 
+  // ---- lock screen ----------------------------------------------------------
+  renderLockScreen(t) {
+    const app = this.app, S = app.state;
+    return '<div class="lock-screen"><div class="lock-card">' +
+      '<div class="lock-mark">₤</div>' +
+      '<h1 class="lock-title">' + esc(t.brand) + "</h1>" +
+      '<p class="muted">' + esc(app.L("Enter your PIN", "دخّل الرقم السري")) + "</p>" +
+      (S.lockErr ? '<div class="dialog-err" role="alert" aria-live="assertive">' + esc(S.lockErr) + "</div>" : "") +
+      '<input class="input lock-input" id="lockPin" type="password" inputmode="numeric" maxlength="6" autocomplete="off" onkeydown="if(event.key===\'Enter\')UI.unlockC()">' +
+      '<button class="btn btn-primary block" style="margin-top:10px" onclick="UI.unlockC()">' + esc(app.L("Unlock", "افتح")) + "</button>" +
+      '<button class="link-btn small" onclick="UI.forgotPinC()">' + esc(app.L("Forgot PIN?", "نسيت الرقم؟")) + "</button>" +
+    "</div></div>";
+  },
+  async unlockC() {
+    const app = this.app, pin = document.getElementById("lockPin").value;
+    if (await app.checkPin(pin)) { app.state.locked = false; app.state.lockErr = ""; this.render(); this.maybeNotify(); }
+    else { app.state.lockErr = app.L("Wrong PIN.", "الرقم غلط."); this.render(); }
+  },
+  forgotPinC() {
+    const app = this.app;
+    if (confirm(app.L("This only removes the screen lock — none of your financial data is affected. Continue?", "ده هيشيل قفل الشاشة بس — بياناتك المالية مش هتتأثر. تكمل؟"))) {
+      app.removePin(); app.state.locked = false; app.state.lockErr = ""; this.render(); this.maybeNotify();
+    }
+  },
+  async setPinC() {
+    const app = this.app, pin = document.getElementById("pinNew").value;
+    if (!/^\d{4,6}$/.test(pin)) { app.state.pinMsg = app.L("PIN must be 4–6 digits.", "الرقم لازم يكون من ٤ لـ ٦ أرقام."); this.render(); return; }
+    const ok = await app.setPin(pin);
+    app.state.pinMsg = ok ? app.L("PIN set.", "اتحدد الرقم.") : app.L("Couldn't set a PIN on this device — secure storage isn't available here.", "معرفناش نحدد رقم على الجهاز ده — التخزين الآمن مش متاح هنا.");
+    this.render();
+  },
+  async changePinC() {
+    const app = this.app, cur = document.getElementById("pinCurrent").value, next = document.getElementById("pinNew").value;
+    if (!(await app.checkPin(cur))) { app.state.pinMsg = app.L("Current PIN is wrong.", "الرقم الحالي غلط."); this.render(); return; }
+    if (!/^\d{4,6}$/.test(next)) { app.state.pinMsg = app.L("PIN must be 4–6 digits.", "الرقم لازم يكون من ٤ لـ ٦ أرقام."); this.render(); return; }
+    const ok = await app.setPin(next);
+    app.state.pinMsg = ok ? app.L("PIN changed.", "اتغير الرقم.") : app.L("Couldn't change the PIN on this device — secure storage isn't available here.", "معرفناش نغير الرقم على الجهاز ده — التخزين الآمن مش متاح هنا.");
+    this.render();
+  },
+  async removePinC() {
+    const app = this.app, cur = document.getElementById("pinCurrent").value;
+    if (!(await app.checkPin(cur))) { app.state.pinMsg = app.L("Current PIN is wrong.", "الرقم الحالي غلط."); this.render(); return; }
+    app.removePin();
+    app.state.pinMsg = app.L("PIN removed.", "اتشال الرقم.");
+    this.render();
+  },
+  async toggleNotifC() {
+    const app = this.app, next = !app.notifEnabled();
+    if (next) {
+      if (!("Notification" in window)) { alert(app.L("Notifications aren't supported in this browser.", "الإشعارات مش متاحة في المتصفح ده.")); return; }
+      const perm = await Notification.requestPermission();
+      if (perm !== "granted") { alert(app.L("Notification permission was not granted.", "مفيش إذن للإشعارات.")); return; }
+    }
+    app.setNotifEnabled(next);
+    this.render();
+  },
   // ---- modal ---------------------------------------------------------------
   renderModal(t) {
     const app = this.app, S = app.state;
