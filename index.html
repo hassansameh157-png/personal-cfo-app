@@ -338,7 +338,7 @@ class Engine {
     this.props = props || { defaultHorizon: "30", receivablesAreAssets: true, privacyDefault: false };
     this.state = { page: "dashboard", lang: "en", modal: null, form: {}, err: "", privacy: false,
       horizon: 30, filt: { q: "", type: "all", account: "all", preset: "all" }, openPlan: null, saved: "",
-      data: null, txVisible: 25, moreOpen: false, arabicNumerals: false, personDetailId: null, whatIf: [] };
+      data: null, txVisible: 25, moreOpen: false, arabicNumerals: false, personDetailId: null, whatIf: [], payoffOrder: "largest" };
   }
 
   // ---- bootstrap -----------------------------------------------------
@@ -668,7 +668,7 @@ class Engine {
       { id: "r4", name: "Mobile line", type: "expense", amount: 250, accountId: "vf", category: "Mobile", freq: "monthly", day: 15 },
       { id: "r5", name: "Streaming bundle", type: "expense", amount: 300, accountId: "card", category: "Subscriptions", freq: "yearly", day: 8 }
     ];
-    return { accounts, people, tx, plans, groups, investments, recurring, customCategories: { income: [], expense: [] }, audit: [{ at: new Date().toISOString().slice(0, 16).replace("T", " "), what: "Demo data seeded" }] };
+    return { accounts, people, tx, plans, groups, investments, recurring, customCategories: { income: [], expense: [] }, budgets: {}, audit: [{ at: new Date().toISOString().slice(0, 16).replace("T", " "), what: "Demo data seeded" }] };
   }
 
   // ---- engine: single source of truth ------------------------------------
@@ -907,6 +907,66 @@ class Engine {
     ev.forEach(e => { run = Math.round((run + e.amount) * 100) / 100; e.running = run; pts.push([(new Date(e.date) - start) / (end - start), run]); });
     return { events: ev, points: pts, projected: run, inflow: ev.filter(e => e.amount > 0).reduce((s, e) => s + e.amount, 0), outflow: ev.filter(e => e.amount < 0).reduce((s, e) => s + e.amount, 0) };
   }
+  // Month-to-date expense total per category — shared by the Dashboard's
+  // "This month" bars, the budget check below, and unusualSpending(), so
+  // all three always agree on what "this month" means.
+  monthCategorySpend() {
+    const today = this.today(), mStart = today.slice(0, 8) + "01";
+    const map = {};
+    this.state.data.tx.filter(t => !t.void && t.type === "expense" && t.date >= mStart && t.date <= today).forEach(t => {
+      const c = t.category || "Other"; map[c] = (map[c] || 0) + t.amount;
+    });
+    return map;
+  }
+  // A monthly limit per category (Settings → Budgets). amount <= 0 clears
+  // the budget for that category rather than storing a zero one.
+  setBudget(category, amount) {
+    const data = JSON.parse(JSON.stringify(this.state.data));
+    data.budgets = data.budgets || {};
+    const amt = this.n(amount);
+    if (amt <= 0) delete data.budgets[category]; else data.budgets[category] = amt;
+    this.persist(data, amt > 0 ? "Set budget for " + category + " to " + this.fmt(amt) : "Cleared budget for " + category);
+  }
+  // Categories running hot this month vs. their own recent history — not a
+  // fixed threshold, so it works without the user ever setting a budget.
+  // Compares month-to-date spend against the same category's totals over
+  // the same number of days in each of the last 3 months (a fair
+  // comparison — day 5 of this month against a full prior month would
+  // always look "low"). Needs at least 2 of those 3 months to have any
+  // spend in the category before it says anything, so a category used for
+  // the first time this month never gets flagged.
+  // curMap: pass the caller's own monthCategorySpend() result when it
+  // already has one (the Dashboard does, for the budget check) so this
+  // doesn't re-scan the same month's transactions a second time.
+  unusualSpending(curMap) {
+    const d = this.state.data, today = new Date(), dayOfMonth = today.getDate();
+    const catTotals = (from, to) => {
+      const m = {};
+      d.tx.filter(t => !t.void && t.type === "expense" && t.date >= from && t.date <= to).forEach(t => { const c = t.category || "Other"; m[c] = (m[c] || 0) + t.amount; });
+      return m;
+    };
+    curMap = curMap || this.monthCategorySpend();
+    const priorMaps = [];
+    for (let i = 1; i <= 3; i++) {
+      const mStart = this.addMonths(new Date(today.getFullYear(), today.getMonth(), 1), -i);
+      const lastDay = new Date(mStart.getFullYear(), mStart.getMonth() + 1, 0).getDate();
+      const mEnd = new Date(mStart.getFullYear(), mStart.getMonth(), Math.min(dayOfMonth, lastDay));
+      priorMaps.push(catTotals(this.iso(mStart), this.iso(mEnd)));
+    }
+    const results = [];
+    Object.keys(curMap).forEach(cat => {
+      const priorVals = priorMaps.map(m => m[cat] || 0).filter(v => v > 0);
+      if (priorVals.length < 2) return;
+      const avg = priorVals.reduce((s, v) => s + v, 0) / priorVals.length;
+      if (avg <= 0) return;
+      const pct = (curMap[cat] - avg) / avg;
+      // 40%+ over average AND at least 100 (currency units) of real
+      // difference — the percentage alone would flag a 50-vs-35 category as
+      // loudly as a 5,000-vs-3,500 one.
+      if (pct >= 0.4 && (curMap[cat] - avg) >= 100) results.push({ category: cat, current: curMap[cat], avg, pct });
+    });
+    return results.sort((a, b) => b.pct - a.pct);
+  }
   // "Available today" answers "what do I have"; this answers the more
   // useful daily question — "what can I actually spend without setting up
   // trouble" — by subtracting whatever's due in the next `days` (default a
@@ -929,9 +989,17 @@ class Engine {
     const cats = ["Food", "Transportation", "Rent", "Electricity", "Water", "Internet", "Mobile", "Shopping", "Clothing", "Medical", "Education", "Entertainment", "Family", "Children", "Car", "Home", "Subscriptions", "Loans", "Other"].concat(custom.expense || []).map(c => ({ v: c, l: c }));
     const inc = ["Salary", "Freelance", "Business", "Commission", "Rental", "Interest", "Selling items", "Other"].concat(custom.income || []).map(c => ({ v: c, l: c }));
     const D = (k, l, type, extra) => Object.assign({ k, label: l, type: type || "text" }, extra || {});
+    // Split-expense fields (below) only make sense when adding a new
+    // expense, not editing one — they aren't stored on the transaction
+    // itself (nothing links the two rows together, see submit()), so
+    // showing them on an edit would silently do nothing if filled in.
+    const isEditingExpense = this.state.modal === "expense" && this.state.form && this.state.form.id;
     const F = {
       income: { title: t.aIncome, fields: [D("date", t.date, "date"), D("amount", t.amount, "number"), D("accountId", t.account, "select", { options: accs }), D("category", t.category, "select", { options: inc }), D("personId", t.person + this.L(" (optional)", " (اختياري)"), "select", { options: [{ v: "", l: "—" }].concat(ppl) }), D("desc", t.details, "text", { wide: true })] },
-      expense: { title: t.aExpense, fields: [D("date", t.date, "date"), D("amount", t.amount, "number"), D("accountId", t.account, "select", { options: accs }), D("category", t.category, "select", { options: cats }), D("personId", "Merchant / person", "select", { options: [{ v: "", l: "—" }].concat(ppl) }), D("desc", t.details, "text", { wide: true })] },
+      expense: { title: t.aExpense, fields: [D("date", t.date, "date"), D("amount", t.amount, "number"), D("accountId", t.account, "select", { options: accs }), D("category", t.category, "select", { options: cats }), D("personId", "Merchant / person", "select", { options: [{ v: "", l: "—" }].concat(ppl) }), D("desc", t.details, "text", { wide: true })].concat(isEditingExpense ? [] : [
+        D("splitPersonId", this.L("Split with (optional)", "قسمها مع (اختياري)"), "select", { options: [{ v: "", l: "—" }].concat(ppl) }),
+        D("splitAmount", this.L("Their share", "حصتهم"), "number", { hint: this.L("Optional — also records this amount as owed to you by that person.", "اختياري — بيسجل المبلغ ده كمان كمبلغ مستحق ليك من الشخص ده.") })
+      ]) },
       transfer: { title: t.aTransfer, fields: [D("date", t.date, "date"), D("amount", t.amount, "number"), D("fromId", "From", "select", { options: accs }), D("toId", "To", "select", { options: accs }), D("desc", t.details, "text", { wide: true, hint: "Transfers never touch income or expense totals." })] },
       // P1 fix: these four forms used to default personId to the first
       // person in the list (effectively always "Hazem") since a bare select
@@ -992,6 +1060,18 @@ class Engine {
     if (["income", "expense", "receivable", "payable", "receivable_payment", "debt_payment"].includes(k)) {
       if (!need(N("amount") > 0, "Amount must be greater than zero.")) return false;
       if (["receivable", "payable", "receivable_payment", "debt_payment"].includes(k) && !need(f.personId, "Pick a person.")) return false;
+      // Split expense: validated up front, alongside everything else, so a
+      // bad split blocks the whole submission rather than leaving the
+      // expense posted with no matching receivable. Both fields are marked
+      // "(optional)" independently in the form, so filling only one (e.g.
+      // an amount with no person picked) has to be caught here explicitly
+      // — silently doing nothing would look, to the user, exactly like a
+      // split that succeeded.
+      const hasSplitPerson = k === "expense" && !f.id && !!f.splitPersonId;
+      const hasSplitAmount = k === "expense" && !f.id && this.n(f.splitAmount) > 0;
+      if ((hasSplitPerson || hasSplitAmount) && !need(hasSplitPerson && hasSplitAmount, "Pick who to split with, and enter their share — or leave both blank.")) return false;
+      const splitting = hasSplitPerson && hasSplitAmount;
+      if (splitting && !need(this.n(f.splitAmount) <= N("amount"), "Their share can't be more than the total expense.")) return false;
       const fields = { date: f.date, amount: N("amount"), accountId: f.accountId || null, fromId: null, toId: null, category: f.category || null, personId: f.personId || null, desc: f.desc || this.FORMS()[k].title, due: f.due || null };
       if (f.id) {
         const ex = data.tx.find(x => x.id === f.id);
@@ -1000,6 +1080,14 @@ class Engine {
         note = "Updated " + this.FORMS()[k].title.toLowerCase() + " " + this.fmt(N("amount"));
       } else {
         push(Object.assign({ type: k }, fields));
+        // Posted as an independent receivable, same as one added from
+        // Receivables & Payables directly — nothing in the data model
+        // links it back to this expense (only plan/group ids get that
+        // treatment), so editing or deleting either one later never
+        // touches the other.
+        if (splitting) {
+          push({ type: "receivable", date: f.date, amount: this.n(f.splitAmount), accountId: null, fromId: null, toId: null, category: null, personId: f.splitPersonId, due: null, desc: this.L("Share of: ", "حصة من: ") + fields.desc });
+        }
         note = this.FORMS()[k].title + " " + this.fmt(N("amount"));
       }
     } else if (k === "transfer") {
@@ -1342,6 +1430,7 @@ const UI = {
   setLang(l) { this.app.state.lang = l; this.render(); },
   togglePrivacy() { this.app.state.privacy = !this.app.state.privacy; this.render(); },
   toggleArabicNumerals() { this.app.state.arabicNumerals = !this.app.state.arabicNumerals; this.render(); },
+  setPayoffOrder(v) { this.app.state.payoffOrder = v; this.render(); },
   openModal(kind, pre) { this.app.open(kind, pre); this.render(); },
   closeModal() { this.app.state.modal = null; this.app.state.err = ""; this.render(); },
   submitModal() {
@@ -1418,6 +1507,14 @@ const UI = {
     const g = (this.app.state.data.groups || []).find(x => x.id === id); if (!g) return;
     if (this.app.groupCanDelete(id) && confirm(this.app.L("Delete ") + g.name + "?")) { this.app.deleteGroup(id); this.render(); }
   },
+  setBudgetC() {
+    const cat = document.getElementById("budgetCat").value;
+    const amt = document.getElementById("budgetAmt").value;
+    if (!cat || this.app.n(amt) <= 0) return;
+    this.app.setBudget(cat, amt);
+    this.render();
+  },
+  clearBudgetC(cat) { this.app.setBudget(cat, 0); this.render(); },
   addCategoryC(kind) {
     const input = document.getElementById(kind === "income" ? "newIncomeCat" : "newExpenseCat");
     const res = this.app.addCategory(kind, input.value);
@@ -1580,7 +1677,7 @@ const UI = {
 
   // ---- Dashboard (fix #5: single summary pass, Needs Attention promoted) --
   renderDashboard(D, t) {
-    const app = this.app, S = app.state;
+    const app = this.app, S = app.state, d = app.state.data;
     // "What do I have" (available) vs. "what can I actually spend" (safe to
     // spend, minus the coming week's obligations) — the second number is
     // the one that actually answers "can I afford this today" without
@@ -1637,6 +1734,27 @@ const UI = {
       cta: t.collect + " →", act: "UI.openModal('receivable_payment',{personId:'" + r.personId + "'})"
     }));
     if (D.cards < 0) alerts.push({ title: app.L("Credit card balance"), body: app.fmt(Math.abs(D.cards)) + app.L(" outstanding — counted as a liability, not as available money."), cta: t.accounts + " →", go: "accounts" });
+    // Budgets set in Settings, 90%+ spent this month — a nudge before it's
+    // actually over, not just an after-the-fact tally.
+    const monthSpend = app.monthCategorySpend(), budgets = d.budgets || {};
+    Object.keys(budgets).filter(cat => (monthSpend[cat] || 0) >= budgets[cat] * 0.9).sort((a, b) => (monthSpend[b] / budgets[b]) - (monthSpend[a] / budgets[a])).slice(0, 2).forEach(cat => {
+      const spent = monthSpend[cat] || 0, over = spent > budgets[cat];
+      alerts.push({
+        // title is esc()'d as a whole at render time (see needsAttention
+        // below) — unlike body, which is inserted raw, so it's escaped
+        // here at construction instead (matching fmt()'s <bdi> HTML).
+        title: app.L(over ? "Over budget — " : "Near budget — ") + cat,
+        body: app.fmt(spent) + app.L(" of ") + app.fmt(budgets[cat]) + app.L(" spent this month."),
+        cta: t.transactions + " →", act: "UI.setPage('transactions');UI.setFilter('q','" + esc(cat).replace(/'/g, "\\'") + "')"
+      });
+    });
+    // Categories running well above their own recent average — a
+    // history-based nudge for whoever hasn't set a budget for that category.
+    app.unusualSpending(monthSpend).slice(0, 2).forEach(u => alerts.push({
+      title: app.L("Unusual spending — ") + u.category,
+      body: app.fmt(u.current) + app.L(" this month so far — about ") + Math.round(u.pct * 100) + app.L("% above your recent average of ") + app.fmt(u.avg) + ".",
+      cta: t.transactions + " →", act: "UI.setPage('transactions');UI.setFilter('q','" + esc(u.category).replace(/'/g, "\\'") + "')"
+    }));
 
     const needsAttention = '<section class="dash-section">' +
       '<h2 class="section-title">' + esc(t.needsAttention) + "</h2>" +
@@ -1687,7 +1805,13 @@ const UI = {
     const monthTx = D.live.filter(x => x.date >= mStart);
     const monthIncome = monthTx.filter(x => ["income", "refund", "investment_return"].includes(x.type)).reduce((s, x) => s + x.amount, 0);
     const monthExpense = monthTx.filter(x => x.type === "expense").reduce((s, x) => s + x.amount, 0);
-    const catMap = {}; monthTx.filter(x => x.type === "expense").forEach(x => catMap[x.category || "Other"] = (catMap[x.category || "Other"] || 0) + x.amount);
+    // app.monthCategorySpend(), not a locally-filtered copy — it's also
+    // what the budget/unusual-spending alerts above check against, so a
+    // category can't show over-budget red here while staying silent there
+    // (or vice versa) just because the two computed "this month" differently
+    // (monthCategorySpend() bounds its range to today; D.live has no upper
+    // bound, so a future-dated entry could otherwise only show up in one).
+    const catMap = app.monthCategorySpend();
     const catArr = Object.entries(catMap).sort((a, b) => b[1] - a[1]);
     const maxCat = Math.max(1, ...catArr.map(c => c[1]));
     const thisMonth = '<section class="dash-section">' +
@@ -1696,9 +1820,11 @@ const UI = {
         '<div class="stat-box"><div class="pos-label">' + esc(t.income) + '</div><div class="pos-value tone-pos">' + app.fmt(monthIncome) + "</div></div>" +
         '<div class="stat-box"><div class="pos-label">' + esc(t.expenses) + '</div><div class="pos-value tone-neg">' + app.fmt(monthExpense) + "</div></div>" +
       "</div>" +
-      (catArr.length ? '<div class="bar-list">' + catArr.slice(0, 5).map(([name, v]) =>
-        '<div class="bar-row"><span class="bar-name">' + esc(name) + '</span><div class="bar-track"><div class="bar-fill" style="width:' + Math.max(4, v / maxCat * 100) + '%"></div></div><span class="bar-val">' + app.fmt(v) + "</span></div>"
-      ).join("") + "</div>" : "") +
+      (catArr.length ? '<div class="bar-list">' + catArr.slice(0, 5).map(([name, v]) => {
+        const budget = (d.budgets || {})[name];
+        const over = budget && v > budget;
+        return '<div class="bar-row"><span class="bar-name">' + esc(name) + '</span><div class="bar-track"><div class="bar-fill' + (over ? " neg-fill" : "") + '" style="width:' + Math.max(4, v / maxCat * 100) + '%"></div></div><span class="bar-val' + (over ? " tone-neg" : "") + '">' + app.fmt(v) + (budget ? " / " + app.fmt(budget) : "") + "</span></div>";
+      }).join("") + "</div>" : "") +
     "</section>";
 
     return hero + needsAttention + quickAdd + whereMoney + next30 + thisMonth;
@@ -2007,14 +2133,21 @@ const UI = {
 
   // ---- Receivables & Payables (ledger view over the same person data) ----
   renderLedgers(D, t) {
-    const app = this.app, d = app.state.data;
+    const app = this.app, S = app.state, d = app.state.data;
     const withNet = d.people.map(p => {
       const planIn = D.plans.filter(x => x.personId === p.id && x.direction === "in").reduce((s, x) => s + x.remaining, 0);
       const planOut = D.plans.filter(x => x.personId === p.id && x.direction === "out").reduce((s, x) => s + x.remaining, 0);
       return { p, r: Math.max(0, D.recv[p.id] || 0) + planIn, y: Math.max(0, D.pay[p.id] || 0) + planOut };
     });
     const owedToMe = withNet.filter(x => x.r > 0).sort((a, b) => b.r - a.r);
-    const iOwe = withNet.filter(x => x.y > 0).sort((a, b) => b.y - a.y);
+    // Payoff order: "largest" (avalanche — clears the biggest debt/most
+    // interest-bearing exposure first) is the long-standing default sort;
+    // "smallest" (snowball — clears whole debts off the list fastest, for
+    // momentum) is the alternative a lot of payoff advice recommends instead.
+    // Doesn't touch owedToMe — this is a strategy for what *you* pay off,
+    // not for chasing collections.
+    const payoffOrder = S.payoffOrder || "largest";
+    const iOwe = withNet.filter(x => x.y > 0).sort((a, b) => payoffOrder === "smallest" ? a.y - b.y : b.y - a.y);
     // Next open due date among this person's plain loans (not installment
     // plans, which already show their own due dates on the Installments
     // tab) — the earliest unpaid row, FIFO, per loanRows().
@@ -2028,9 +2161,15 @@ const UI = {
     const list = (arr, key, tone, kind) => '<div class="card-list">' + (arr.length ? arr.map(x =>
       '<div class="card-row"><div class="card-row-top"><div class="card-row-title">' + esc(x.p.name) + '</div><div class="card-row-amt tone-' + tone + '">' + app.fmt(x[key]) + "</div></div>" + dueMeta(x.p.id, kind) + "</div>"
     ).join("") : '<p class="muted">' + esc(app.L("Fully settled")) + "</p>") + "</div>";
+    const payoffToggle = iOwe.length > 1 ? '<div class="pill-row" style="margin-top:8px">' +
+      '<button class="pill' + (payoffOrder === "largest" ? " on" : "") + '" onclick="UI.setPayoffOrder(\'largest\')">' + esc(app.L("Largest first", "الأكبر الأول")) + "</button>" +
+      '<button class="pill' + (payoffOrder === "smallest" ? " on" : "") + '" onclick="UI.setPayoffOrder(\'smallest\')">' + esc(app.L("Smallest first", "الأصغر الأول")) + "</button>" +
+    "</div>" : "";
     return this.tabHeader(t.ledgers, app.L("Open positions by person and by plan"), [[t.aReceivable, "UI.openModal('receivable')"], [t.aDebt, "UI.openModal('payable')"]]) +
       '<h2 class="section-title">' + esc(t.receivables) + " · " + app.fmt(D.recvTotal) + "</h2>" + list(owedToMe, "r", "pos", "receivable") +
-      '<h2 class="section-title" style="margin-top:20px">' + esc(t.payables) + " · " + app.fmt(D.payTotal) + "</h2>" + list(iOwe, "y", "neg", "payable");
+      '<h2 class="section-title" style="margin-top:20px">' + esc(t.payables) + " · " + app.fmt(D.payTotal) + "</h2>" +
+      (iOwe.length > 1 ? '<p class="muted small">' + esc(app.L("Which to pay off first: largest balance (least total interest/exposure) or smallest (clears whole debts off this list fastest).", "أنهي دين تسدده الأول: الأكبر (أقل فايدة أو تعرض إجمالي) ولا الأصغر (يخلص ديون كاملة من القايمة أسرع).")) + "</p>" + payoffToggle : "") +
+      list(iOwe, "y", "neg", "payable");
   },
 
   // ---- Investments -----------------------------------------------------------
@@ -2158,6 +2297,23 @@ const UI = {
       '<div style="margin-top:12px"><div class="field-label" style="margin-bottom:6px">' + esc(t.expenses) + "</div>" + catChips("expense", custom.expense || []) + "</div>" +
       '<div style="margin-top:12px"><div class="field-label" style="margin-bottom:6px">' + esc(t.income) + "</div>" + catChips("income", custom.income || []) + "</div>" +
     "</section>";
+    // Reuses the exact same expense-category list (built-in + custom) the
+    // entry forms already build, rather than a second copy of the built-in
+    // list that could drift out of sync with it.
+    const catOptions = app.FORMS().expense.fields.find(f => f.k === "category").options;
+    const budgets = d.budgets || {};
+    const budgetRows = Object.keys(budgets).length ? '<div class="card-list">' + Object.entries(budgets).sort((a, b) => b[1] - a[1]).map(([cat, amt]) =>
+      '<div class="card-row"><div class="card-row-top"><div class="card-row-title">' + esc(cat) + '</div><div class="card-row-amt">' + app.fmt(amt) + "/" + esc(app.L("mo", "شهر")) + "</div></div>" +
+      '<button class="link-btn small" onclick="UI.clearBudgetC(\'' + cat.replace(/'/g, "\\'") + '\')">' + esc(app.L("Remove")) + "</button></div>"
+    ).join("") + "</div>" : '<p class="muted small">' + esc(app.L("No budgets set yet.", "لسه مفيش ميزانيات متحددة.")) + "</p>";
+    const budgetsSection = '<section class="dash-section"><h2 class="section-title">' + esc(app.L("Budgets")) + '</h2><p class="muted small">' + esc(app.L("Set a monthly limit per expense category — the Dashboard flags it once you're near or over.", "حدد سقف شهري لكل فئة مصروف — الداشبورد هينبهك لما تقرب أو تتخطاه.")) + '</p>' +
+      '<div class="field-grid">' +
+        '<label class="field"><span class="field-label">' + esc(t.category) + '</span><select class="input" id="budgetCat">' + catOptions.map(o => '<option value="' + esc(o.v) + '">' + esc(o.l) + "</option>").join("") + "</select></label>" +
+        '<label class="field"><span class="field-label">' + esc(app.L("Monthly limit")) + '</span><input class="input" id="budgetAmt" type="number" min="0"></label>' +
+      "</div>" +
+      '<button class="btn btn-secondary" onclick="UI.setBudgetC()">' + esc(app.L("Set budget", "حدد الميزانية")) + "</button>" +
+      '<div style="margin-top:12px">' + budgetRows + "</div>" +
+    "</section>";
     const rules = [
       { k: app.L("Receivables & assets"), v: app.L("Money owed to you counts as an asset toward net worth by default.") },
       { k: app.L("Installment allocation"), v: app.L("payments fill schedule rows oldest first; a short payment leaves the row partial, an overpayment rolls into the next rows.") },
@@ -2181,6 +2337,7 @@ const UI = {
         "</label></section>"
         : "") +
       categoriesSection +
+      budgetsSection +
       '<section class="dash-section"><h2 class="section-title">' + esc(t.rules) + '</h2><div class="rules-list">' + rules.map(r => '<div class="rule-row"><div class="rule-k">' + esc(r.k) + '</div><div class="rule-v">' + esc(r.v) + "</div></div>").join("") + "</div></section>" +
       '<section class="dash-section"><h2 class="section-title">' + esc(t.auditTrail) + '</h2><div class="audit-list">' + (d.audit || []).slice(0, 20).map(a => '<div class="audit-row"><span>' + esc(a.at) + '</span><span>' + esc(a.what) + "</span></div>").join("") + "</div></section>" +
       '<section class="dash-section"><h2 class="section-title tone-neg">' + esc(t.dangerZone) + '</h2><div class="btn-row wrap"><button class="btn btn-secondary" onclick="UI.reseed()">' + esc(t.reseed) + '</button><button class="btn btn-danger" onclick="UI.wipe()">' + esc(t.wipe) + "</button></div></section>";
