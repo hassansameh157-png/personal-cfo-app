@@ -46,8 +46,7 @@
   }
 </script>
 
-<style>
-:root{
+<style>:root{
   --c-bg:#f3f2f2; --c-surface:#ffffff; --c-surface-2:#f8f4f4; --c-surface-3:#eae7e7;
   /* P1 fix: was #7d7979, which measures 3.55–3.94:1 on white/bg — fails
      WCAG AA (4.5:1) for the small caption/label text it's used on
@@ -357,8 +356,7 @@ button.bar-row{width:100%;border:0;background:none;padding:6px 0;min-height:44px
 
 <div id="root"><p style="padding:40px;text-align:center;color:#7d7979">Loading…</p></div>
 
-<script>
-// Personal CFO — core ledger engine, ported faithfully from the original app's
+<script>// Personal CFO — core ledger engine, ported faithfully from the original app's
 // decoded source (seed/derive/planState/groupState/forecast/FORMS/submit).
 // Logic is preserved as-is; only the class wrapper and I/O layer are new.
 
@@ -1152,7 +1150,7 @@ class Engine {
       // "Electronic card" (ecard) — a prepaid/gift-card-style balance, e.g.
       // an Amazon or store gift card: holds a real balance like cash or a
       // wallet (no limit/debt concept), just rendered as its own card tile.
-      account: { title: t.aAccount, fields: [D("name", t.name, "text"), D("type", t.type, "select", { options: [{ v: "cash", l: "Cash" }, { v: "bank", l: "Bank" }, { v: "wallet", l: "Smart wallet" }, { v: "card", l: "Credit card" }, { v: "ecard", l: "Electronic card" }, { v: "other", l: "Other" }] }), D("bank", "Bank / issuer", "text"), D("opening", "Opening balance", "number"), D("limit", "Credit limit", "number", { hint: "Leave 0 for non-card accounts." }), D("color", this.L("Color", "اللون"), "color", { hint: this.L("Cash, wallets, credit and electronic cards all render as a card face in this color — pick a real one to match.", "الكاش والمحافظ والكروت (الائتمان والإلكترونية) كلهم بيتعرضوا بشكل كارت باللون ده — اختار لون حقيقي عشان يشبهه.") }), D("desc", "Reference / notes", "text", { wide: true })] },
+      account: { title: t.aAccount, fields: [D("name", t.name, "text"), D("type", t.type, "select", { options: [{ v: "cash", l: "Cash" }, { v: "bank", l: "Bank" }, { v: "wallet", l: "Smart wallet" }, { v: "card", l: "Credit card" }, { v: "ecard", l: "Electronic card" }, { v: "other", l: "Other" }] }), D("bank", "Bank / issuer", "text"), D("opening", "Opening balance", "number"), D("limit", "Credit limit", "number", { hint: "Leave 0 for non-card accounts." }), D("color", this.L("Color", "اللون"), "color", { hint: this.L("Every account type but \"Other\" renders as a card face in this color — pick a real one to match.", "كل أنواع الحسابات غير \"أخرى\" بتتعرض بشكل كارت باللون ده — اختار لون حقيقي عشان يشبهه.") }), D("desc", "Reference / notes", "text", { wide: true })] },
       // Start amount / current outstanding is editable here too, same as
       // any other opening position (see the "Opening positions" rule in
       // Settings) — it's just the baseline the balance is computed from,
@@ -1561,8 +1559,7 @@ class Engine {
 
 if (typeof module !== "undefined") module.exports = { Engine };
 </script>
-<script>
-/* Personal CFO — presentation layer (rebuilt).
+<script>/* Personal CFO — presentation layer (rebuilt).
    Fixes the 5 agreed P0 mobile issues only:
    1) primary nav (5 fixed tabs) + a "More" sheet, instead of a 12-item
       horizontally-scrolling strip with no affordance
@@ -2091,15 +2088,15 @@ const UI = {
     const maxAbs = Math.max(1, ...accs.map(a => Math.abs(D.bal[a.id])));
     const editArgsFor = (a) => JSON.stringify({ id: a.id, name: a.name, type: a.type, bank: a.bank || "", opening: a.type === "card" ? Math.abs(a.opening || 0) : (a.opening || 0), limit: a.limit || 0, color: a.color || "#7d7979", desc: a.desc || "" }).replace(/"/g, "&quot;");
 
-    // Every account type people actually picture as a physical card or
-    // wallet renders as a card-shaped tile in its own color, instead of
-    // the plain list row (no bank logos anywhere — trademarked; just the
-    // gradient). "card" is the debt variant (Outstanding/Limit, chip mark);
-    // "wallet"/"cash"/"ecard" are the balance variant (one number, a plain
-    // mark instead of a chip — nothing here claims to be a real EMV card).
-    // "bank"/"other" stay as the original list row: an account statement
-    // isn't something people picture as a physical object the same way.
-    const tileTypes = ["card", "wallet", "cash", "ecard"];
+    // Every account type renders as a card-shaped tile in its own color,
+    // instead of the plain list row (no bank logos anywhere — trademarked;
+    // just the gradient — same "pick a real color to match" as the credit
+    // card). "card" is the debt variant (Outstanding/Limit, chip mark);
+    // everything else — bank, wallet, cash, ecard — is the balance variant
+    // (one number, a plain mark instead of a chip, since nothing here
+    // claims to be a real EMV card). Only "other" stays a plain list row,
+    // as the true catch-all with no obvious physical-object shape.
+    const tileTypes = ["card", "bank", "wallet", "cash", "ecard"];
     const tiles = accs.filter(a => tileTypes.includes(a.type)).map(a => {
       const bal = D.bal[a.id];
       const canDelete = app.accountCanDelete(a.id);
