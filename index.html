@@ -164,6 +164,23 @@ h1,h2,h3{font-family:var(--font-head);font-weight:600;margin:0;text-wrap:balance
 /* ---- hero ---- */
 .hero-card{background:var(--c-accent-900);color:#f5efe8;border-radius:var(--radius);padding:22px 22px 20px;box-shadow:var(--shadow)}
 
+/* ---- credit card tile ---- */
+/* No bank logos/wordmarks drawn here (trademarked) — just the account's
+   own color as a gradient, in a card-shaped layout. Picking your bank's
+   color in Edit is what makes it "look like" the real card. */
+.credit-card-tile{border-radius:16px;padding:18px 18px 14px;color:#fff;position:relative;overflow:hidden;box-shadow:var(--shadow)}
+.credit-card-tile::after{content:"";position:absolute;inset:0;background:linear-gradient(135deg, rgba(255,255,255,.16), rgba(255,255,255,0) 55%);pointer-events:none}
+.cc-top{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.cc-bank{font-size:11px;letter-spacing:.06em;text-transform:uppercase;opacity:.85}
+.cc-chip{width:30px;height:22px;border-radius:5px;background:linear-gradient(135deg,#e9d38a,#c9a94f);opacity:.9}
+.cc-name{display:block;font-family:var(--font-head);font-size:17px;color:#fff !important;margin-top:14px;padding:0 !important;min-height:0 !important}
+.cc-row{display:flex;justify-content:space-between;align-items:flex-end;margin-top:16px}
+.cc-label{font-size:9px;letter-spacing:.06em;text-transform:uppercase;opacity:.75}
+.cc-amt{font-family:var(--font-head);font-size:19px;margin-top:2px}
+.cc-sub{font-size:13px;margin-top:2px}
+.credit-card-tile .link-btn{color:#fff;opacity:.85}
+.credit-card-tile .link-btn:hover{opacity:1}
+
 /* ---- app lock screen ---- */
 .lock-screen{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;background:var(--c-bg)}
 .lock-card{width:100%;max-width:320px;text-align:center;background:var(--c-surface);border:1px solid var(--c-line);border-radius:var(--radius);box-shadow:var(--shadow);padding:32px 24px}
@@ -199,6 +216,7 @@ h1,h2,h3{font-family:var(--font-head);font-weight:600;margin:0;text-wrap:balance
 /* ---- bars ---- */
 .bar-list{display:flex;flex-direction:column;gap:9px}
 .bar-row{display:grid;grid-template-columns:88px 1fr auto;gap:9px;align-items:center;font-size:12.5px}
+button.bar-row{width:100%;border:0;background:none;padding:6px 0;min-height:44px;font:inherit;text-align:inherit;cursor:pointer;color:inherit;font-family:inherit}
 .bar-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--c-text-soft)}
 .bar-track{height:7px;border-radius:999px;background:var(--c-surface-3);overflow:hidden}
 .bar-track.thin{height:5px;margin-top:8px}
@@ -345,7 +363,7 @@ class Engine {
     this.state = { page: "dashboard", lang: "en", modal: null, form: {}, err: "", privacy: false,
       horizon: 30, filt: { q: "", type: "all", account: "all", preset: "all" }, openPlan: null, saved: "",
       data: null, txVisible: 25, moreOpen: false, arabicNumerals: false, personDetailId: null, whatIf: [], payoffOrder: "largest",
-      locked: false, lockErr: "", pinMsg: "" };
+      locked: false, lockErr: "", pinMsg: "", payoffCalc: { personId: "all", amount: "" } };
   }
   // ---- app lock (Settings -> App lock) -------------------------------
   // A screen lock, not encryption: the PIN gates only whether render()
@@ -1050,6 +1068,22 @@ class Engine {
     });
     return results.sort((a, b) => b.pct - a.pct);
   }
+  // This month (so far) vs. the same number of days into last month — not
+  // full-month-vs-full-month, which would always make an early-month
+  // comparison look artificially low.
+  monthOverMonth() {
+    const d = this.state.data, today = new Date(), dayOfMonth = today.getDate();
+    const sum = (from, to, types) => d.tx.filter(t => !t.void && t.date >= from && t.date <= to && types.includes(t.type)).reduce((s, t) => s + t.amount, 0);
+    const incomeTypes = ["income", "refund", "investment_return"];
+    const curStart = this.iso(new Date(today.getFullYear(), today.getMonth(), 1)), curEnd = this.today();
+    const curIncome = sum(curStart, curEnd, incomeTypes), curExpense = sum(curStart, curEnd, ["expense"]);
+    const prevMonthStart = this.addMonths(new Date(today.getFullYear(), today.getMonth(), 1), -1);
+    const prevLastDay = new Date(prevMonthStart.getFullYear(), prevMonthStart.getMonth() + 1, 0).getDate();
+    const prevStart = this.iso(prevMonthStart), prevEnd = this.iso(new Date(prevMonthStart.getFullYear(), prevMonthStart.getMonth(), Math.min(dayOfMonth, prevLastDay)));
+    const prevIncome = sum(prevStart, prevEnd, incomeTypes), prevExpense = sum(prevStart, prevEnd, ["expense"]);
+    const pct = (cur, prev) => prev > 0 ? Math.round(((cur - prev) / prev) * 100) : null;
+    return { curIncome, curExpense, prevIncome, prevExpense, incomePct: pct(curIncome, prevIncome), expensePct: pct(curExpense, prevExpense) };
+  }
   // "Available today" answers "what do I have"; this answers the more
   // useful daily question — "what can I actually spend without setting up
   // trouble" — by subtracting whatever's due in the next `days` (default a
@@ -1078,8 +1112,8 @@ class Engine {
     // showing them on an edit would silently do nothing if filled in.
     const isEditingExpense = this.state.modal === "expense" && this.state.form && this.state.form.id;
     const F = {
-      income: { title: t.aIncome, fields: [D("date", t.date, "date"), D("amount", t.amount, "number"), D("accountId", t.account, "select", { options: accs }), D("category", t.category, "select", { options: inc }), D("personId", t.person + this.L(" (optional)", " (اختياري)"), "select", { options: [{ v: "", l: "—" }].concat(ppl) }), D("desc", t.details, "text", { wide: true })] },
-      expense: { title: t.aExpense, fields: [D("date", t.date, "date"), D("amount", t.amount, "number"), D("accountId", t.account, "select", { options: accs }), D("category", t.category, "select", { options: cats }), D("personId", "Merchant / person", "select", { options: [{ v: "", l: "—" }].concat(ppl) }), D("desc", t.details, "text", { wide: true })].concat(isEditingExpense ? [] : [
+      income: { title: t.aIncome, fields: [D("date", t.date, "date"), D("amount", t.amount, "number"), D("accountId", t.account, "select", { options: accs }), D("category", t.category, "select", { options: inc }), D("personId", t.person + this.L(" (optional)", " (اختياري)"), "select", { options: [{ v: "", l: "—" }].concat(ppl) }), D("desc", t.details, "text", { wide: true }), D("tags", this.L("Tags (optional)", "تاجات (اختياري)"), "text", { wide: true, hint: this.L("Comma separated — a way to slice spending across categories, e.g. \"trip, work\".", "افصل بينهم بفاصلة — طريقة لتجميع مصاريف من فئات مختلفة، زي \"رحلة، شغل\".") })] },
+      expense: { title: t.aExpense, fields: [D("date", t.date, "date"), D("amount", t.amount, "number"), D("accountId", t.account, "select", { options: accs }), D("category", t.category, "select", { options: cats }), D("personId", "Merchant / person", "select", { options: [{ v: "", l: "—" }].concat(ppl) }), D("desc", t.details, "text", { wide: true }), D("tags", this.L("Tags (optional)", "تاجات (اختياري)"), "text", { wide: true, hint: this.L("Comma separated — a way to slice spending across categories, e.g. \"trip, work\".", "افصل بينهم بفاصلة — طريقة لتجميع مصاريف من فئات مختلفة، زي \"رحلة، شغل\".") })].concat(isEditingExpense ? [] : [
         D("splitPersonId", this.L("Split with (optional)", "قسمها مع (اختياري)"), "select", { options: [{ v: "", l: "—" }].concat(ppl) }),
         D("splitAmount", this.L("Their share", "حصتهم"), "number", { hint: this.L("Optional — also records this amount as owed to you by that person.", "اختياري — بيسجل المبلغ ده كمان كمبلغ مستحق ليك من الشخص ده.") })
       ]) },
@@ -1102,7 +1136,7 @@ class Engine {
       investment_edit: { title: this.L("Edit investment"), fields: [D("name", t.name, "text"), D("type", t.type, "select", { options: ["Stocks", "Gold", "Mutual fund", "Fixed deposit", "Certificate", "Crypto", "Business", "Other"].map(v => ({ v, l: v })) }), D("invested", "Amount invested", "number")] },
       person: { title: t.aPerson, fields: [D("name", t.name, "text"), D("phone", t.phone, "text"), D("notes", "Notes", "text", { wide: true })] },
       person_edit: { title: this.L("Edit person"), fields: [D("name", t.name, "text"), D("phone", t.phone, "text"), D("notes", "Notes", "text", { wide: true })] },
-      account: { title: t.aAccount, fields: [D("name", t.name, "text"), D("type", t.type, "select", { options: [{ v: "cash", l: "Cash" }, { v: "bank", l: "Bank" }, { v: "wallet", l: "Smart wallet" }, { v: "card", l: "Credit card" }, { v: "other", l: "Other" }] }), D("bank", "Bank / issuer", "text"), D("opening", "Opening balance", "number"), D("limit", "Credit limit", "number", { hint: "Leave 0 for non-card accounts." }), D("desc", "Reference / notes", "text", { wide: true })] },
+      account: { title: t.aAccount, fields: [D("name", t.name, "text"), D("type", t.type, "select", { options: [{ v: "cash", l: "Cash" }, { v: "bank", l: "Bank" }, { v: "wallet", l: "Smart wallet" }, { v: "card", l: "Credit card" }, { v: "other", l: "Other" }] }), D("bank", "Bank / issuer", "text"), D("opening", "Opening balance", "number"), D("limit", "Credit limit", "number", { hint: "Leave 0 for non-card accounts." }), D("color", this.L("Color", "اللون"), "color", { hint: this.L("A credit card renders as a card face in this color — pick your bank's to match.", "الكريدت كارد بيتعرض بشكل كارت باللون ده — اختار لون بنكك عشان يشبهه.") }), D("desc", "Reference / notes", "text", { wide: true })] },
       // Start amount / current outstanding is editable here too, same as
       // any other opening position (see the "Opening positions" rule in
       // Settings) — it's just the baseline the balance is computed from,
@@ -1110,8 +1144,10 @@ class Engine {
       // anything retroactively, unlike deleting the account itself.
       account_edit: { title: this.L("Edit account"), fields: [D("name", t.name, "text"), D("bank", "Bank / issuer", "text"),
         D("opening", this.state.form && this.state.form.type === "card" ? this.L("Current outstanding") : this.L("Start amount", "الرصيد الافتتاحي"), "number", this.state.form && this.state.form.type === "card" ? { hint: this.L("What you owe on the card today.") } : {}),
-        D("limit", "Credit limit", "number", { hint: "Leave 0 for non-card accounts." }), D("desc", "Reference / notes", "text", { wide: true })] },
-      card: { title: t.aCard, fields: [D("bank", "Bank / issuer", "text"), D("name", "Card name", "text"), D("limit", "Credit limit", "number"), D("opening", "Current outstanding", "number", { hint: "What you owe on the card today." }), D("desc", "Reference / notes", "text", { wide: true })] },
+        D("limit", "Credit limit", "number", { hint: "Leave 0 for non-card accounts." }),
+        D("color", this.L("Color", "اللون"), "color", { hint: this.L("A credit card renders as a card face in this color — pick your bank's to match.", "الكريدت كارد بيتعرض بشكل كارت باللون ده — اختار لون بنكك عشان يشبهه.") }),
+        D("desc", "Reference / notes", "text", { wide: true })] },
+      card: { title: t.aCard, fields: [D("bank", "Bank / issuer", "text"), D("name", "Card name", "text"), D("limit", "Credit limit", "number"), D("opening", "Current outstanding", "number", { hint: "What you owe on the card today." }), D("color", this.L("Color", "اللون"), "color", { hint: this.L("Renders the card face — pick your bank's color to match.", "بيحدد شكل الكارت — اختار لون بنكك عشان يشبهه.") }), D("desc", "Reference / notes", "text", { wide: true })] },
       group: { title: this.L("+ Savings group (gam3ya)"), fields: [D("name", "Group name", "text", { wide: true }), D("amount", "Contribution per period", "number"), D("periods", "Number of periods", "number"), D("myTurn", "My turn (position)", "number"), D("freq", "Frequency", "select", { options: [{ v: "monthly", l: "Monthly" }, { v: "weekly", l: "Weekly" }] }), D("first", "First contribution date", "date"), D("accountId", "Paid from", "select", { options: accs })] },
       group_edit: { title: this.L("Edit savings group"), fields: [D("name", "Group name", "text", { wide: true }), D("amount", "Contribution per period", "number"), D("periods", "Number of periods", "number"), D("myTurn", "My turn (position)", "number"), D("freq", "Frequency", "select", { options: [{ v: "monthly", l: "Monthly" }, { v: "weekly", l: "Weekly" }] }), D("first", "First contribution date", "date")] },
       group_payment: { title: this.L("Record contribution"), fields: [D("date", t.date, "date"), D("groupId", "Group", "select", { options: (d.groups || []).map(g => ({ v: g.id, l: g.name })) }), D("amount", t.amount, "number"), D("accountId", "Paid from", "select", { options: accs })] },
@@ -1136,7 +1172,7 @@ class Engine {
     // NOTE: unlike the original, the "record collection" quick action does NOT
     // pre-fill a real person by default — this is one of the agreed P1 items,
     // left as a documented follow-up rather than silently changed here.
-    const form = { date: this.today(), freq: "monthly", count: 12, down: 0, balloon: 0, type: kind === "recurring" ? "expense" : undefined, day: 1 };
+    const form = { date: this.today(), freq: "monthly", count: 12, down: 0, balloon: 0, type: kind === "recurring" ? "expense" : undefined, day: 1, color: kind === "card" ? "#004961" : "#7d7979" };
     F.fields.forEach(f => { if (form[f.k] === undefined) form[f.k] = f.type === "select" ? (f.options[0] ? f.options[0].v : "") : (f.type === "number" ? "" : ""); });
     form.date = this.today();
     this.state.modal = kind; this.state.form = Object.assign(form, pre || {}); this.state.err = "";
@@ -1163,6 +1199,10 @@ class Engine {
       const splitting = hasSplitPerson && hasSplitAmount;
       if (splitting && !need(this.n(f.splitAmount) <= N("amount"), "Their share can't be more than the total expense.")) return false;
       const fields = { date: f.date, amount: N("amount"), accountId: f.accountId || null, fromId: null, toId: null, category: f.category || null, personId: f.personId || null, desc: f.desc || this.FORMS()[k].title, due: f.due || null };
+      // Tags only exist on income/expense (see FORMS() above); for every
+      // other kind here f.tags is simply undefined and this line is a
+      // harmless no-op — nothing needs a type check to skip it.
+      if (["income", "expense"].includes(k)) fields.tags = (f.tags || "").split(",").map((s) => s.trim()).filter(Boolean);
       if (f.id) {
         const ex = data.tx.find(x => x.id === f.id);
         if (!need(ex, "That transaction no longer exists.")) return false;
@@ -1263,14 +1303,14 @@ class Engine {
       // is the normal way in) — whichever door it comes through, debt has
       // to land negative, or balance/net-worth would count it as an asset.
       const openingVal = f.type === "card" ? -Math.abs(N("opening")) : N("opening");
-      data.accounts.push({ id: this.uid("a"), name: f.name, type: f.type, bank: f.bank || "", limit: N("limit"), opening: openingVal, color: f.type === "card" ? "#004961" : "#7d7979", active: true, desc: f.desc || "" });
+      data.accounts.push({ id: this.uid("a"), name: f.name, type: f.type, bank: f.bank || "", limit: N("limit"), opening: openingVal, color: f.color || (f.type === "card" ? "#004961" : "#7d7979"), active: true, desc: f.desc || "" });
       note = "Added account " + f.name;
     } else if (k === "account_edit") {
       if (!need(f.name, "Name is required.")) return false;
       const a = data.accounts.find(x => x.id === f.id);
       if (!need(a, "Pick an account.")) return false;
       if (a.type === "card" && !need(N("opening") <= N("limit"), "Outstanding cannot exceed the credit limit.")) return false;
-      a.name = f.name; a.bank = f.bank || ""; if (a.type === "card") a.limit = N("limit"); a.desc = f.desc || "";
+      a.name = f.name; a.bank = f.bank || ""; if (a.type === "card") a.limit = N("limit"); a.desc = f.desc || ""; a.color = f.color || a.color;
       // Card debt is stored negative (see the "card" quick-add above); the
       // field shows the positive "current outstanding" the user actually
       // types, same convention as creating one.
@@ -1280,7 +1320,7 @@ class Engine {
       if (!need(f.bank || f.name, "Give the card a bank or a name.")) return false;
       if (!need(N("limit") > 0, "A credit card needs a limit.")) return false;
       if (!need(N("opening") <= N("limit"), "Outstanding cannot exceed the credit limit.")) return false;
-      data.accounts.push({ id: this.uid("card"), name: f.name || "Credit card", type: "card", bank: f.bank || "", limit: N("limit"), opening: -Math.abs(N("opening")), color: "#004961", active: true, desc: f.desc || "" });
+      data.accounts.push({ id: this.uid("card"), name: f.name || "Credit card", type: "card", bank: f.bank || "", limit: N("limit"), opening: -Math.abs(N("opening")), color: f.color || "#004961", active: true, desc: f.desc || "" });
       note = "Added credit card " + (f.bank ? f.bank + " " : "") + (f.name || "");
     } else if (k === "group") {
       const amt = N("amount"), per = Math.round(N("periods")), turn = Math.round(N("myTurn"));
@@ -1573,11 +1613,17 @@ const UI = {
   // toId (a transfer either side), so this is the same filter a person
   // could set by hand from the dropdown there, just one tap instead of two.
   viewAccountTx(id) { this.app.state.filt.account = id; this.setPage("transactions"); },
+  // Same idea for a category/source bar (Dashboard's This month, Reports'
+  // by-category and by-source breakdowns) — search already matches
+  // category as one of the fields it checks (see renderTransactions), so
+  // this reuses that instead of adding a dedicated category filter.
+  viewCategoryTx(name) { this.app.state.filt.q = name; this.setPage("transactions"); },
   toggleMore() { this.app.state.moreOpen = !this.app.state.moreOpen; this.render(); },
   setLang(l) { this.app.state.lang = l; this.render(); },
   togglePrivacy() { this.app.state.privacy = !this.app.state.privacy; this.render(); },
   toggleArabicNumerals() { this.app.state.arabicNumerals = !this.app.state.arabicNumerals; this.render(); },
   setPayoffOrder(v) { this.app.state.payoffOrder = v; this.render(); },
+  setPayoffCalc(field, v) { this.app.state.payoffCalc[field] = v; this.render(true); },
   openModal(kind, pre) { this.app.open(kind, pre); this.render(); },
   closeModal() { this.app.state.modal = null; this.app.state.err = ""; this.render(); },
   submitModal() {
@@ -1634,6 +1680,15 @@ const UI = {
     // the user's own selection alone.
     const stillExists = Array.prototype.some.call(sel.options, (o) => o.value === cat);
     if (stillExists && sel.value !== cat) sel.value = cat;
+  },
+  // Opens the same add-modal openTxEdit does, pre-filled from the original
+  // row — but with `id` stripped and the date reset to today, so submit()
+  // posts it as a brand-new transaction instead of updating the original.
+  duplicateTxC(id) {
+    const t = this.app.state.data.tx.find((x) => x.id === id);
+    if (!this.app.txEditable(t)) return;
+    const pre = Object.assign({}, t, { id: undefined, date: this.app.today(), created: undefined });
+    this.openModal(this.app.txEditKind(t), pre);
   },
   deleteTxC(id) {
     const app = this.app, t = app.state.data.tx.find(x => x.id === id);
@@ -1969,11 +2024,24 @@ const UI = {
       ).join("") + "</div>" : '<p class="muted">—</p>') +
     "</section>";
 
-    // This month
+    // This month — bounded to today at both ends (not just from the 1st),
+    // matching monthCategorySpend()/monthOverMonth() below: otherwise a
+    // future-dated entry within the current month could show up in this
+    // total while the "vs last month" badge next to it (which is bounded
+    // to today) silently doesn't reflect it, making the two disagree.
     const today = app.today(), mStart = today.slice(0, 8) + "01";
-    const monthTx = D.live.filter(x => x.date >= mStart);
+    const monthTx = D.live.filter(x => x.date >= mStart && x.date <= today);
     const monthIncome = monthTx.filter(x => ["income", "refund", "investment_return"].includes(x.type)).reduce((s, x) => s + x.amount, 0);
     const monthExpense = monthTx.filter(x => x.type === "expense").reduce((s, x) => s + x.amount, 0);
+    // vs. the same number of days into last month (see monthOverMonth) —
+    // null when last month had nothing in that window to compare against.
+    const mom = app.monthOverMonth();
+    const momBadge = (pct, goodIsDown) => {
+      if (pct === null) return "";
+      const up = pct >= 0;
+      const good = goodIsDown ? !up : up;
+      return ' <span class="' + (good ? "tone-pos" : "tone-neg") + '" style="font-size:11px">' + (up ? "▲" : "▼") + Math.abs(pct) + "% " + esc(app.L("vs last month", "عن الشهر اللي فات")) + "</span>";
+    };
     // app.monthCategorySpend(), not a locally-filtered copy — it's also
     // what the budget/unusual-spending alerts above check against, so a
     // category can't show over-budget red here while staying silent there
@@ -1986,13 +2054,13 @@ const UI = {
     const thisMonth = '<section class="dash-section">' +
       '<h2 class="section-title">' + esc(t.thisMonth) + "</h2>" +
       '<div class="two-col">' +
-        '<div class="stat-box"><div class="pos-label">' + esc(t.income) + '</div><div class="pos-value tone-pos">' + app.fmt(monthIncome) + "</div></div>" +
-        '<div class="stat-box"><div class="pos-label">' + esc(t.expenses) + '</div><div class="pos-value tone-neg">' + app.fmt(monthExpense) + "</div></div>" +
+        '<div class="stat-box"><div class="pos-label">' + esc(t.income) + '</div><div class="pos-value tone-pos">' + app.fmt(monthIncome) + "</div>" + momBadge(mom.incomePct, false) + "</div>" +
+        '<div class="stat-box"><div class="pos-label">' + esc(t.expenses) + '</div><div class="pos-value tone-neg">' + app.fmt(monthExpense) + "</div>" + momBadge(mom.expensePct, true) + "</div>" +
       "</div>" +
       (catArr.length ? '<div class="bar-list">' + catArr.slice(0, 5).map(([name, v]) => {
         const budget = (d.budgets || {})[name];
         const over = budget && v > budget;
-        return '<div class="bar-row"><span class="bar-name">' + esc(name) + '</span><div class="bar-track"><div class="bar-fill' + (over ? " neg-fill" : "") + '" style="width:' + Math.max(4, v / maxCat * 100) + '%"></div></div><span class="bar-val' + (over ? " tone-neg" : "") + '">' + app.fmt(v) + (budget ? " / " + app.fmt(budget) : "") + "</span></div>";
+        return '<button class="bar-row" onclick="UI.viewCategoryTx(\'' + esc(name).replace(/'/g, "\\'") + '\')"><span class="bar-name">' + esc(name) + '</span><div class="bar-track"><div class="bar-fill' + (over ? " neg-fill" : "") + '" style="width:' + Math.max(4, v / maxCat * 100) + '%"></div></div><span class="bar-val' + (over ? " tone-neg" : "") + '">' + app.fmt(v) + (budget ? " / " + app.fmt(budget) : "") + "</span></button>";
       }).join("") + "</div>" : "") +
     "</section>";
 
@@ -2005,22 +2073,44 @@ const UI = {
     const typeLabel = { cash: app.L("Cash", "كاش"), bank: app.L("Bank", "بنك"), wallet: app.L("Smart wallet", "محفظة إلكترونية"), card: app.L("Credit card", "بطاقة ائتمان"), other: app.L("Other", "أخرى") };
     const accs = d.accounts.filter(a => a.active);
     const maxAbs = Math.max(1, ...accs.map(a => Math.abs(D.bal[a.id])));
-    const rows = accs.map(a => {
+    const editArgsFor = (a) => JSON.stringify({ id: a.id, name: a.name, type: a.type, bank: a.bank || "", opening: a.type === "card" ? Math.abs(a.opening || 0) : (a.opening || 0), limit: a.limit || 0, color: a.color || "#7d7979", desc: a.desc || "" }).replace(/"/g, "&quot;");
+
+    // Credit cards render as a card-shaped tile in their own color (no
+    // bank logos — trademarked; just the gradient) instead of the plain
+    // list row every other account type uses, since a card is the one
+    // account type people actually picture as a physical card.
+    const cardTiles = accs.filter(a => a.type === "card").map(a => {
       const bal = D.bal[a.id];
-      const extra = a.type === "card" ? '<div class="acc-sub">' + app.L("Limit", "الحد") + " " + app.fmt(a.limit) + " · " + app.fmt(Math.max(0, a.limit + bal)) + app.L(" left", " متاح") + "</div>" : (a.bank ? '<div class="acc-sub">' + esc(a.bank) + "</div>" : "");
-      const editArgs = JSON.stringify({ id: a.id, name: a.name, type: a.type, bank: a.bank || "", opening: a.type === "card" ? Math.abs(a.opening || 0) : (a.opening || 0), limit: a.limit || 0, desc: a.desc || "" }).replace(/"/g, "&quot;");
+      const canDelete = app.accountCanDelete(a.id);
+      const dark = "color-mix(in srgb, " + a.color + " 62%, black)";
+      return '<div class="credit-card-tile" style="background:linear-gradient(135deg, ' + a.color + ', ' + dark + ')">' +
+        '<div class="cc-top"><span class="cc-bank">' + esc(a.bank || typeLabel.card) + '</span><span class="cc-chip"></span></div>' +
+        '<button class="link-btn cc-name" onclick="UI.viewAccountTx(\'' + a.id + '\')">' + esc(a.name) + "</button>" +
+        '<div class="cc-row"><div><div class="cc-label">' + esc(app.L("Outstanding", "المديونية")) + '</div><div class="cc-amt">' + app.fmt(bal) + "</div></div>" +
+        '<div><div class="cc-label">' + esc(app.L("Limit", "الحد")) + '</div><div class="cc-sub">' + app.fmt(a.limit) + "</div></div></div>" +
+        '<div class="btn-row wrap" style="margin-top:12px">' +
+        '<button class="link-btn small" onclick="UI.openModal(\'account_edit\',' + editArgsFor(a) + ')">' + esc(app.L("Edit")) + "</button>" +
+        (canDelete ? '<button class="link-btn small" onclick="UI.deleteAccountC(\'' + a.id + '\')">' + esc(app.L("Delete")) + "</button>" : "") +
+        "</div></div>";
+    }).join("");
+
+    const rows = accs.filter(a => a.type !== "card").map(a => {
+      const bal = D.bal[a.id];
+      const extra = a.bank ? '<div class="acc-sub">' + esc(a.bank) + "</div>" : "";
       const canDelete = app.accountCanDelete(a.id);
       return '<div class="card-row">' +
         '<div class="card-row-top"><span class="acc-swatch" style="background:' + a.color + '"></span><div><button class="link-btn card-row-title" onclick="UI.viewAccountTx(\'' + a.id + '\')">' + esc(a.name) + '</button><div class="card-row-sub">' + typeLabel[a.type] + "</div></div>" +
         '<div class="card-row-amt ' + (bal < 0 ? "tone-neg" : "tone-pos") + '">' + app.fmt(bal) + "</div></div>" +
         '<div class="bar-track thin"><div class="bar-fill" style="width:' + Math.max(2, Math.abs(bal) / maxAbs * 100) + '%;background:' + (bal < 0 ? "var(--c-neg)" : a.color) + '"></div></div>' +
         extra +
-        '<button class="link-btn small" onclick="UI.openModal(\'account_edit\',' + editArgs + ')">' + esc(app.L("Edit")) + "</button>" +
+        '<div class="btn-row wrap">' +
+        '<button class="link-btn small" onclick="UI.openModal(\'account_edit\',' + editArgsFor(a) + ')">' + esc(app.L("Edit")) + "</button>" +
         (canDelete ? '<button class="link-btn small" onclick="UI.deleteAccountC(\'' + a.id + '\')">' + esc(app.L("Delete")) + "</button>" : "") +
-      "</div>";
+        "</div></div>";
     }).join("");
     return this.tabHeader(t.accounts, accs.length + app.L(" accounts · transfers never hit income or expense", " حساب · التحويلات لا تُحسب إيراداً ولا مصروفاً"),
       [[t.aAccount, "UI.openModal('account')"], [t.aCard, "UI.openModal('card')"], [t.transfer, "UI.openModal('transfer')"]]) +
+      (cardTiles ? '<div class="card-list">' + cardTiles + "</div>" : "") +
       '<div class="card-list">' + rows + "</div>";
   },
 
@@ -2036,7 +2126,7 @@ const UI = {
     if (F.type !== "all") rows = rows.filter(r => r.type === F.type);
     if (F.account !== "all") rows = rows.filter(r => r.accountId === F.account || r.fromId === F.account || r.toId === F.account);
     if (F.preset !== "all") { const from = app.iso(app.addDays(new Date(), -presetStart[F.preset])); rows = rows.filter(r => r.date >= from); }
-    if (F.q.trim()) { const q = F.q.toLowerCase(); rows = rows.filter(r => [r.desc, r.category, typeLabels[r.type], app.personName(r.personId), app.accName(r.accountId), app.accName(r.fromId), app.accName(r.toId)].join(" ").toLowerCase().includes(q)); }
+    if (F.q.trim()) { const q = F.q.toLowerCase(); rows = rows.filter(r => [r.desc, r.category, typeLabels[r.type], app.personName(r.personId), app.accName(r.accountId), app.accName(r.fromId), app.accName(r.toId), (r.tags || []).join(" ")].join(" ").toLowerCase().includes(q)); }
     const outTypes = ["expense", "debt_payment", "receivable", "investment_buy", "gam3ya_payment"];
     const inTypes = ["income", "receivable_payment", "payable", "installment_payment", "investment_return", "refund", "gam3ya_payout"];
     const total = rows.length;
@@ -2053,11 +2143,17 @@ const UI = {
     // trail correction; Edit and Delete only show for the plain entry types
     // txEditable() recognizes (a structural row like an installment sale or
     // an investment purchase is corrected through its own record instead).
+    // Income/expense only carry tags (see FORMS()) — every other type's
+    // `tags` is simply absent, so this renders nothing for them.
+    const tagChips = (r) => (r.tags && r.tags.length) ? '<div class="pill-row" style="margin:4px 0 0">' + r.tags.map((tag) =>
+      '<button class="pill" onclick="UI.viewCategoryTx(\'' + esc(tag).replace(/'/g, "\\'") + '\')">#' + esc(tag) + "</button>"
+    ).join("") + "</div>" : "";
     const rowActions = (r) => '<div class="btn-row wrap">' +
       '<button class="link-btn small" onclick="UI.reverseTx(\'' + r.id + '\')" ' + (r.void ? "disabled" : "") + ">" + esc(r.void ? app.L("reversed") : app.L("reverse")) + "</button>" +
       (app.txEditable(r) ?
         '<button class="link-btn small" onclick="UI.openTxEdit(\'' + r.id + '\')">' + esc(app.L("Edit")) + "</button>" +
-        '<button class="link-btn small" onclick="UI.deleteTxC(\'' + r.id + '\')">' + esc(app.L("Delete")) + "</button>"
+        '<button class="link-btn small" onclick="UI.deleteTxC(\'' + r.id + '\')">' + esc(app.L("Delete")) + "</button>" +
+        '<button class="link-btn small" onclick="UI.duplicateTxC(\'' + r.id + '\')">' + esc(app.L("Duplicate", "كررها")) + "</button>"
         : "") +
       "</div>";
 
@@ -2067,7 +2163,7 @@ const UI = {
         '<tr style="' + (r.void ? "opacity:.45;text-decoration:line-through" : "") + '">' +
           "<td>" + r.date + "</td>" +
           '<td><span class="tag ' + (isIn ? "tag-pos" : r.type === "transfer" ? "tag-neu" : "tag-neg") + '">' + esc(typeLabels[r.type] || r.type) + "</span></td>" +
-          "<td>" + esc(r.desc || "—") + "</td>" +
+          "<td>" + esc(r.desc || "—") + tagChips(r) + "</td>" +
           "<td>" + esc(r.personId ? app.personName(r.personId) : "—") + "</td>" +
           "<td>" + esc(acc) + "</td>" +
           '<td class="num ' + tone + '">' + amtTxt + "</td>" +
@@ -2083,6 +2179,7 @@ const UI = {
           (r.personId ? '<span>' + esc(app.personName(r.personId)) + "</span>" : "") +
           '<span>' + esc(acc) + "</span>" +
         "</div>" +
+        tagChips(r) +
         rowActions(r) +
       "</div>"
     ).join("") + "</div>";
@@ -2336,11 +2433,39 @@ const UI = {
       '<button class="pill' + (payoffOrder === "largest" ? " on" : "") + '" onclick="UI.setPayoffOrder(\'largest\')">' + esc(app.L("Largest first", "الأكبر الأول")) + "</button>" +
       '<button class="pill' + (payoffOrder === "smallest" ? " on" : "") + '" onclick="UI.setPayoffOrder(\'smallest\')">' + esc(app.L("Smallest first", "الأصغر الأول")) + "</button>" +
     "</div>" : "";
+    // Payoff calculator — a fixed monthly amount against the chosen
+    // debt's current total, months = ceil(total / monthly). Deliberately
+    // simple (no interest, no re-run if the balance changes) — a "how long
+    // roughly" estimate, not a real amortization schedule.
+    const calc = S.payoffCalc || { personId: "all", amount: "" };
+    const calcTarget = calc.personId === "all" ? iOwe.reduce((s, x) => s + x.y, 0) : (iOwe.find(x => x.p.id === calc.personId) || { y: 0 }).y;
+    const calcAmt = app.n(calc.amount);
+    const months = calcAmt > 0 && calcTarget > 0 ? Math.ceil(calcTarget / calcAmt) : null;
+    const calcSection = iOwe.length ? '<section class="dash-section" style="margin-top:20px"><h2 class="section-title">' + esc(app.L("Payoff calculator", "حاسبة سداد")) + "</h2>" +
+      '<div class="field-grid">' +
+        '<label class="field"><span class="field-label">' + esc(app.L("Which debt", "أنهي دين")) + '</span><select class="input" onchange="UI.setPayoffCalc(\'personId\', this.value)">' +
+          '<option value="all"' + (calc.personId === "all" ? " selected" : "") + ">" + esc(app.L("All debts", "كل الديون")) + " (" + app.fmt(iOwe.reduce((s, x) => s + x.y, 0)) + ")</option>" +
+          iOwe.map(x => '<option value="' + x.p.id + '"' + (calc.personId === x.p.id ? " selected" : "") + '>' + esc(x.p.name) + " (" + app.fmt(x.y) + ")</option>").join("") +
+        "</select></label>" +
+        // type="text" + inputmode="decimal", not type="number": a number
+        // input's selectionStart is unreliable across browsers, and
+        // render()'s cursor-restore logic (see render()'s savedSel) relies
+        // on reading it — with a number input the cursor position doesn't
+        // round-trip correctly on every keystroke's re-render, and new
+        // digits end up inserted at the start instead of where typed
+        // ("5000" typed one key at a time became "0005"). Same numeric
+        // keyboard on mobile either way.
+        '<label class="field"><span class="field-label">' + esc(app.L("Monthly amount you can pay", "المبلغ اللي تقدر تدفعه شهريًا")) + '</span><input class="input" id="payoffCalcAmt" type="text" inputmode="decimal" value="' + esc(calc.amount) + '" oninput="UI.setPayoffCalc(\'amount\', this.value)"></label>' +
+      "</div>" +
+      (months ? '<p class="pos-value" style="margin-top:8px">' + esc(app.L("About ", "حوالي ")) + months + " " + esc(app.L("months to clear it — around ", "شهر عشان تخلصه — تقريبًا ")) + app.dshort(app.addMonths(new Date(), months)) + "</p>" : "") +
+    "</section>" : "";
+
     return this.tabHeader(t.ledgers, app.L("Open positions by person and by plan"), [[t.aReceivable, "UI.openModal('receivable')"], [t.aDebt, "UI.openModal('payable')"]]) +
       '<h2 class="section-title">' + esc(t.receivables) + " · " + app.fmt(D.recvTotal) + "</h2>" + list(owedToMe, "r", "pos", "receivable") +
       '<h2 class="section-title" style="margin-top:20px">' + esc(t.payables) + " · " + app.fmt(D.payTotal) + "</h2>" +
       (iOwe.length > 1 ? '<p class="muted small">' + esc(app.L("Which to pay off first: largest balance (least total interest/exposure) or smallest (clears whole debts off this list fastest).", "أنهي دين تسدده الأول: الأكبر (أقل فايدة أو تعرض إجمالي) ولا الأصغر (يخلص ديون كاملة من القايمة أسرع).")) + "</p>" + payoffToggle : "") +
-      list(iOwe, "y", "neg", "payable");
+      list(iOwe, "y", "neg", "payable") +
+      calcSection;
   },
 
   // ---- Investments -----------------------------------------------------------
@@ -2443,7 +2568,7 @@ const UI = {
     const srcArr = Object.entries(srcMap).sort((a, b) => b[1] - a[1]).slice(0, 8);
     const maxSrc = Math.max(1, ...srcArr.map(c => c[1]));
 
-    const barList = (arr, max, tone) => '<div class="bar-list">' + arr.map(([name, v]) => '<div class="bar-row"><span class="bar-name">' + esc(name) + '</span><div class="bar-track"><div class="bar-fill ' + tone + '" style="width:' + Math.max(4, v / max * 100) + '%"></div></div><span class="bar-val">' + app.fmt(v) + "</span></div>").join("") + "</div>";
+    const barList = (arr, max, tone) => '<div class="bar-list">' + arr.map(([name, v]) => '<button class="bar-row" onclick="UI.viewCategoryTx(\'' + esc(name).replace(/'/g, "\\'") + '\')"><span class="bar-name">' + esc(name) + '</span><div class="bar-track"><div class="bar-fill ' + tone + '" style="width:' + Math.max(4, v / max * 100) + '%"></div></div><span class="bar-val">' + app.fmt(v) + "</span></button>").join("") + "</div>";
 
     return this.tabHeader(t.reports, app.L("Six-month history plus aging and category analysis"), []) +
       '<h2 class="section-title">' + esc(t.netWorthTrend) + "</h2>" + nwChart +
