@@ -484,6 +484,12 @@ class Engine {
     // on any open receivable outside a plan — not only an overdue one.
     n += Object.values(D.recv).filter((v) => v > 0).length;
     if (D.cards < 0) n += 1;
+    // Matches both conditions the Dashboard's Needs Attention alerts check
+    // for card statements (overdue, or due within a week) -- counting only
+    // "overdue" here would leave the badge/notification silent while a
+    // real alert is showing on the Dashboard.
+    const stmtSoon = this.iso(this.addDays(new Date(), 7));
+    n += D.cardStatements.filter((s) => s.overdue || (s.status !== "paid" && s.due <= stmtSoon)).length;
     const monthSpend = this.monthCategorySpend(), budgets = this.state.data.budgets || {};
     n += Object.keys(budgets).filter((cat) => (monthSpend[cat] || 0) >= budgets[cat] * 0.9).length;
     n += this.unusualSpending(monthSpend).length;
@@ -566,11 +572,11 @@ class Engine {
 
   // ---- translations ------------------------------------------------------
   T = {
-    en: { brand: "Personal CFO", brandSub: "Financial control", dashboard: "Dashboard", accounts: "Accounts", transactions: "Transactions", people: "People", installments: "Installments", ledgers: "Receivables & Payables", investments: "Investments", recurring: "Recurring", forecast: "Forecast", reports: "Reports", settings: "Settings",
+    en: { brand: "Personal CFO", brandSub: "Financial control", dashboard: "Dashboard", accounts: "Accounts", transactions: "Transactions", people: "People", installments: "Installments", statements: "Card statements", ledgers: "Receivables & Payables", investments: "Investments", recurring: "Recurring", forecast: "Forecast", reports: "Reports", settings: "Settings",
       availableBalance: "Available balance", availableNote: "Spendable right now — cash, bank and wallets. Receivables, investments and credit lines are excluded.", netWorth: "Net worth", receivables: "Owed to me", payables: "I owe", investmentsShort: "Invested", available: "Available",
       position: "Current financial position", whereMoney: "Where my money is", upcoming30: "Next 30 days", seeForecast: "Forecast →", thisMonth: "This month", income: "Income", expenses: "Expenses", topCategories: "Top spend categories", needsAttention: "Needs attention",
       cash: "Cash", bank: "Bank accounts", wallets: "Smart wallets", other: "Other / cards", totalAssets: "Total assets", liabilities: "Liabilities",
-      aIncome: "+ Income", aExpense: "+ Expense", aTransfer: "Transfer", aReceivable: "+ Lend / owed to me", aDebt: "+ Debt I owe", aSale: "+ Installment sale", aPurchasePlan: "+ Installment purchase", aInvest: "+ Investment", aPerson: "+ Person", aAccount: "+ Account", aCollect: "Record collection", aRepay: "Record repayment", aRecurring: "+ Recurring rule",
+      aIncome: "+ Income", aExpense: "+ Expense", aTransfer: "Transfer", aReceivable: "+ Lend / owed to me", aDebt: "+ Debt I owe", aSale: "+ Installment sale", aPurchasePlan: "+ Installment purchase", aInvest: "+ Investment", aPerson: "+ Person", aAccount: "+ Account", aCollect: "Record collection", aRepay: "Record repayment", aRecurring: "+ Recurring rule", aStatement: "+ Statement", payStatement: "Pay statement",
       search: "Search", type: "Type", account: "Account", period: "Period", clear: "Clear", date: "Date", details: "Details", person: "Person", category: "Category", amount: "Amount", phone: "Phone", owesMe: "Owes me", iOwe: "I owe", net: "Net", plans: "Plans", history: "History",
       total: "Sale total", collected: "Collected", remaining: "Remaining", dueDate: "Due", paid: "Paid", status: "Status", recordPayment: "Record payment", showSchedule: "Show schedule", hideSchedule: "Hide schedule",
       source: "Source", collect: "Collect", pay: "Pay", name: "Name", invested: "Invested", currentValue: "Current value", pnl: "Profit / loss", updateValue: "Update value",
@@ -582,11 +588,11 @@ class Engine {
       creditCards: "Credit cards", payCard: "Pay card", aCard: "+ Credit card", limitLabel: "Total limit", owedLabel: "Outstanding", availLabel: "Available to spend",
       edit: "Edit", delete: "Delete", loadMore: "Load more", noMatches: "No records match your filters.", more: "More", primaryNav: "Sections",
       cur: "EGP" },
-    ar: { brand: "المدير المالي", brandSub: "تحكم مالي", dashboard: "الرئيسية", accounts: "الحسابات", transactions: "الحركات", people: "الأشخاص", installments: "الأقساط", ledgers: "لي وعليّ", investments: "الاستثمارات", recurring: "المتكررة", forecast: "التوقعات", reports: "التقارير", settings: "الإعدادات",
+    ar: { brand: "المدير المالي", brandSub: "تحكم مالي", dashboard: "الرئيسية", accounts: "الحسابات", transactions: "الحركات", people: "الأشخاص", installments: "الأقساط", statements: "كشوف حساب الكروت", ledgers: "لي وعليّ", investments: "الاستثمارات", recurring: "المتكررة", forecast: "التوقعات", reports: "التقارير", settings: "الإعدادات",
       availableBalance: "الرصيد المتاح", availableNote: "المتاح للصرف الآن — كاش وبنك ومحافظ. لا يشمل المستحقات ولا الاستثمارات ولا حدود الكريدت.", netWorth: "صافي الثروة", receivables: "لي عند الناس", payables: "عليّ للناس", investmentsShort: "مستثمر", available: "المتاح",
       position: "الموقف المالي الحالي", whereMoney: "أين أموالي", upcoming30: "الـ 30 يوم القادمة", seeForecast: "التوقعات →", thisMonth: "هذا الشهر", income: "الإيرادات", expenses: "المصروفات", topCategories: "أكبر بنود الصرف", needsAttention: "يحتاج انتباه",
       cash: "كاش", bank: "حسابات بنكية", wallets: "محافظ إلكترونية", other: "أخرى / بطاقات", totalAssets: "إجمالي الأصول", liabilities: "الالتزامات",
-      aIncome: "+ إيراد", aExpense: "+ مصروف", aTransfer: "تحويل", aReceivable: "+ سلفة / لي", aDebt: "+ دين عليّ", aSale: "+ بيع بالتقسيط", aPurchasePlan: "+ شراء بالتقسيط", aInvest: "+ استثمار", aPerson: "+ شخص", aAccount: "+ حساب", aCollect: "تسجيل تحصيل", aRepay: "تسجيل سداد", aRecurring: "+ قاعدة متكررة",
+      aIncome: "+ إيراد", aExpense: "+ مصروف", aTransfer: "تحويل", aReceivable: "+ سلفة / لي", aDebt: "+ دين عليّ", aSale: "+ بيع بالتقسيط", aPurchasePlan: "+ شراء بالتقسيط", aInvest: "+ استثمار", aPerson: "+ شخص", aAccount: "+ حساب", aCollect: "تسجيل تحصيل", aRepay: "تسجيل سداد", aRecurring: "+ قاعدة متكررة", aStatement: "+ كشف حساب", payStatement: "سداد كشف حساب",
       search: "بحث", type: "النوع", account: "الحساب", period: "الفترة", clear: "مسح", date: "التاريخ", details: "التفاصيل", person: "الشخص", category: "التصنيف", amount: "المبلغ", phone: "الهاتف", owesMe: "له عندي", iOwe: "عليّ", net: "الصافي", plans: "خطط", history: "السجل",
       total: "إجمالي البيع", collected: "المحصّل", remaining: "المتبقي", dueDate: "الاستحقاق", paid: "مدفوع", status: "الحالة", recordPayment: "تسجيل دفعة", showSchedule: "عرض الجدول", hideSchedule: "إخفاء الجدول",
       source: "المصدر", collect: "تحصيل", pay: "سداد", name: "الاسم", invested: "المستثمر", currentValue: "القيمة الحالية", pnl: "ربح / خسارة", updateValue: "تحديث القيمة",
@@ -617,6 +623,7 @@ class Engine {
     "Opening ": "رصيد افتتاحي ", " records": " حركة",
     "cash": "كاش", "bank": "بنك", "wallet": "محفظة", "card": "بطاقة", "other": "أخرى",
     "Overdue collection · ": "تحصيل متأخر · ", "Overdue payment · ": "سداد متأخر · ", " was due ": " كان مستحق ",
+    "Overdue statement · ": "كشف حساب متأخر · ", "Statement due soon · ": "كشف حساب قرب ميعاده · ",
     "Overdue since ": "متأخر من ", "Due ": "مستحق في ",
     " installment(s) past due — ": " قسط متأخر — ", " on ": " على ",
     "Largest open receivable": "أكبر مستحق مفتوح", " owes ": " عليه ", " outside any plan.": " خارج أي خطة.",
@@ -693,6 +700,7 @@ class Engine {
     ["transactions", "M4 7h13l-3-3M20 17H7l3 3"],
     ["people", "M16 19v-1a4 4 0 0 0-8 0v1M12 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6"],
     ["installments", "M4 5h16v15H4zM8 3v4M16 3v4M4 10h16M9 14h2M14 14h2"],
+    ["statements", "M6 2h12v20l-3-2-3 2-3-2-3 2zM9 8h6M9 12h6M9 16h3"],
     ["groups", "M12 4a8 8 0 1 0 0 16 8 8 0 0 0 0-16M12 8v4l3 2"],
     ["ledgers", "M12 4v16M6 9l6-5 6 5"],
     ["investments", "M4 19V9M10 19V5M16 19v-7M22 19H2"],
@@ -785,6 +793,18 @@ class Engine {
     for (let i = 0; i < 6; i++) { const dd = aM(g2, i); if (dd <= T0) add({ date: iso(dd), type: "gam3ya_payment", amount: 10000, accountId: "cib", groupId: "g10k", desc: "Gam3ya 10k — contribution " + (i + 1) }); }
     add({ date: iso(aM(g2, 1)), type: "gam3ya_payout", amount: 120000, accountId: "cib", groupId: "g10k", desc: "Gam3ya 10k — my turn collected" });
 
+    // Card statements demo: Titanium's last statement paid in full, this
+    // month's already partially paid; Platinum's is overdue and untouched;
+    // NBE Visa has none yet — shows what a card with no statement looks
+    // like too.
+    const cardStatements = [
+      { id: "st1", accountId: "card", period: "Last month", amount: 6200, due: iso(aM(T0, -1)), desc: "" },
+      { id: "st2", accountId: "card", period: "This month", amount: 8400, due: iso(aD(T0, 6)), desc: "" },
+      { id: "st3", accountId: "card_bm", period: "Last month", amount: 5000, due: iso(aD(T0, -4)), desc: "" }
+    ];
+    add({ date: iso(aM(T0, -1)), type: "statement_payment", amount: 6200, statementId: "st1", fromId: "cib", toId: "card", desc: "Titanium statement — last month" });
+    add({ date: iso(T0), type: "statement_payment", amount: 3000, statementId: "st2", fromId: "cash", toId: "card", desc: "Titanium statement — partial" });
+
     const targets = { cash: 7500, cib: 118000, sav: 57700, vf: 4200, ip: 12600, card: -8400, card_bm: -14200, card_nbe: -3100 };
     const eff = {}; accounts.forEach(a => eff[a.id] = 0);
     const EF = (id, v) => { if (id && eff[id] !== undefined) eff[id] = Math.round((eff[id] + v) * 100) / 100; };
@@ -794,6 +814,7 @@ class Engine {
         case "income": EF(x.accountId, m); break;
         case "expense": EF(x.accountId, -m); break;
         case "transfer": EF(x.fromId, -m); EF(x.toId, m); break;
+        case "statement_payment": EF(x.fromId, -m); EF(x.toId, m); break;
         case "receivable": if (x.accountId) EF(x.accountId, -m); break;
         case "receivable_payment": EF(x.accountId, m); break;
         case "payable": if (x.accountId) EF(x.accountId, m); break;
@@ -817,7 +838,7 @@ class Engine {
       { id: "r4", name: "Mobile line", type: "expense", amount: 250, accountId: "vf", category: "Mobile", freq: "monthly", day: 15 },
       { id: "r5", name: "Streaming bundle", type: "expense", amount: 300, accountId: "card", category: "Subscriptions", freq: "yearly", day: 8 }
     ];
-    return { accounts, people, tx, plans, groups, investments, recurring, customCategories: { income: [], expense: [] }, budgets: {}, audit: [{ at: new Date().toISOString().slice(0, 16).replace("T", " "), what: "Demo data seeded" }] };
+    return { accounts, people, tx, plans, groups, cardStatements, investments, recurring, customCategories: { income: [], expense: [] }, budgets: {}, audit: [{ at: new Date().toISOString().slice(0, 16).replace("T", " "), what: "Demo data seeded" }] };
   }
 
   // ---- engine: single source of truth ------------------------------------
@@ -835,6 +856,11 @@ class Engine {
         case "income": case "investment_return": case "refund": A(t.accountId, m); break;
         case "expense": A(t.accountId, -m); break;
         case "transfer": A(t.fromId, -m); A(t.toId, m); break;
+        // Paying a card statement moves money exactly like a transfer
+        // (out of the funding account, into the card account, paying its
+        // debt down) -- statementId along for the ride is what
+        // statementState() below groups payments by, on top of that.
+        case "statement_payment": A(t.fromId, -m); A(t.toId, m); break;
         case "receivable": R(t.personId, m); if (t.accountId) A(t.accountId, -m); break;
         case "receivable_payment": R(t.personId, -m); A(t.accountId, m); break;
         case "payable": Y(t.personId, m); if (t.accountId) A(t.accountId, m); break;
@@ -848,6 +874,7 @@ class Engine {
       }
     });
     const plans = d.plans.map(p => this.planState(p, cut));
+    const cardStatements = (d.cardStatements || []).map(s => this.statementState(s, cut));
     const groups = (d.groups || []).map(g => this.groupState(g, cut));
     const gRecv = groups.reduce((x, g) => x + Math.max(0, g.net), 0), gPay = groups.reduce((x, g) => x + Math.max(0, -g.net), 0);
     const planRecv = plans.filter(p => p.direction === "in").reduce((s, p) => s + p.remaining, 0);
@@ -869,7 +896,24 @@ class Engine {
     const countRecv = this.props.receivablesAreAssets !== false;
     const assets = available + invValue + (countRecv ? recvTotal : 0);
     const liab = payTotal + Math.abs(Math.min(0, cards));
-    return { bal, recv, pay, plans, groups, gRecv, gPay, cash, bank, wallets, cards, invValue, invCost, recvTotal, payTotal, planRecv, planPay, available, assets, liab, netWorth: assets - liab, live };
+    return { bal, recv, pay, plans, cardStatements, groups, gRecv, gPay, cash, bank, wallets, cards, invValue, invCost, recvTotal, payTotal, planRecv, planPay, available, assets, liab, netWorth: assets - liab, live };
+  }
+  // A statement's own `amount` is typed in by hand from the real bank
+  // statement -- it deliberately does NOT feed into the account's own
+  // Outstanding balance above (that stays purely transaction-derived, same
+  // as every other account). Paying a statement posts a real
+  // statement_payment transaction, which *does* move the card's balance
+  // (see the switch above) -- this only tracks how much of that specific
+  // statement's own total has been paid off yet.
+  statementState(s, cut) {
+    const d = this.state.data, today = this.today(), lim = cut || "9999-12-31";
+    const pays = d.tx.filter(t => !t.void && t.type === "statement_payment" && t.statementId === s.id && t.date <= lim);
+    const paid = Math.round(pays.reduce((sum, t) => sum + t.amount, 0) * 100) / 100;
+    const remaining = Math.max(0, Math.round((s.amount - paid) * 100) / 100);
+    const overdue = remaining > 0.001 && !!s.due && s.due < today;
+    const status = remaining <= 0.001 ? "paid" : overdue ? "overdue" : (paid > 0 ? "partial" : "open");
+    return { id: s.id, accountId: s.accountId, period: s.period, amount: s.amount, due: s.due, desc: s.desc,
+      paid, remaining, status, overdue };
   }
   planState(plan, cut) {
     const d = this.state.data, today = this.today();
@@ -1004,6 +1048,15 @@ class Engine {
     this.allLoanRows("receivable").filter(r => r.due && r.due <= this.iso(end)).forEach(r => ev.push({
       date: r.due < this.today() ? this.today() : r.due,
       title: this.L("Collect · ") + this.personName(r.personId), amount: r.rem, kind: "income" }));
+    // Card statements — same treatment as every obligation above: an
+    // unpaid one due within the horizon is a real outflow. Without this,
+    // Needs Attention could flag a statement due this week while Safe to
+    // spend / the Forecast total silently ignored the same money (only
+    // "income" side is missing on purpose — a statement is only ever
+    // something owed, never something collected).
+    D.cardStatements.filter(s => s.remaining > 0.001 && s.due <= this.iso(end)).forEach(s => ev.push({
+      date: s.due < this.today() ? this.today() : s.due,
+      title: this.L("Pay · ") + this.accName(s.accountId), amount: -s.remaining, kind: "expense" }));
     ev.sort((a, b) => a.date < b.date ? -1 : 1);
     let run = D.available; const pts = [[0, D.available]];
     ev.forEach(e => { run = Math.round((run + e.amount) * 100) / 100; e.running = run; pts.push([(new Date(e.date) - start) / (end - start), run]); });
@@ -1155,6 +1208,30 @@ class Engine {
     const d = this.state.data, t = this.T[this.state.lang];
     const accs = d.accounts.filter(a => a.active).map(a => ({ v: a.id, l: a.name }));
     const ppl = d.people.map(p => ({ v: p.id, l: p.name }));
+    const cardAccs = d.accounts.filter(a => a.active && a.type === "card").map(a => ({ v: a.id, l: a.name }));
+    // "Paid from" on a statement payment excludes cards entirely, not just
+    // the one being paid: a credit card isn't really a funding source
+    // (paying one card's statement "from" another doesn't move real
+    // money), and it means the field's default (the first option, before
+    // any pre-fill) can never coincidentally land on the very card being
+    // paid, whatever order the user's accounts happen to be in.
+    const fundingAccs = d.accounts.filter(a => a.active && a.type !== "card").map(a => ({ v: a.id, l: a.name }));
+    // Plain title only (no computed remaining) -- same convention as the
+    // installment_payment plan picker just below: FORMS() builds off raw
+    // stored data, not a fresh derive() call, so this list can't drift from
+    // whichever statement a "Pay" button on the statement's own row already
+    // pre-filled (the common path in here). Already-settled statements stay
+    // in the list rather than being filtered out -- editing an existing
+    // payment against one has to still find its own statement here -- but
+    // get a "(paid)" suffix so picking one isn't a silent dead end (the cap
+    // check in submit() still refuses any amount against it, at 0
+    // remaining).
+    const stmtOptions = (d.cardStatements || []).map(s => {
+      const acc = d.accounts.find(a => a.id === s.accountId);
+      const paidSoFar = d.tx.filter(x => !x.void && x.type === "statement_payment" && x.statementId === s.id).reduce((sum, x) => sum + x.amount, 0);
+      const isPaid = paidSoFar >= s.amount - 0.001;
+      return { v: s.id, l: (acc ? acc.name : "?") + " — " + (s.period || s.due || "") + (isPaid ? " " + this.L("(paid)", "(متسدد)") : "") };
+    });
     // Custom categories the user added in Settings — no ARW translation
     // exists for these (they're free text the user typed), so the language
     // pass below just leaves them as-is via its `|| o.l` fallback.
@@ -1188,6 +1265,33 @@ class Engine {
       purchase: { title: t.aPurchasePlan, fields: [D("date", "Purchase date", "date"), D("personId", "Seller", "select", { options: ppl }), D("title", "What was bought", "text", { wide: true }), D("total", "Total price", "number"), D("down", "Down payment", "number"), D("accountId", "Down payment from", "select", { options: [{ v: "", l: "No down payment" }].concat(accs) }), D("count", "Number of installments", "number"), D("freq", "Frequency", "select", { options: [{ v: "monthly", l: "Monthly" }, { v: "weekly", l: "Weekly" }, { v: "quarterly", l: "Quarterly" }] }), D("first", "First due date", "date"), D("balloon", "Final balloon payment", "number")] },
       installment_payment: { title: t.recordPayment, fields: [D("date", t.date, "date"), D("planId", "Plan", "select", { options: d.plans.map(p => ({ v: p.id, l: p.title })) }), D("amount", t.amount, "number", { hint: "Partial, exact or several installments at once — allocation is automatic." }), D("accountId", "Account", "select", { options: accs }), D("desc", t.details, "text", { wide: true })] },
       investment: { title: t.aInvest, fields: [D("name", t.name, "text"), D("type", t.type, "select", { options: ["Stocks", "Gold", "Mutual fund", "Fixed deposit", "Certificate", "Crypto", "Business", "Other"].map(v => ({ v, l: v })) }), D("invested", "Amount invested", "number"), D("value", "Current value", "number"), D("date", "Purchase date", "date"), D("accountId", "Funded from", "select", { options: [{ v: "", l: "No cash movement" }].concat(accs) })] },
+      // A statement's amount is typed by hand from the real bank statement
+      // -- it never touches the card's own transaction-derived Outstanding
+      // balance (see Engine.statementState). Card can't be changed once
+      // created (card_statement_edit omits it) -- a statement_payment
+      // already made against it stores the card's account id directly, so
+      // switching cards after the fact would orphan that history.
+      card_statement: { title: t.aStatement, fields: [D("accountId", this.L("Card", "الكارت"), "select", { options: cardAccs }),
+        D("period", this.L("Period", "الفترة"), "text", { hint: this.L("However you want to identify this statement, e.g. \"August 2026\".", "بأي طريقة تحب تتعرف بيها على الكشف ده، زي \"أغسطس 2026\".") }),
+        D("amount", this.L("Statement amount", "مبلغ الكشف"), "number", { hint: this.L("The total due, from the real bank statement.", "الإجمالي المطلوب، من كشف حساب البنك الحقيقي.") }),
+        D("due", t.dueDate, "date"), D("desc", "Notes", "text", { wide: true })] },
+      card_statement_edit: { title: this.L("Edit statement", "تعديل كشف الحساب"), fields: [
+        D("period", this.L("Period", "الفترة"), "text"),
+        D("amount", this.L("Statement amount", "مبلغ الكشف"), "number", { hint: this.L("The total due, from the real bank statement.", "الإجمالي المطلوب، من كشف حساب البنك الحقيقي.") }),
+        D("due", t.dueDate, "date"), D("desc", "Notes", "text", { wide: true })] },
+      // Posts exactly like a transfer (money out of "Paid from", into the
+      // card) -- see the statement_payment case in derive() -- plus a
+      // statementId so statementState() can tell how much of *this*
+      // statement specifically has been paid off.
+      // Field is named "fromId", not "accountId" -- it has to match the
+      // transaction's own stored property (see the statement_payment push
+      // below) so editing an existing payment (openTxEdit does
+      // Object.assign({}, t) straight onto the form) actually pre-fills
+      // the account it was really paid from, instead of silently falling
+      // back to the first account in the list.
+      statement_payment: { title: t.payStatement, fields: [D("date", t.date, "date"), D("statementId", this.L("Statement", "كشف الحساب"), "select", { options: stmtOptions }),
+        D("amount", t.amount, "number", { hint: this.L("Partial payments are fine.", "السداد الجزئي مقبول.") }),
+        D("fromId", this.L("Paid from", "اتسدد من"), "select", { options: fundingAccs }), D("desc", t.details, "text", { wide: true })] },
       invest_update: { title: t.updateValue, fields: [D("investmentId", "Investment", "select", { options: d.investments.map(i => ({ v: i.id, l: i.name })) }), D("value", "New current value", "number"), D("date", "As of", "date")] },
       investment_edit: { title: this.L("Edit investment"), fields: [D("name", t.name, "text"), D("type", t.type, "select", { options: ["Stocks", "Gold", "Mutual fund", "Fixed deposit", "Certificate", "Crypto", "Business", "Other"].map(v => ({ v, l: v })) }), D("invested", "Amount invested", "number")] },
       // Relation picks a default avatar color (relationTypes()) so a fresh
@@ -1343,6 +1447,46 @@ class Engine {
       } else {
         push({ date: f.date, type: "installment_payment", amount: N("amount"), accountId: f.accountId, personId: plan.personId, planId: plan.id, desc: f.desc || "Installment payment" });
         note = "Installment payment " + this.fmt(N("amount")) + " · " + plan.title;
+      }
+    } else if (k === "card_statement") {
+      if (!need(f.accountId, "Pick a card.")) return false;
+      if (!need(N("amount") > 0, "Amount must be greater than zero.")) return false;
+      if (!need(f.due, "Pick a due date.")) return false;
+      data.cardStatements = (data.cardStatements || []).concat([{ id: this.uid("st"), accountId: f.accountId, period: f.period || "", amount: N("amount"), due: f.due, desc: f.desc || "" }]);
+      note = "Added statement " + (f.period || "") + " " + this.fmt(N("amount"));
+    } else if (k === "card_statement_edit") {
+      const s = (data.cardStatements || []).find(x => x.id === f.id);
+      if (!need(s, "Pick a statement.")) return false;
+      if (!need(N("amount") > 0, "Amount must be greater than zero.")) return false;
+      if (!need(f.due, "Pick a due date.")) return false;
+      s.period = f.period || ""; s.amount = N("amount"); s.due = f.due; s.desc = f.desc || "";
+      note = "Updated statement " + (s.period || "");
+    } else if (k === "statement_payment") {
+      if (!need(N("amount") > 0, "Amount must be greater than zero.")) return false;
+      const stmt = (data.cardStatements || []).find(s => s.id === f.statementId);
+      if (!need(stmt, "Pick a statement.")) return false;
+      // Covers the edge case where every active account is a card (the
+      // "Paid from" list excludes all of them, on purpose -- see
+      // fundingAccs above): the select renders with no options and
+      // f.fromId defaults to "", which would otherwise pass the
+      // not-equal-to-the-card check below vacuously and post a payment
+      // debited from no account at all.
+      if (!need(f.fromId, "Pick an account to pay from.")) return false;
+      if (!need(f.fromId !== stmt.accountId, "Pick an account other than the card itself.")) return false;
+      const existing = f.id ? data.tx.find(x => x.id === f.id) : null;
+      const st = this.statementState(stmt);
+      // Same allowance as installment_payment above: editing a payment
+      // already counted in st.remaining for this same statement gets it
+      // added back before capping, so shrinking/growing it validates
+      // against the statement's real remaining, not remaining-minus-itself.
+      const cap = (existing && existing.statementId === stmt.id) ? st.remaining + existing.amount : st.remaining;
+      if (!need(N("amount") <= cap + 0.001, "That is more than the " + this.fmt(cap) + " still outstanding on this statement.")) return false;
+      if (existing) {
+        Object.assign(existing, { date: f.date, amount: N("amount"), statementId: stmt.id, fromId: f.fromId, toId: stmt.accountId, desc: f.desc || "Statement payment" });
+        note = "Updated statement payment " + this.fmt(N("amount"));
+      } else {
+        push({ date: f.date, type: "statement_payment", amount: N("amount"), statementId: stmt.id, fromId: f.fromId, toId: stmt.accountId, desc: f.desc || "Statement payment" });
+        note = "Statement payment " + this.fmt(N("amount"));
       }
     } else if (k === "investment") {
       if (!need(f.name, "Give the investment a name.")) return false;
@@ -1512,12 +1656,18 @@ class Engine {
   // deletable record uses. A recurring rule still pointing at it blocks
   // deletion too: it hasn't posted anything yet, but it's about to, and
   // deleting the account out from under it would just break that rule
-  // silently the next time it fires.
+  // silently the next time it fires. Same for a card statement with no tx
+  // against it yet: it doesn't show up in the tx scan above, but deleting
+  // the card out from under it would orphan it — pay it later and
+  // derive()'s A(t.toId, m) silently no-ops (bal has no entry for a
+  // deleted account id), so the money would vanish from every total
+  // instead of landing anywhere.
   accountCanDelete(id) {
     const d = this.state.data;
     const used = d.tx.some(t => !t.void && (t.accountId === id || t.fromId === id || t.toId === id));
     const scheduled = (d.recurring || []).some(r => r.accountId === id);
-    return !used && !scheduled;
+    const hasStatement = (d.cardStatements || []).some(s => s.accountId === id);
+    return !used && !scheduled && !hasStatement;
   }
   deleteAccount(id) {
     if (!this.accountCanDelete(id)) return;
@@ -1560,6 +1710,16 @@ class Engine {
     const iv = data.investments.find(i => i.id === id); if (!iv) return;
     data.investments = data.investments.filter(i => i.id !== id);
     this.persist(data, "Deleted investment " + iv.name);
+  }
+  cardStatementCanDelete(id) {
+    return !this.state.data.tx.some(t => !t.void && t.type === "statement_payment" && t.statementId === id);
+  }
+  deleteCardStatement(id) {
+    if (!this.cardStatementCanDelete(id)) return;
+    const data = JSON.parse(JSON.stringify(this.state.data));
+    const s = (data.cardStatements || []).find(x => x.id === id); if (!s) return;
+    data.cardStatements = data.cardStatements.filter(x => x.id !== id);
+    this.persist(data, "Deleted statement " + (s.period || s.due || ""));
   }
   // Custom income/expense categories — added from Settings, then show up
   // in every category dropdown (FORMS()) right alongside the built-in ones.
@@ -1648,7 +1808,7 @@ class Engine {
   // excluded — it's already inactive, and its reversal marker points at it
   // by id.
   txEditableTypes() {
-    return ["income", "expense", "transfer", "receivable", "payable", "receivable_payment", "debt_payment", "installment_payment", "gam3ya_payment", "gam3ya_payout"];
+    return ["income", "expense", "transfer", "receivable", "payable", "receivable_payment", "debt_payment", "installment_payment", "gam3ya_payment", "gam3ya_payout", "statement_payment"];
   }
   txEditable(t) {
     return !!t && !t.void && this.txEditableTypes().includes(t.type);
@@ -1859,6 +2019,10 @@ const UI = {
     const iv = this.app.state.data.investments.find(i => i.id === id); if (!iv) return;
     if (this.app.investmentCanDelete(id) && confirm(this.app.L("Delete ") + iv.name + "?")) { this.app.deleteInvestment(id); this.render(); }
   },
+  deleteCardStatementC(id) {
+    const s = (this.app.state.data.cardStatements || []).find(x => x.id === id); if (!s) return;
+    if (this.app.cardStatementCanDelete(id) && confirm(this.app.L("Delete ") + (s.period || s.due || "") + "?")) { this.app.deleteCardStatement(id); this.render(); }
+  },
   deleteGroupC(id) {
     const g = (this.app.state.data.groups || []).find(x => x.id === id); if (!g) return;
     if (this.app.groupCanDelete(id) && confirm(this.app.L("Delete ") + g.name + "?")) { this.app.deleteGroup(id); this.render(); }
@@ -1913,7 +2077,7 @@ const UI = {
   reseed() { if (confirm(this.app.L("Reload demo data? This replaces everything currently stored.", "تحميل البيانات التجريبية؟ ده هيستبدل كل البيانات المحفوظة حالياً."))) { this.app.persist(this.app.seed(), "Demo data reloaded"); this.render(); } },
   wipe() {
     if (confirm(this.app.L("Erase all data? This cannot be undone.", "حذف كل البيانات؟ الإجراء ده لا يمكن التراجع عنه."))) {
-      const empty = { accounts: [], people: [], tx: [], plans: [], groups: [], investments: [], recurring: [], audit: [{ at: new Date().toISOString().slice(0, 16).replace("T", " "), what: "Wiped all data" }] };
+      const empty = { accounts: [], people: [], tx: [], plans: [], groups: [], cardStatements: [], investments: [], recurring: [], audit: [{ at: new Date().toISOString().slice(0, 16).replace("T", " "), what: "Wiped all data" }] };
       this.app.persist(empty, null); this.render();
     }
   },
@@ -2038,6 +2202,7 @@ const UI = {
       case "people": return this.renderPeople(D, t);
       case "person_detail": return this.renderPersonDetail(D, t);
       case "installments": return this.renderInstallments(D, t);
+      case "statements": return this.renderCardStatements(D, t);
       case "groups": return this.renderGroups(D, t);
       case "ledgers": return this.renderLedgers(D, t);
       case "investments": return this.renderInvestments(D, t);
@@ -2066,6 +2231,18 @@ const UI = {
     let h = 5381;
     for (let i = 0; i < tag.length; i++) h = ((h * 33) ^ tag.charCodeAt(i)) >>> 0;
     return "--tag-h:" + (h % 360);
+  },
+
+  // "in 3d" / "today" / "5d overdue" -- a due date on its own (used for
+  // card statements) needs this at-a-glance countdown, not just the raw
+  // date, to actually answer "how long do I have."
+  daysUntilText(due) {
+    const app = this.app;
+    if (!due) return "";
+    const days = Math.round((new Date(due) - new Date(app.today())) / 86400000);
+    if (days < 0) return app.L(Math.abs(days) + "d overdue", "متأخر " + Math.abs(days) + " يوم");
+    if (days === 0) return app.L("due today", "مستحق النهارده");
+    return app.L("in " + days + "d", "خلال " + days + " يوم");
   },
 
   // Category bar row -- shared by Dashboard ("This month") and Reports
@@ -2141,6 +2318,20 @@ const UI = {
       cta: t.collect + " →", act: "UI.openModal('receivable_payment',{personId:'" + r.personId + "'})"
     }));
     if (D.cards < 0) alerts.push({ title: app.L("Credit card balance"), body: app.fmt(Math.abs(D.cards)) + app.L(" outstanding — counted as a liability, not as available money."), cta: t.accounts + " →", go: "accounts" });
+    // Card statements: overdue first, then a heads-up for anything due
+    // within a week -- same "before it's actually late" nudge the budget
+    // alert just below already uses.
+    const stmtSoon = app.iso(app.addDays(new Date(), 7));
+    D.cardStatements.filter(s => s.overdue).sort((a, b) => b.remaining - a.remaining).slice(0, 2).forEach(s => alerts.push({
+      title: app.L("Overdue statement · ") + app.accName(s.accountId),
+      body: app.fmt(s.remaining) + app.L(" was due ") + s.due,
+      cta: t.pay + " →", act: "UI.openModal('statement_payment',{statementId:'" + s.id + "'})"
+    }));
+    D.cardStatements.filter(s => s.status !== "paid" && !s.overdue && s.due <= stmtSoon).sort((a, b) => a.due < b.due ? -1 : 1).slice(0, 2).forEach(s => alerts.push({
+      title: app.L("Statement due soon · ") + app.accName(s.accountId),
+      body: app.fmt(s.remaining) + " · " + app.L("Due ") + s.due,
+      cta: t.pay + " →", act: "UI.openModal('statement_payment',{statementId:'" + s.id + "'})"
+    }));
     // Budgets set in Settings, 90%+ spent this month — a nudge before it's
     // actually over, not just an after-the-fact tally.
     const monthSpend = app.monthCategorySpend(), budgets = d.budgets || {};
@@ -2316,12 +2507,19 @@ const UI = {
         '<div><div class="cc-label">' + esc(app.L("Available", "المتاح")) + '</div><div class="cc-sub">' + app.fmt(available) + "</div></div>" +
         '<div><div class="cc-label">' + esc(app.L("Limit", "الحد")) + '</div><div class="cc-sub">' + app.fmt(a.limit) + "</div></div></div>" :
         '<div class="cc-row"><div><div class="cc-label">' + esc(app.L("Balance", "الرصيد")) + '</div><div class="cc-amt">' + app.fmt(bal) + "</div></div></div>";
+      // Nearest un-paid statement on this card, right on the tile -- the
+      // full list (add/edit/pay every statement, on every card) lives on
+      // its own page (More -> Card statements); this is just the
+      // at-a-glance "how much, how soon" the tile itself promises.
+      const nearestStmt = isDebt ? D.cardStatements.filter(s => s.accountId === a.id && s.status !== "paid").sort((x, y) => x.due < y.due ? -1 : 1)[0] : null;
+      const stmtLine = nearestStmt ? '<div class="cc-row" style="margin-top:10px"><div><div class="cc-label">' + esc(app.L("Statement due", "كشف الحساب")) + '</div><div class="cc-sub">' + app.fmt(nearestStmt.remaining) + " · " + esc(this.daysUntilText(nearestStmt.due)) + "</div></div></div>" : "";
       return '<div class="credit-card-tile' + (isDebt ? "" : " balance-tile") + '" style="background:linear-gradient(135deg, ' + a.color + ', ' + dark + ')">' +
         '<div class="cc-top"><span class="cc-bank">' + esc(a.bank || typeLabel[a.type]) + '</span><span class="' + (isDebt ? "cc-chip" : "cc-mark") + '"></span></div>' +
         '<button class="link-btn cc-name" onclick="UI.viewAccountTx(\'' + a.id + '\')">' + esc(a.name) + "</button>" +
-        face +
+        face + stmtLine +
         '<div class="btn-row wrap" style="margin-top:12px">' +
         moveBtns(a.id, i, arr) +
+        (isDebt ? '<button class="link-btn small" onclick="UI.openModal(\'card_statement\',{accountId:\'' + a.id + '\'})">' + esc(t.aStatement) + "</button>" : "") +
         '<button class="link-btn small" onclick="UI.openModal(\'account_edit\',' + editArgsFor(a) + ')">' + esc(app.L("Edit")) + "</button>" +
         (canDelete ? '<button class="link-btn small" onclick="UI.deleteAccountC(\'' + a.id + '\')">' + esc(app.L("Delete")) + "</button>" : "") +
         "</div></div>";
@@ -2353,8 +2551,8 @@ const UI = {
   renderTransactions(D, t) {
     const app = this.app, S = app.state, d = app.state.data;
     const typeLabels = S.lang === "ar"
-      ? { income: "إيراد", expense: "مصروف", transfer: "تحويل", receivable: "سلفة لي", receivable_payment: "تحصيل", payable: "دين عليّ", debt_payment: "سداد", investment_buy: "استثمار", investment_return: "عائد استثمار", installment_sale: "بيع بالتقسيط", installment_payment: "دفعة قسط", gam3ya_payment: "قسط جمعية", gam3ya_payout: "قبض جمعية", refund: "مرتجع", adjustment: "تسوية", reversal_marker: "عكس قيد" }
-      : { income: "Income", expense: "Expense", transfer: "Transfer", receivable: "Receivable", receivable_payment: "Collection", payable: "Debt", debt_payment: "Repayment", investment_buy: "Investment", investment_return: "Inv. return", installment_sale: "Inst. sale", installment_payment: "Inst. payment", gam3ya_payment: "Gam3ya in", gam3ya_payout: "Gam3ya payout", refund: "Refund", adjustment: "Adjustment", reversal_marker: "Reversal" };
+      ? { income: "إيراد", expense: "مصروف", transfer: "تحويل", receivable: "سلفة لي", receivable_payment: "تحصيل", payable: "دين عليّ", debt_payment: "سداد", investment_buy: "استثمار", investment_return: "عائد استثمار", installment_sale: "بيع بالتقسيط", installment_payment: "دفعة قسط", gam3ya_payment: "قسط جمعية", gam3ya_payout: "قبض جمعية", statement_payment: "سداد كشف حساب", refund: "مرتجع", adjustment: "تسوية", reversal_marker: "عكس قيد" }
+      : { income: "Income", expense: "Expense", transfer: "Transfer", receivable: "Receivable", receivable_payment: "Collection", payable: "Debt", debt_payment: "Repayment", investment_buy: "Investment", investment_return: "Inv. return", installment_sale: "Inst. sale", installment_payment: "Inst. payment", gam3ya_payment: "Gam3ya in", gam3ya_payout: "Gam3ya payout", statement_payment: "Statement payment", refund: "Refund", adjustment: "Adjustment", reversal_marker: "Reversal" };
     const presetStart = { today: 0, week: 7, month: 30, quarter: 90, year: 365 };
     let rows = d.tx.slice().sort((a, b) => a.date < b.date ? 1 : (a.date > b.date ? -1 : 0));
     const F = S.filt;
@@ -2364,13 +2562,17 @@ const UI = {
     if (F.q.trim()) { const q = F.q.toLowerCase(); rows = rows.filter(r => [r.desc, r.category, typeLabels[r.type], app.personName(r.personId), app.accName(r.accountId), app.accName(r.fromId), app.accName(r.toId), (r.tags || []).join(" ")].join(" ").toLowerCase().includes(q)); }
     const outTypes = ["expense", "debt_payment", "receivable", "investment_buy", "gam3ya_payment"];
     const inTypes = ["income", "receivable_payment", "payable", "installment_payment", "investment_return", "refund", "gam3ya_payout"];
+    // statement_payment moves money exactly like a transfer (fromId/toId,
+    // no sign of its own) -- everywhere transfer gets special-cased below,
+    // this does too, or it'd show as a plain negative with a blank account.
+    const isTransferLike = (type) => type === "transfer" || type === "statement_payment";
     const total = rows.length;
     const visible = rows.slice(0, S.txVisible);
     const items = visible.map(r => {
       const isIn = inTypes.includes(r.type) && !(r.type === "installment_payment" && app.planDir(r.planId) === "out");
-      const signed = (r.type === "transfer" || r.type === "reversal_marker") ? 0 : (isIn ? r.amount : -r.amount);
+      const signed = (isTransferLike(r.type) || r.type === "reversal_marker") ? 0 : (isIn ? r.amount : -r.amount);
       const amtTxt = r.type === "reversal_marker" ? "—" : (signed === 0 ? app.fmt(r.amount) : app.fmtS(signed));
-      const acc = r.type === "transfer" ? app.accName(r.fromId) + " → " + app.accName(r.toId) : (r.accountId ? app.accName(r.accountId) : "—");
+      const acc = isTransferLike(r.type) ? app.accName(r.fromId) + " → " + app.accName(r.toId) : (r.accountId ? app.accName(r.accountId) : "—");
       const tone = r.void ? "muted-amt" : (signed > 0 ? "tone-pos" : signed < 0 ? "tone-neg" : "");
       return { r, isIn, signed, amtTxt, acc, tone };
     });
@@ -2397,7 +2599,7 @@ const UI = {
       "</tr></thead><tbody>" + items.map(({ r, isIn, amtTxt, acc, tone }) =>
         '<tr style="' + (r.void ? "opacity:.45;text-decoration:line-through" : "") + '">' +
           "<td>" + r.date + "</td>" +
-          '<td><span class="tag ' + (isIn ? "tag-pos" : r.type === "transfer" ? "tag-neu" : "tag-neg") + '">' + esc(typeLabels[r.type] || r.type) + "</span></td>" +
+          '<td><span class="tag ' + (isIn ? "tag-pos" : isTransferLike(r.type) ? "tag-neu" : "tag-neg") + '">' + esc(typeLabels[r.type] || r.type) + "</span></td>" +
           "<td>" + esc(r.desc || "—") + tagChips(r) + "</td>" +
           "<td>" + esc(r.personId ? app.personName(r.personId) : "—") + "</td>" +
           "<td>" + esc(acc) + "</td>" +
@@ -2625,6 +2827,47 @@ const UI = {
 
     return this.tabHeader(t.installments, D.plans.length + app.L(" plans · allocation handles partial, early and balloon payments", " خطة · التوزيع يعالج الدفعات الجزئية والمبكرة والدفعة الأخيرة"),
       [[t.aSale, "UI.openModal('sale')"], [t.aPurchasePlan, "UI.openModal('purchase')"]]) + kpiRow + '<div class="card-list">' + planCards + "</div>";
+  },
+
+  // ---- Card statements -------------------------------------------------
+  // A statement's `amount` is typed in by hand from the real bank
+  // statement every month, deliberately separate from the card's own
+  // transaction-derived Outstanding balance -- see Engine.statementState.
+  // Paying one still moves real money (a normal account -> card transfer,
+  // just tagged to a specific statement) and reduces both the card's
+  // balance and that statement's own remaining at once.
+  renderCardStatements(D, t) {
+    const app = this.app, d = app.state.data;
+    const list = D.cardStatements.slice().sort((a, b) => (a.due || "9999") < (b.due || "9999") ? -1 : 1);
+    const totalRemaining = D.cardStatements.reduce((s, x) => s + x.remaining, 0);
+    const overdueAmt = D.cardStatements.filter(x => x.overdue).reduce((s, x) => s + x.remaining, 0);
+    const kpiRow = '<div class="tile-grid three">' +
+      '<div class="pos-tile"><div class="pos-label">' + esc(app.L("Statements", "كشوف الحساب")) + '</div><div class="pos-value">' + D.cardStatements.length + "</div></div>" +
+      '<div class="pos-tile"><div class="pos-label">' + esc(t.remaining) + '</div><div class="pos-value">' + app.fmt(totalRemaining) + "</div></div>" +
+      '<div class="pos-tile"><div class="pos-label">' + esc(app.L("Overdue", "متأخر")) + '</div><div class="pos-value ' + (overdueAmt > 0 ? "tone-neg" : "tone-neu") + '">' + app.fmt(overdueAmt) + "</div></div>" +
+    "</div>";
+
+    const editArgs = (s) => JSON.stringify({ id: s.id, period: s.period || "", amount: s.amount, due: s.due || "", desc: s.desc || "" }).replace(/"/g, "&quot;");
+    const statusLabel = { paid: app.L("Fully paid", "متسدد بالكامل"), overdue: app.L("Overdue", "متأخر"), partial: app.L("Partially paid", "متسدد جزئيًا"), open: app.L("Open", "مفتوح") };
+    const cards = list.map(s => {
+      const canDelete = app.cardStatementCanDelete(s.id);
+      return '<div class="card-row">' +
+        // Days-until only makes sense while something is still owed --
+        // "31d overdue" next to a statement that's already Fully paid reads
+        // like a live problem when it's actually settled history.
+        '<div class="card-row-top"><div><div class="card-row-title">' + esc(app.accName(s.accountId)) + '</div><div class="card-row-sub">' + esc(s.period || "—") + (s.due ? " · " + esc(t.dueDate) + " " + s.due + (s.remaining > 0.001 ? " · " + esc(this.daysUntilText(s.due)) : "") : "") + "</div></div>" +
+        '<div class="card-row-amt ' + (s.overdue ? "tone-neg" : "") + '">' + app.fmt(s.remaining) + "</div></div>" +
+        '<div class="card-row-meta"><span>' + esc(t.paid) + ": " + app.fmt(s.paid) + " / " + app.fmt(s.amount) + '</span><span>' + esc(statusLabel[s.status]) + "</span></div>" +
+        '<div class="btn-row wrap">' +
+        (s.remaining > 0.001 ? '<button class="btn btn-secondary small" onclick="UI.openModal(\'statement_payment\',{statementId:\'' + s.id + '\'})">' + esc(t.pay) + "</button>" : "") +
+        '<button class="link-btn small" onclick="UI.openModal(\'card_statement_edit\',' + editArgs(s) + ')">' + esc(app.L("Edit")) + "</button>" +
+        (canDelete ? '<button class="link-btn small" onclick="UI.deleteCardStatementC(\'' + s.id + '\')">' + esc(app.L("Delete")) + "</button>" : "") +
+        "</div></div>";
+    }).join("");
+
+    return this.tabHeader(t.statements, D.cardStatements.length + app.L(" statements · amounts are typed in by hand each month, from the real bank statement", " كشف · المبالغ بتتكتب بإيدك كل شهر، من كشف حساب البنك الحقيقي"),
+      [[t.aStatement, "UI.openModal('card_statement')"]]) + kpiRow +
+      (list.length ? '<div class="card-list" style="margin-top:14px">' + cards + "</div>" : '<p class="muted" style="margin-top:14px">' + esc(app.L("No statements yet.", "لسه مفيش كشوف حساب.")) + "</p>");
   },
 
   // ---- Savings groups (gam3eya) -----------------------------------------
@@ -2994,7 +3237,7 @@ const UI = {
     // pre-filled with the original row's `id`) — while F.title always reads
     // "+ Income" etc, the header should say "Edit" whenever a real id is
     // riding along, i.e. this is a correction, not a new entry.
-    const txKinds = ["income", "expense", "transfer", "receivable", "payable", "receivable_payment", "debt_payment", "installment_payment", "group_payment", "group_payout"];
+    const txKinds = ["income", "expense", "transfer", "receivable", "payable", "receivable_payment", "debt_payment", "installment_payment", "group_payment", "group_payout", "statement_payment"];
     const title = (form.id && txKinds.includes(S.modal)) ? app.L("Edit transaction", "تعديل الحركة") : F.title;
     const field = (f) => {
       const val = form[f.k] !== undefined ? form[f.k] : "";
