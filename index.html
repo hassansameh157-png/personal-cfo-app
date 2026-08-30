@@ -173,6 +173,11 @@ h1,h2,h3{font-family:var(--font-head);font-weight:600;margin:0;text-wrap:balance
 .cc-top{display:flex;align-items:center;justify-content:space-between;gap:8px}
 .cc-bank{font-size:11px;letter-spacing:.06em;text-transform:uppercase;opacity:.85}
 .cc-chip{width:30px;height:22px;border-radius:5px;background:linear-gradient(135deg,#e9d38a,#c9a94f);opacity:.9}
+/* Balance-type tiles (wallet/cash/electronic card) get a plain translucent
+   mark instead of the chip — a chip specifically reads as "real EMV card",
+   which none of these are. */
+.cc-mark{width:22px;height:22px;border-radius:999px;background:rgba(255,255,255,.28);border:1.5px solid rgba(255,255,255,.5)}
+.balance-tile .cc-row{margin-top:18px}
 .cc-name{display:block;font-family:var(--font-head);font-size:17px;color:#fff !important;margin-top:14px;padding:0 !important;min-height:0 !important}
 .cc-row{display:flex;justify-content:space-between;align-items:flex-end;margin-top:16px}
 .cc-label{font-size:9px;letter-spacing:.06em;text-transform:uppercase;opacity:.75}
@@ -806,10 +811,18 @@ class Engine {
     const planPay = plans.filter(p => p.direction === "out").reduce((s, p) => s + p.remaining, 0);
     const sum = (f) => d.accounts.filter(f).reduce((s, a) => s + bal[a.id], 0);
     const cash = sum(a => a.active && a.type === "cash"), bank = sum(a => a.active && a.type === "bank"), wallets = sum(a => a.active && a.type === "wallet"), cards = sum(a => a.active && a.type === "card");
+    // Anything that isn't "card" (a liability line, handled separately via
+    // `cards`/`liab`) is real spendable balance by default — "ecard" (a
+    // prepaid/gift-card balance) and "other" both fall in here, so a type
+    // added later doesn't silently vanish from available/net worth the way
+    // "other" already did before this: it had never been added to any of
+    // cash/bank/wallets either, so its balance was real on the account's
+    // own row but invisible everywhere derived from these totals.
+    const otherBalance = sum(a => a.active && !["cash", "bank", "wallet", "card"].includes(a.type));
     const invValue = d.investments.reduce((s, i) => s + i.value, 0), invCost = d.investments.reduce((s, i) => s + i.invested, 0);
     const recvTotal = Object.values(recv).reduce((s, v) => s + Math.max(0, v), 0) + planRecv + gRecv;
     const payTotal = Object.values(pay).reduce((s, v) => s + Math.max(0, v), 0) + planPay + gPay;
-    const available = cash + bank + wallets;
+    const available = cash + bank + wallets + otherBalance;
     const countRecv = this.props.receivablesAreAssets !== false;
     const assets = available + invValue + (countRecv ? recvTotal : 0);
     const liab = payTotal + Math.abs(Math.min(0, cards));
@@ -1136,7 +1149,10 @@ class Engine {
       investment_edit: { title: this.L("Edit investment"), fields: [D("name", t.name, "text"), D("type", t.type, "select", { options: ["Stocks", "Gold", "Mutual fund", "Fixed deposit", "Certificate", "Crypto", "Business", "Other"].map(v => ({ v, l: v })) }), D("invested", "Amount invested", "number")] },
       person: { title: t.aPerson, fields: [D("name", t.name, "text"), D("phone", t.phone, "text"), D("notes", "Notes", "text", { wide: true })] },
       person_edit: { title: this.L("Edit person"), fields: [D("name", t.name, "text"), D("phone", t.phone, "text"), D("notes", "Notes", "text", { wide: true })] },
-      account: { title: t.aAccount, fields: [D("name", t.name, "text"), D("type", t.type, "select", { options: [{ v: "cash", l: "Cash" }, { v: "bank", l: "Bank" }, { v: "wallet", l: "Smart wallet" }, { v: "card", l: "Credit card" }, { v: "other", l: "Other" }] }), D("bank", "Bank / issuer", "text"), D("opening", "Opening balance", "number"), D("limit", "Credit limit", "number", { hint: "Leave 0 for non-card accounts." }), D("color", this.L("Color", "اللون"), "color", { hint: this.L("A credit card renders as a card face in this color — pick your bank's to match.", "الكريدت كارد بيتعرض بشكل كارت باللون ده — اختار لون بنكك عشان يشبهه.") }), D("desc", "Reference / notes", "text", { wide: true })] },
+      // "Electronic card" (ecard) — a prepaid/gift-card-style balance, e.g.
+      // an Amazon or store gift card: holds a real balance like cash or a
+      // wallet (no limit/debt concept), just rendered as its own card tile.
+      account: { title: t.aAccount, fields: [D("name", t.name, "text"), D("type", t.type, "select", { options: [{ v: "cash", l: "Cash" }, { v: "bank", l: "Bank" }, { v: "wallet", l: "Smart wallet" }, { v: "card", l: "Credit card" }, { v: "ecard", l: "Electronic card" }, { v: "other", l: "Other" }] }), D("bank", "Bank / issuer", "text"), D("opening", "Opening balance", "number"), D("limit", "Credit limit", "number", { hint: "Leave 0 for non-card accounts." }), D("color", this.L("Color", "اللون"), "color", { hint: this.L("Cash, wallets, credit and electronic cards all render as a card face in this color — pick a real one to match.", "الكاش والمحافظ والكروت (الائتمان والإلكترونية) كلهم بيتعرضوا بشكل كارت باللون ده — اختار لون حقيقي عشان يشبهه.") }), D("desc", "Reference / notes", "text", { wide: true })] },
       // Start amount / current outstanding is editable here too, same as
       // any other opening position (see the "Opening positions" rule in
       // Settings) — it's just the baseline the balance is computed from,
@@ -1145,7 +1161,7 @@ class Engine {
       account_edit: { title: this.L("Edit account"), fields: [D("name", t.name, "text"), D("bank", "Bank / issuer", "text"),
         D("opening", this.state.form && this.state.form.type === "card" ? this.L("Current outstanding") : this.L("Start amount", "الرصيد الافتتاحي"), "number", this.state.form && this.state.form.type === "card" ? { hint: this.L("What you owe on the card today.") } : {}),
         D("limit", "Credit limit", "number", { hint: "Leave 0 for non-card accounts." }),
-        D("color", this.L("Color", "اللون"), "color", { hint: this.L("A credit card renders as a card face in this color — pick your bank's to match.", "الكريدت كارد بيتعرض بشكل كارت باللون ده — اختار لون بنكك عشان يشبهه.") }),
+        D("color", this.L("Color", "اللون"), "color", { hint: this.L("Renders as a card face in this color — pick a real one to match.", "بيتعرض بشكل كارت باللون ده — اختار لون حقيقي عشان يشبهه.") }),
         D("desc", "Reference / notes", "text", { wide: true })] },
       card: { title: t.aCard, fields: [D("bank", "Bank / issuer", "text"), D("name", "Card name", "text"), D("limit", "Credit limit", "number"), D("opening", "Current outstanding", "number", { hint: "What you owe on the card today." }), D("color", this.L("Color", "اللون"), "color", { hint: this.L("Renders the card face — pick your bank's color to match.", "بيحدد شكل الكارت — اختار لون بنكك عشان يشبهه.") }), D("desc", "Reference / notes", "text", { wide: true })] },
       group: { title: this.L("+ Savings group (gam3ya)"), fields: [D("name", "Group name", "text", { wide: true }), D("amount", "Contribution per period", "number"), D("periods", "Number of periods", "number"), D("myTurn", "My turn (position)", "number"), D("freq", "Frequency", "select", { options: [{ v: "monthly", l: "Monthly" }, { v: "weekly", l: "Weekly" }] }), D("first", "First contribution date", "date"), D("accountId", "Paid from", "select", { options: accs })] },
@@ -2070,31 +2086,40 @@ const UI = {
   // ---- Accounts -------------------------------------------------------------
   renderAccounts(D, t) {
     const app = this.app, d = app.state.data;
-    const typeLabel = { cash: app.L("Cash", "كاش"), bank: app.L("Bank", "بنك"), wallet: app.L("Smart wallet", "محفظة إلكترونية"), card: app.L("Credit card", "بطاقة ائتمان"), other: app.L("Other", "أخرى") };
+    const typeLabel = { cash: app.L("Cash", "كاش"), bank: app.L("Bank", "بنك"), wallet: app.L("Smart wallet", "محفظة إلكترونية"), card: app.L("Credit card", "بطاقة ائتمان"), ecard: app.L("Electronic card", "كارت إلكتروني"), other: app.L("Other", "أخرى") };
     const accs = d.accounts.filter(a => a.active);
     const maxAbs = Math.max(1, ...accs.map(a => Math.abs(D.bal[a.id])));
     const editArgsFor = (a) => JSON.stringify({ id: a.id, name: a.name, type: a.type, bank: a.bank || "", opening: a.type === "card" ? Math.abs(a.opening || 0) : (a.opening || 0), limit: a.limit || 0, color: a.color || "#7d7979", desc: a.desc || "" }).replace(/"/g, "&quot;");
 
-    // Credit cards render as a card-shaped tile in their own color (no
-    // bank logos — trademarked; just the gradient) instead of the plain
-    // list row every other account type uses, since a card is the one
-    // account type people actually picture as a physical card.
-    const cardTiles = accs.filter(a => a.type === "card").map(a => {
+    // Every account type people actually picture as a physical card or
+    // wallet renders as a card-shaped tile in its own color, instead of
+    // the plain list row (no bank logos anywhere — trademarked; just the
+    // gradient). "card" is the debt variant (Outstanding/Limit, chip mark);
+    // "wallet"/"cash"/"ecard" are the balance variant (one number, a plain
+    // mark instead of a chip — nothing here claims to be a real EMV card).
+    // "bank"/"other" stay as the original list row: an account statement
+    // isn't something people picture as a physical object the same way.
+    const tileTypes = ["card", "wallet", "cash", "ecard"];
+    const tiles = accs.filter(a => tileTypes.includes(a.type)).map(a => {
       const bal = D.bal[a.id];
       const canDelete = app.accountCanDelete(a.id);
       const dark = "color-mix(in srgb, " + a.color + " 62%, black)";
-      return '<div class="credit-card-tile" style="background:linear-gradient(135deg, ' + a.color + ', ' + dark + ')">' +
-        '<div class="cc-top"><span class="cc-bank">' + esc(a.bank || typeLabel.card) + '</span><span class="cc-chip"></span></div>' +
-        '<button class="link-btn cc-name" onclick="UI.viewAccountTx(\'' + a.id + '\')">' + esc(a.name) + "</button>" +
+      const isDebt = a.type === "card";
+      const face = isDebt ?
         '<div class="cc-row"><div><div class="cc-label">' + esc(app.L("Outstanding", "المديونية")) + '</div><div class="cc-amt">' + app.fmt(bal) + "</div></div>" +
-        '<div><div class="cc-label">' + esc(app.L("Limit", "الحد")) + '</div><div class="cc-sub">' + app.fmt(a.limit) + "</div></div></div>" +
+        '<div><div class="cc-label">' + esc(app.L("Limit", "الحد")) + '</div><div class="cc-sub">' + app.fmt(a.limit) + "</div></div></div>" :
+        '<div class="cc-row"><div><div class="cc-label">' + esc(app.L("Balance", "الرصيد")) + '</div><div class="cc-amt">' + app.fmt(bal) + "</div></div></div>";
+      return '<div class="credit-card-tile' + (isDebt ? "" : " balance-tile") + '" style="background:linear-gradient(135deg, ' + a.color + ', ' + dark + ')">' +
+        '<div class="cc-top"><span class="cc-bank">' + esc(a.bank || typeLabel[a.type]) + '</span><span class="' + (isDebt ? "cc-chip" : "cc-mark") + '"></span></div>' +
+        '<button class="link-btn cc-name" onclick="UI.viewAccountTx(\'' + a.id + '\')">' + esc(a.name) + "</button>" +
+        face +
         '<div class="btn-row wrap" style="margin-top:12px">' +
         '<button class="link-btn small" onclick="UI.openModal(\'account_edit\',' + editArgsFor(a) + ')">' + esc(app.L("Edit")) + "</button>" +
         (canDelete ? '<button class="link-btn small" onclick="UI.deleteAccountC(\'' + a.id + '\')">' + esc(app.L("Delete")) + "</button>" : "") +
         "</div></div>";
     }).join("");
 
-    const rows = accs.filter(a => a.type !== "card").map(a => {
+    const rows = accs.filter(a => !tileTypes.includes(a.type)).map(a => {
       const bal = D.bal[a.id];
       const extra = a.bank ? '<div class="acc-sub">' + esc(a.bank) + "</div>" : "";
       const canDelete = app.accountCanDelete(a.id);
@@ -2110,7 +2135,7 @@ const UI = {
     }).join("");
     return this.tabHeader(t.accounts, accs.length + app.L(" accounts · transfers never hit income or expense", " حساب · التحويلات لا تُحسب إيراداً ولا مصروفاً"),
       [[t.aAccount, "UI.openModal('account')"], [t.aCard, "UI.openModal('card')"], [t.transfer, "UI.openModal('transfer')"]]) +
-      (cardTiles ? '<div class="card-list">' + cardTiles + "</div>" : "") +
+      (tiles ? '<div class="card-list">' + tiles + "</div>" : "") +
       '<div class="card-list">' + rows + "</div>";
   },
 
