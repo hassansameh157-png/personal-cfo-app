@@ -2191,16 +2191,23 @@ const UI = {
       (i < arr.length - 1 ? '<button class="link-btn small" aria-label="' + esc(app.L("Move down", "حرّك لتحت")) + '" onclick="UI.moveAccountC(\'' + id + '\',1)">↓</button>' : "");
 
     // Total credit-card exposure across every card at once — each tile
-    // already shows its own Outstanding/Limit, but "how much do I owe in
-    // total, out of how much limit" needs adding them all up by hand
+    // already shows its own Outstanding/Available/Limit, but "how much do I
+    // owe in total, out of how much limit" needs adding them all up by hand
     // otherwise.
     const cardAccs = tileAccs.filter(a => a.type === "card");
     const ccSummary = !cardAccs.length ? "" : (() => {
       const totalOwed = cardAccs.reduce((s, a) => s + Math.abs(Math.min(0, D.bal[a.id])), 0);
       const totalLimit = cardAccs.reduce((s, a) => s + (a.limit || 0), 0);
+      // Sum each card's own clamped Available (not Math.max(0, totalLimit -
+      // totalOwed)) so this always agrees with what the individual tiles
+      // below show -- clamping only the aggregate would let one card over
+      // its own limit (e.g. fees) silently eat into another card's
+      // headroom instead of just showing 0 for itself.
+      const totalAvailable = cardAccs.reduce((s, a) => s + Math.max(0, (a.limit || 0) - Math.abs(Math.min(0, D.bal[a.id]))), 0);
       const pct = totalLimit > 0 ? Math.round(totalOwed / totalLimit * 100) : 0;
-      return '<div class="tile-grid three" style="margin-bottom:10px">' +
+      return '<div class="tile-grid four" style="margin-bottom:10px">' +
         '<div class="pos-tile"><div class="pos-label">' + esc(app.L("Total card debt", "إجمالي مديونية الكروت")) + '</div><div class="pos-value tone-neg">' + app.fmt(totalOwed) + "</div></div>" +
+        '<div class="pos-tile"><div class="pos-label">' + esc(app.L("Total available", "المتاح إجمالاً")) + '</div><div class="pos-value tone-pos">' + app.fmt(totalAvailable) + "</div></div>" +
         '<div class="pos-tile"><div class="pos-label">' + esc(app.L("Total limit", "إجمالي الليمت")) + '</div><div class="pos-value">' + app.fmt(totalLimit) + "</div></div>" +
         '<div class="pos-tile"><div class="pos-label">' + esc(app.L("Used", "المستخدم")) + '</div><div class="pos-value ' + (pct >= 70 ? "tone-neg" : "tone-neu") + '">' + pct + "%</div></div>" +
       "</div>";
@@ -2211,8 +2218,14 @@ const UI = {
       const canDelete = app.accountCanDelete(a.id);
       const dark = "color-mix(in srgb, " + a.color + " 62%, black)";
       const isDebt = a.type === "card";
+      // Available = how much of the limit is left to spend -- the number a
+      // card actually needs day to day, not just Outstanding/Limit on their
+      // own (clamped at 0: a card somehow over its limit, e.g. fees, still
+      // reads as "nothing left" rather than a confusing negative).
+      const available = Math.max(0, (a.limit || 0) - Math.abs(Math.min(0, bal)));
       const face = isDebt ?
         '<div class="cc-row"><div><div class="cc-label">' + esc(app.L("Outstanding", "المديونية")) + '</div><div class="cc-amt">' + app.fmt(bal) + "</div></div>" +
+        '<div><div class="cc-label">' + esc(app.L("Available", "المتاح")) + '</div><div class="cc-sub">' + app.fmt(available) + "</div></div>" +
         '<div><div class="cc-label">' + esc(app.L("Limit", "الحد")) + '</div><div class="cc-sub">' + app.fmt(a.limit) + "</div></div></div>" :
         '<div class="cc-row"><div><div class="cc-label">' + esc(app.L("Balance", "الرصيد")) + '</div><div class="cc-amt">' + app.fmt(bal) + "</div></div></div>";
       return '<div class="credit-card-tile' + (isDebt ? "" : " balance-tile") + '" style="background:linear-gradient(135deg, ' + a.color + ', ' + dark + ')">' +
