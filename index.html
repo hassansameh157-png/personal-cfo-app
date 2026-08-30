@@ -272,6 +272,15 @@ button.bar-row{width:100%;border:0;background:none;padding:6px 0;min-height:44px
 .card-row-meta{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--c-text-soft);margin-top:8px}
 .acc-swatch{width:11px;height:11px;border-radius:999px;flex:none;margin-top:3px}
 .acc-sub{font-size:11.5px;color:var(--c-text-faint);margin-top:6px}
+/* Person avatar/color — same idea as an account's color+card-face swatch,
+   just a circle with an initial instead of a card gradient (a person isn't
+   a physical card). .person-id wraps the avatar + name/sub as a single
+   flex unit so it still lands as .card-row-top's first (flex:1) child. */
+.person-id{display:flex;align-items:center;gap:10px;min-width:0}
+.person-avatar{width:36px;height:36px;border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:14px}
+.person-avatar.sm{width:26px;height:26px;font-size:11px}
+.person-avatar.lg{width:52px;height:52px;font-size:20px}
+.person-tag{display:inline-flex;align-items:center;gap:3px}
 
 .sched-list{display:flex;flex-direction:column;gap:4px;margin-top:8px;padding-top:8px;border-top:1px solid var(--c-line)}
 .sched-row{display:flex;justify-content:space-between;font-size:12px;padding:4px 0;gap:8px}
@@ -1145,8 +1154,19 @@ class Engine {
       investment: { title: t.aInvest, fields: [D("name", t.name, "text"), D("type", t.type, "select", { options: ["Stocks", "Gold", "Mutual fund", "Fixed deposit", "Certificate", "Crypto", "Business", "Other"].map(v => ({ v, l: v })) }), D("invested", "Amount invested", "number"), D("value", "Current value", "number"), D("date", "Purchase date", "date"), D("accountId", "Funded from", "select", { options: [{ v: "", l: "No cash movement" }].concat(accs) })] },
       invest_update: { title: t.updateValue, fields: [D("investmentId", "Investment", "select", { options: d.investments.map(i => ({ v: i.id, l: i.name })) }), D("value", "New current value", "number"), D("date", "As of", "date")] },
       investment_edit: { title: this.L("Edit investment"), fields: [D("name", t.name, "text"), D("type", t.type, "select", { options: ["Stocks", "Gold", "Mutual fund", "Fixed deposit", "Certificate", "Crypto", "Business", "Other"].map(v => ({ v, l: v })) }), D("invested", "Amount invested", "number")] },
-      person: { title: t.aPerson, fields: [D("name", t.name, "text"), D("phone", t.phone, "text"), D("notes", "Notes", "text", { wide: true })] },
-      person_edit: { title: this.L("Edit person"), fields: [D("name", t.name, "text"), D("phone", t.phone, "text"), D("notes", "Notes", "text", { wide: true })] },
+      // Relation picks a default avatar color (relationTypes()) so a fresh
+      // person isn't just another grey row — same "pick a default, override
+      // if you want" pattern as the account color field. Selecting a
+      // relation resets Color to that type's default (UI.setPersonRelation);
+      // the hint says so rather than leaving it a silent surprise.
+      person: { title: t.aPerson, fields: [D("name", t.name, "text"), D("phone", t.phone, "text"),
+        D("relation", this.L("Relation", "العلاقة"), "select", { options: this.relationTypes().map(r => ({ v: r.v, l: r.icon + " " + r.l })) }),
+        D("color", this.L("Color", "اللون"), "color", { hint: this.L("This person's avatar color — picking a Relation resets it to that type's default; recolor after if you'd like.", "لون أفاتار الشخص ده — اختيار العلاقة بيرجّعه للون الافتراضي بتاعها؛ غيّره تاني بعد كده لو حابب.") }),
+        D("notes", "Notes", "text", { wide: true })] },
+      person_edit: { title: this.L("Edit person"), fields: [D("name", t.name, "text"), D("phone", t.phone, "text"),
+        D("relation", this.L("Relation", "العلاقة"), "select", { options: this.relationTypes().map(r => ({ v: r.v, l: r.icon + " " + r.l })) }),
+        D("color", this.L("Color", "اللون"), "color", { hint: this.L("This person's avatar color — picking a Relation resets it to that type's default; recolor after if you'd like.", "لون أفاتار الشخص ده — اختيار العلاقة بيرجّعه للون الافتراضي بتاعها؛ غيّره تاني بعد كده لو حابب.") }),
+        D("notes", "Notes", "text", { wide: true })] },
       // "Electronic card" (ecard) — a prepaid/gift-card-style balance, e.g.
       // an Amazon or store gift card: holds a real balance like cash or a
       // wallet (no limit/debt concept), just rendered as its own card tile.
@@ -1186,7 +1206,9 @@ class Engine {
     // NOTE: unlike the original, the "record collection" quick action does NOT
     // pre-fill a real person by default — this is one of the agreed P1 items,
     // left as a documented follow-up rather than silently changed here.
-    const form = { date: this.today(), freq: "monthly", count: 12, down: 0, balloon: 0, type: kind === "recurring" ? "expense" : undefined, day: 1, color: kind === "card" ? "#004961" : "#7d7979" };
+    const form = { date: this.today(), freq: "monthly", count: 12, down: 0, balloon: 0, type: kind === "recurring" ? "expense" : undefined, day: 1,
+      relation: kind === "person" ? "other" : undefined,
+      color: kind === "card" ? "#004961" : (kind === "person" ? this.relationTypes().find(r => r.v === "other").color : "#7d7979") };
     F.fields.forEach(f => { if (form[f.k] === undefined) form[f.k] = f.type === "select" ? (f.options[0] ? f.options[0].v : "") : (f.type === "number" ? "" : ""); });
     form.date = this.today();
     this.state.modal = kind; this.state.form = Object.assign(form, pre || {}); this.state.err = "";
@@ -1304,12 +1326,15 @@ class Engine {
       note = "Updated investment " + iv.name;
     } else if (k === "person") {
       if (!need(f.name, "Name is required.")) return false;
-      data.people.push({ id: this.uid("p"), name: f.name, phone: f.phone || "", notes: f.notes || "" }); note = "Added person " + f.name;
+      const rel = f.relation || "other";
+      data.people.push({ id: this.uid("p"), name: f.name, phone: f.phone || "", notes: f.notes || "", relation: rel, color: f.color || this.relationTypes().find(r => r.v === rel).color });
+      note = "Added person " + f.name;
     } else if (k === "person_edit") {
       if (!need(f.name, "Name is required.")) return false;
       const p = data.people.find(x => x.id === f.id);
       if (!need(p, "Pick a person.")) return false;
-      p.name = f.name; p.phone = f.phone || ""; p.notes = f.notes || ""; note = "Updated person " + f.name;
+      p.name = f.name; p.phone = f.phone || ""; p.notes = f.notes || ""; p.relation = f.relation || p.relation || "other"; p.color = f.color || p.color;
+      note = "Updated person " + f.name;
     } else if (k === "account") {
       if (!need(f.name, "Name is required.")) return false;
       // The generic "+ Account" form's own type picker also offers "Credit
@@ -1380,6 +1405,19 @@ class Engine {
     this.persist(data, note);
     return true;
   }
+  // Same idea as an account's color+card-face: a person is more than a name
+  // in a list. Relation picks a sensible default avatar color/icon (still
+  // fully overridable via the Color field) so People reads at a glance
+  // instead of every row looking the same.
+  relationTypes() {
+    return [
+      { v: "family", l: this.L("Family", "عيلة"), color: "#e8734a", icon: "👪" },
+      { v: "friend", l: this.L("Friend", "صحاب"), color: "#2a9d8f", icon: "🧑‍🤝‍🧑" },
+      { v: "work", l: this.L("Work", "شغل"), color: "#4a6fa5", icon: "💼" },
+      { v: "business", l: this.L("Business", "تجاري"), color: "#8e5cd9", icon: "🤝" },
+      { v: "other", l: this.L("Other", "غير كده"), color: "#c15b6b", icon: "👤" }
+    ];
+  }
   personHasRecords(id) {
     const d = this.state.data;
     return d.tx.some(t => !t.void && t.personId === id) || (d.plans || []).some(p => p.personId === id);
@@ -1432,6 +1470,31 @@ class Engine {
     const a = data.accounts.find(x => x.id === id); if (!a) return;
     data.accounts = data.accounts.filter(x => x.id !== id);
     this.persist(data, "Deleted account " + a.name);
+  }
+  // Which account types render as a card-shaped tile in Accounts vs a plain
+  // list row — shared with ui.js's renderAccounts (not duplicated there) so
+  // moveAccount() below groups accounts the exact same way the display
+  // does; only "other" stays a plain row.
+  tileTypes() { return ["card", "bank", "wallet", "cash", "ecard"]; }
+  // Reorder accounts one step at a time. Swaps with the nearest account in
+  // the SAME visual section (tiles or plain rows) rather than the plain
+  // adjacent array slot — swapping past an item that renders in the other
+  // section wouldn't move anything the user can see, which would make the
+  // ↑/↓ buttons look broken right next to a tile/row boundary.
+  moveAccount(id, dir) {
+    const data = JSON.parse(JSON.stringify(this.state.data));
+    const list = data.accounts;
+    const acc = list.find(a => a.id === id);
+    if (!acc) return;
+    const isTile = this.tileTypes().includes(acc.type);
+    const sectionIdx = [];
+    list.forEach((a, i) => { if (this.tileTypes().includes(a.type) === isTile) sectionIdx.push(i); });
+    const pos = sectionIdx.indexOf(list.indexOf(acc));
+    const targetPos = pos + dir;
+    if (targetPos < 0 || targetPos >= sectionIdx.length) return;
+    const i1 = sectionIdx[pos], i2 = sectionIdx[targetPos];
+    const tmp = list[i1]; list[i1] = list[i2]; list[i2] = tmp;
+    this.persist(data, "Reordered accounts");
   }
   investmentCanDelete(id) {
     return !this.state.data.tx.some(t => !t.void && t.investmentId === id);
@@ -1637,6 +1700,25 @@ const UI = {
   toggleArabicNumerals() { this.app.state.arabicNumerals = !this.app.state.arabicNumerals; this.render(); },
   setPayoffOrder(v) { this.app.state.payoffOrder = v; this.render(); },
   setPayoffCalc(field, v) { this.app.state.payoffCalc[field] = v; this.render(true); },
+  // Picking a Relation resets Color to that type's default (the field's
+  // hint says so) -- same "pick a default, override after" pattern as the
+  // account color field, just wired live since relation/color live in the
+  // same modal here (an account's type isn't editable after creation, so
+  // it never needed this). Deliberately NOT a full render() -- like
+  // suggestCategoryFromDesc, this modal's fields only sync into state.form
+  // on submit (see submitModal's FormData read), so a render() here would
+  // silently wipe out whatever the user already typed into Name/Phone/Notes
+  // and hadn't submitted yet. Setting the color input's value directly
+  // avoids that; submit() still picks it up correctly either way.
+  setPersonRelation(v) {
+    const rt = this.app.relationTypes().find(r => r.v === v);
+    if (!rt) return;
+    const el = document.getElementById("f_color");
+    if (el) el.value = rt.color;
+  },
+  // Reorder accounts -- swap one step up/down within their own visual
+  // section (see Engine.moveAccount).
+  moveAccountC(id, dir) { this.app.moveAccount(id, dir); this.render(); },
   openModal(kind, pre) { this.app.open(kind, pre); this.render(); },
   closeModal() { this.app.state.modal = null; this.app.state.err = ""; this.render(); },
   submitModal() {
@@ -2096,8 +2178,35 @@ const UI = {
     // (one number, a plain mark instead of a chip, since nothing here
     // claims to be a real EMV card). Only "other" stays a plain list row,
     // as the true catch-all with no obvious physical-object shape.
-    const tileTypes = ["card", "bank", "wallet", "cash", "ecard"];
-    const tiles = accs.filter(a => tileTypes.includes(a.type)).map(a => {
+    // tileTypes() lives on Engine (not duplicated here) so moveAccount()
+    // groups accounts the exact same way this render does.
+    const tileTypes = app.tileTypes();
+    const tileAccs = accs.filter(a => tileTypes.includes(a.type));
+    const rowAccs = accs.filter(a => !tileTypes.includes(a.type));
+    // ↑/↓ reorder one step within the account's own section (tiles or plain
+    // rows) — hidden at that section's own top/bottom, since there's
+    // nowhere further for it to go.
+    const moveBtns = (id, i, arr) =>
+      (i > 0 ? '<button class="link-btn small" aria-label="' + esc(app.L("Move up", "حرّك لفوق")) + '" onclick="UI.moveAccountC(\'' + id + '\',-1)">↑</button>' : "") +
+      (i < arr.length - 1 ? '<button class="link-btn small" aria-label="' + esc(app.L("Move down", "حرّك لتحت")) + '" onclick="UI.moveAccountC(\'' + id + '\',1)">↓</button>' : "");
+
+    // Total credit-card exposure across every card at once — each tile
+    // already shows its own Outstanding/Limit, but "how much do I owe in
+    // total, out of how much limit" needs adding them all up by hand
+    // otherwise.
+    const cardAccs = tileAccs.filter(a => a.type === "card");
+    const ccSummary = !cardAccs.length ? "" : (() => {
+      const totalOwed = cardAccs.reduce((s, a) => s + Math.abs(Math.min(0, D.bal[a.id])), 0);
+      const totalLimit = cardAccs.reduce((s, a) => s + (a.limit || 0), 0);
+      const pct = totalLimit > 0 ? Math.round(totalOwed / totalLimit * 100) : 0;
+      return '<div class="tile-grid three" style="margin-bottom:10px">' +
+        '<div class="pos-tile"><div class="pos-label">' + esc(app.L("Total card debt", "إجمالي مديونية الكروت")) + '</div><div class="pos-value tone-neg">' + app.fmt(totalOwed) + "</div></div>" +
+        '<div class="pos-tile"><div class="pos-label">' + esc(app.L("Total limit", "إجمالي الليمت")) + '</div><div class="pos-value">' + app.fmt(totalLimit) + "</div></div>" +
+        '<div class="pos-tile"><div class="pos-label">' + esc(app.L("Used", "المستخدم")) + '</div><div class="pos-value ' + (pct >= 70 ? "tone-neg" : "tone-neu") + '">' + pct + "%</div></div>" +
+      "</div>";
+    })();
+
+    const tiles = tileAccs.map((a, i, arr) => {
       const bal = D.bal[a.id];
       const canDelete = app.accountCanDelete(a.id);
       const dark = "color-mix(in srgb, " + a.color + " 62%, black)";
@@ -2111,12 +2220,13 @@ const UI = {
         '<button class="link-btn cc-name" onclick="UI.viewAccountTx(\'' + a.id + '\')">' + esc(a.name) + "</button>" +
         face +
         '<div class="btn-row wrap" style="margin-top:12px">' +
+        moveBtns(a.id, i, arr) +
         '<button class="link-btn small" onclick="UI.openModal(\'account_edit\',' + editArgsFor(a) + ')">' + esc(app.L("Edit")) + "</button>" +
         (canDelete ? '<button class="link-btn small" onclick="UI.deleteAccountC(\'' + a.id + '\')">' + esc(app.L("Delete")) + "</button>" : "") +
         "</div></div>";
     }).join("");
 
-    const rows = accs.filter(a => !tileTypes.includes(a.type)).map(a => {
+    const rows = rowAccs.map((a, i, arr) => {
       const bal = D.bal[a.id];
       const extra = a.bank ? '<div class="acc-sub">' + esc(a.bank) + "</div>" : "";
       const canDelete = app.accountCanDelete(a.id);
@@ -2126,12 +2236,14 @@ const UI = {
         '<div class="bar-track thin"><div class="bar-fill" style="width:' + Math.max(2, Math.abs(bal) / maxAbs * 100) + '%;background:' + (bal < 0 ? "var(--c-neg)" : a.color) + '"></div></div>' +
         extra +
         '<div class="btn-row wrap">' +
+        moveBtns(a.id, i, arr) +
         '<button class="link-btn small" onclick="UI.openModal(\'account_edit\',' + editArgsFor(a) + ')">' + esc(app.L("Edit")) + "</button>" +
         (canDelete ? '<button class="link-btn small" onclick="UI.deleteAccountC(\'' + a.id + '\')">' + esc(app.L("Delete")) + "</button>" : "") +
         "</div></div>";
     }).join("");
     return this.tabHeader(t.accounts, accs.length + app.L(" accounts · transfers never hit income or expense", " حساب · التحويلات لا تُحسب إيراداً ولا مصروفاً"),
       [[t.aAccount, "UI.openModal('account')"], [t.aCard, "UI.openModal('card')"], [t.transfer, "UI.openModal('transfer')"]]) +
+      ccSummary +
       (tiles ? '<div class="card-list">' + tiles + "</div>" : "") +
       '<div class="card-list">' + rows + "</div>";
   },
@@ -2226,6 +2338,20 @@ const UI = {
   },
 
   // ---- People ----------------------------------------------------------------
+  // Relation/color, same idea as an account's color+card-face: a fallback
+  // ("other" relation, its default color) covers every person saved before
+  // this existed, so nobody's real data shows up broken -- just untagged
+  // until they open Edit and pick one.
+  personRelation(p) { return this.app.relationTypes().find(r => r.v === (p.relation || "other")) || this.app.relationTypes()[this.app.relationTypes().length - 1]; },
+  personColor(p) { return p.color || this.personRelation(p).color; },
+  personAvatar(p, size) {
+    const initial = (p.name || "?").trim().charAt(0).toUpperCase() || "?";
+    return '<span class="person-avatar' + (size ? " " + size : "") + '" style="background:' + this.personColor(p) + '">' + esc(initial) + "</span>";
+  },
+  personTag(p) {
+    const rt = this.personRelation(p);
+    return '<span class="person-tag">' + rt.icon + " " + esc(rt.l) + "</span>";
+  },
   renderPeople(D, t) {
     const app = this.app, d = app.state.data;
     const rows = d.people.map(p => {
@@ -2236,7 +2362,7 @@ const UI = {
       return { p, r, y, net: r - y, canDelete };
     }).sort((a, b) => Math.abs(b.net) - Math.abs(a.net));
 
-    const editArgs = (p) => JSON.stringify({ id: p.id, name: p.name, phone: p.phone || "", notes: p.notes || "" }).replace(/"/g, "&quot;");
+    const editArgs = (p) => JSON.stringify({ id: p.id, name: p.name, phone: p.phone || "", relation: p.relation || "other", color: this.personColor(p), notes: p.notes || "" }).replace(/"/g, "&quot;");
     // "Add a balance for this person" — this is just the existing
     // receivable/payable form pre-filled with who it's for, reachable
     // directly from the person instead of only from Receivables & Payables.
@@ -2260,12 +2386,12 @@ const UI = {
     const table = '<div class="table-wrap desktop-only"><table class="table"><thead><tr>' +
       "<th>" + esc(t.name) + "</th><th>" + esc(t.phone) + "</th><th class=\"num\">" + esc(t.owesMe) + "</th><th class=\"num\">" + esc(t.iOwe) + "</th><th class=\"num\">" + esc(t.net) + "</th><th></th>" +
       "</tr></thead><tbody>" + rows.map((row) => { const { p, r, y, net } = row;
-        return "<tr><td><button class=\"link-btn\" onclick=\"UI.viewPerson('" + p.id + "')\">" + esc(p.name) + "</button></td><td>" + esc(p.phone || "—") + '</td><td class="num tone-pos">' + app.fmt(r) + '</td><td class="num tone-neg">' + app.fmt(y) + '</td><td class="num ' + (net >= 0 ? "tone-pos" : "tone-neg") + '">' + app.fmt(net) + "</td>" +
+        return "<tr><td><div class=\"person-id\">" + this.personAvatar(p, "sm") + "<button class=\"link-btn\" onclick=\"UI.viewPerson('" + p.id + "')\">" + esc(p.name) + "</button></div></td><td>" + esc(p.phone || "—") + '</td><td class="num tone-pos">' + app.fmt(r) + '</td><td class="num tone-neg">' + app.fmt(y) + '</td><td class="num ' + (net >= 0 ? "tone-pos" : "tone-neg") + '">' + app.fmt(net) + "</td>" +
         '<td><button class="link-btn small" onclick="UI.setPage(\'transactions\');UI.setFilter(\'q\',\'' + esc(p.name).replace(/'/g, "\\'") + '\')">' + esc(t.viewTx) + "</button>" + personActions(row) + "</td></tr>";
       }).join("") + "</tbody></table></div>";
 
     const cards = '<div class="card-list mobile-only">' + rows.map((row) => { const { p, r, y, net } = row;
-      return '<div class="card-row"><div class="card-row-top"><div><button class="link-btn card-row-title" onclick="UI.viewPerson(\'' + p.id + '\')">' + esc(p.name) + '</button><div class="card-row-sub">' + esc(p.phone || "—") + "</div></div>" +
+      return '<div class="card-row person-card" style="border-left:4px solid ' + this.personColor(p) + '"><div class="card-row-top"><div class="person-id">' + this.personAvatar(p) + '<div><button class="link-btn card-row-title" onclick="UI.viewPerson(\'' + p.id + '\')">' + esc(p.name) + '</button><div class="card-row-sub">' + this.personTag(p) + (p.phone ? " · " + esc(p.phone) : "") + "</div></div></div>" +
       '<div class="card-row-amt ' + (net >= 0 ? "tone-pos" : "tone-neg") + '">' + app.fmt(net) + "</div></div>" +
       '<div class="card-row-meta"><span>' + esc(t.owesMe) + ": " + app.fmt(r) + '</span><span>' + esc(t.iOwe) + ": " + app.fmt(y) + "</span></div>" +
       '<div class="btn-row wrap"><button class="link-btn small" onclick="UI.setPage(\'transactions\');UI.setFilter(\'q\',\'' + esc(p.name).replace(/'/g, "\\'") + '\')">' + esc(t.viewTx) + "</button>" + personActions(row) + "</div></div>";
@@ -2294,7 +2420,7 @@ const UI = {
     const y = Math.max(0, D.pay[p.id] || 0) + planOut.reduce((s, x) => s + x.remaining, 0);
     const net = r - y;
     const canDelete = !app.personHasRecords(p.id);
-    const editArgs = JSON.stringify({ id: p.id, name: p.name, phone: p.phone || "", notes: p.notes || "" }).replace(/"/g, "&quot;");
+    const editArgs = JSON.stringify({ id: p.id, name: p.name, phone: p.phone || "", relation: p.relation || "other", color: this.personColor(p), notes: p.notes || "" }).replace(/"/g, "&quot;");
 
     const summary = '<div class="tile-grid three">' +
       '<div class="pos-tile"><div class="pos-label">' + esc(t.owesMe) + '</div><div class="pos-value tone-pos">' + app.fmt(r) + "</div></div>" +
@@ -2341,9 +2467,14 @@ const UI = {
     "</div>";
 
     const backBtn = '<button class="link-btn small" onclick="UI.setPage(\'people\')">← ' + esc(t.people) + "</button>";
-    const sub = esc(p.phone || app.L("No phone on file", "مفيش رقم متسجل")) + (p.notes ? " · " + esc(p.notes) : "");
+    const sub = this.personTag(p) + " · " + esc(p.phone || app.L("No phone on file", "مفيش رقم متسجل")) + (p.notes ? " · " + esc(p.notes) : "");
+    // Same avatar as the People list, just bigger -- a colored header
+    // instead of the plain "Hazem" / "Sameh Hassan" title every person used
+    // to share the exact same look under.
+    const header = '<div class="tab-head"><div class="person-id">' + this.personAvatar(p, "lg") +
+      '<div><h1 class="tab-title">' + esc(p.name) + '</h1><div class="tab-sub">' + sub + "</div></div></div></div>";
 
-    return backBtn + this.tabHeader(p.name, sub, []) + summary + actions +
+    return backBtn + header + summary + actions +
       loanSection("receivable", app.L("Loans owed to me", "سلف ليّا")) +
       loanSection("payable", app.L("Loans I owe", "ديون عليّا")) +
       planSection(planIn, app.L("Installment plans owed to me", "أقساط ليّا")) +
@@ -2766,7 +2897,11 @@ const UI = {
       const val = form[f.k] !== undefined ? form[f.k] : "";
       let input;
       if (f.type === "select") {
-        input = '<select class="input" id="f_' + f.k + '" name="' + f.k + '">' + f.options.map(o => '<option value="' + esc(o.v) + '"' + (String(val) === String(o.v) ? " selected" : "") + ">" + esc(o.l) + "</option>").join("") + "</select>";
+        // Person forms only: picking a Relation also resets Color to that
+        // type's default (see UI.setPersonRelation) -- nothing else uses a
+        // select's onchange to touch another field.
+        const relOnchange = f.k === "relation" && ["person", "person_edit"].includes(S.modal) ? ' onchange="UI.setPersonRelation(this.value)"' : "";
+        input = '<select class="input" id="f_' + f.k + '" name="' + f.k + '"' + relOnchange + '>' + f.options.map(o => '<option value="' + esc(o.v) + '"' + (String(val) === String(o.v) ? " selected" : "") + ">" + esc(o.l) + "</option>").join("") + "</select>";
       } else {
         // Description → category autocomplete, income/expense only: as the
         // user types, suggest whatever category their past entries with a
