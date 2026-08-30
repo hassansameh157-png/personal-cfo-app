@@ -10,7 +10,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,600;8..60,700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,600;8..60,700&family=Inter:wght@400;500;600;700&family=Noto+Sans+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet">
 
 <!-- Home-screen install. This replaces the original export's broken PWA
      attempt (manifest.json/sw.js/icons that 404'd and a service-worker
@@ -63,8 +63,26 @@
   --c-accent-fill:#006786;
   --c-accent2:#d6006c; --c-accent2-700:#aa0b56; --c-accent2-100:#fff1f4;
   --c-pos:#006786; --c-pos-bg:#e9f8ff; --c-neg:#aa0b56; --c-neg-bg:#fff1f4;
+  /* Categorical palette for category bars (Dashboard/Reports) and budget
+     rows -- 8 fixed slots, assigned by CATEGORY_COLOR_ORDER (engine.js),
+     never by amount/rank. Validated (dataviz-skill validator) against this
+     app's actual light surface (#ffffff): worst adjacent CVD ΔE 9.1, worst
+     adjacent normal-vision ΔE 19.6 -- both clear the floor. Re-run the
+     validator before changing any of these 8 hex values or their order. */
+  --cat-1:#2a78d6; --cat-2:#eb6834; --cat-3:#1baf7a; --cat-4:#eda100;
+  --cat-5:#e87ba4; --cat-6:#008300; --cat-7:#4a3aa7; --cat-8:#e34948;
+  --cat-neutral:#8f97a6;
+  /* --font-head: headline numbers + real headings only (hero balance, stat
+     tiles, card names/amounts, dialog/section/tab titles) -- kept serif on
+     purpose, that's identity, not a legibility problem, and it reads fine
+     at the sizes it's used at. --font-body: everything else -- labels,
+     captions, list rows, buttons, table cells. Was Source Serif 4
+     throughout; serif blurs at the 9-13px this runs at on a phone, so this
+     is now a plain, high-legibility pairing instead (Latin falls through
+     to Inter, Arabic to Noto Sans Arabic, same per-character fallback
+     mechanism --font-head already relied on for its own Arabic step). */
   --font-head:'Source Serif 4', Georgia, 'Noto Serif Arabic', serif;
-  --font-body:'Source Serif 4', Georgia, 'Noto Serif Arabic', system-ui, sans-serif;
+  --font-body:'Inter', 'Noto Sans Arabic', system-ui, sans-serif;
   --radius:10px; --shadow: 0 1px 2px rgba(32,30,29,.06), 0 6px 20px -10px rgba(32,30,29,.22);
 }
 @media (prefers-color-scheme: dark){
@@ -76,6 +94,12 @@
     --c-accent-fill:#006786;
     --c-accent2:#ff6fa8; --c-accent2-700:#ff9ac1; --c-accent2-100:#3a1523;
     --c-pos:#5fd0ee; --c-pos-bg:#12303a; --c-neg:#ff9ac1; --c-neg-bg:#3a1523;
+    /* Same 8 hues, stepped for the dark surface (#202324) -- validated
+       separately: worst adjacent CVD ΔE 8.4, worst adjacent normal-vision
+       ΔE 19.3. */
+    --cat-1:#3987e5; --cat-2:#d95926; --cat-3:#199e70; --cat-4:#c98500;
+    --cat-5:#d55181; --cat-6:#008300; --cat-7:#9085e9; --cat-8:#e66767;
+    --cat-neutral:#7c8494;
     --shadow: 0 1px 2px rgba(0,0,0,.4), 0 6px 20px -10px rgba(0,0,0,.6);
   }
 }
@@ -84,6 +108,9 @@
   --c-text:#efeeec; --c-text-soft:#b7b3b0; --c-text-faint:#9a9694;
   --c-line:color-mix(in srgb, #efeeec 16%, transparent);
   --c-accent:#39b6db; --c-accent-700:#7fd0ea; --c-accent-800:#a8def0; --c-accent-900:#0a303e;
+  --cat-1:#3987e5; --cat-2:#d95926; --cat-3:#199e70; --cat-4:#c98500;
+  --cat-5:#d55181; --cat-6:#008300; --cat-7:#9085e9; --cat-8:#e66767;
+  --cat-neutral:#7c8494;
   --c-accent-fill:#006786;
   --c-accent2:#ff6fa8; --c-accent2-700:#ff9ac1; --c-accent2-100:#3a1523;
   --c-pos:#5fd0ee; --c-pos-bg:#12303a; --c-neg:#ff9ac1; --c-neg-bg:#3a1523;
@@ -98,7 +125,7 @@ body{margin:0;background:var(--c-bg);color:var(--c-text);font-family:var(--font-
 button,input,select{font-family:inherit;font-size:inherit;color:inherit}
 h1,h2,h3{font-family:var(--font-head);font-weight:600;margin:0;text-wrap:balance}
 .muted{color:var(--c-text-soft)}
-.small{font-size:12.5px}
+.small{font-size:14px}
 .tone-pos{color:var(--c-pos)}
 .tone-neg{color:var(--c-neg)}
 .tone-neu{color:var(--c-text)}
@@ -112,18 +139,18 @@ h1,h2,h3{font-family:var(--font-head);font-weight:600;margin:0;text-wrap:balance
 .brand{display:flex;align-items:center;gap:9px}
 .brand-mark{width:30px;height:30px;border-radius:999px;background:var(--c-accent-fill);color:#fff;
   display:grid;place-items:center;font-family:var(--font-head);font-size:15px;flex:none}
-.brand-name{font-family:var(--font-head);font-size:15.5px;line-height:1.1}
-.brand-sub{font-size:9.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--c-text-faint)}
+.brand-name{font-family:var(--font-head);font-size:16.5px;line-height:1.1}
+.brand-sub{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--c-text-faint)}
 .topbar-tools{display:flex;align-items:center;gap:8px;margin-inline-start:auto;flex-wrap:wrap}
 
 .seg{display:flex;border:1px solid var(--c-line);border-radius:999px;padding:2px;background:var(--c-surface-2)}
-.seg-opt{position:relative;padding:5px 14px;border-radius:999px;font-size:12px;cursor:pointer;display:flex;align-items:center;min-height:44px;min-width:44px;justify-content:center}
+.seg-opt{position:relative;padding:5px 14px;border-radius:999px;font-size:13.5px;cursor:pointer;display:flex;align-items:center;min-height:44px;min-width:44px;justify-content:center}
 .seg-opt input{position:absolute;opacity:0}
 .seg-opt:has(input:checked){background:var(--c-accent-fill);color:#fff}
 
 .btn{border:1px solid var(--c-line);border-radius:999px;padding:8px 15px;background:var(--c-surface-2);
-  cursor:pointer;font-size:13px;min-height:44px;white-space:nowrap}
-.btn.small{min-height:44px;padding:7px 13px;font-size:12.5px}
+  cursor:pointer;font-size:14.5px;min-height:44px;white-space:nowrap}
+.btn.small{min-height:44px;padding:7px 13px;font-size:14px}
 .btn.block{width:100%;margin-top:10px}
 .btn-primary{background:var(--c-accent-fill);border-color:var(--c-accent-fill);color:#fff;font-weight:600}
 .btn-secondary{background:var(--c-surface-2)}
@@ -131,14 +158,14 @@ h1,h2,h3{font-family:var(--font-head);font-weight:600;margin:0;text-wrap:balance
 .btn-danger{background:var(--c-neg-bg);border-color:var(--c-neg);color:var(--c-neg)}
 .btn-row{display:flex;gap:8px}
 .btn-row.wrap{flex-wrap:wrap}
-.link-btn{background:none;border:0;color:var(--c-accent-700);cursor:pointer;padding:12px 0;font-size:13px;min-height:44px;display:inline-flex;align-items:center}
+.link-btn{background:none;border:0;color:var(--c-accent-700);cursor:pointer;padding:12px 0;font-size:14.5px;min-height:44px;display:inline-flex;align-items:center}
 .link-btn:disabled{color:var(--c-text-faint);cursor:default}
 
 /* ---- metrics row (single instance, header context) ---- */
 .metrics-row{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px;padding:10px 16px;background:var(--c-surface-2);border-bottom:1px solid var(--c-line)}
 .metric-tile{padding:7px 9px;border-radius:8px;background:var(--c-surface)}
-.metric-label{font-size:9px;letter-spacing:.08em;text-transform:uppercase;color:var(--c-text-faint);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.metric-value{font-family:var(--font-head);font-size:14.5px;margin-top:1px;font-variant-numeric:tabular-nums}
+.metric-label{font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--c-text-faint);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.metric-value{font-family:var(--font-head);font-size:16px;margin-top:1px;font-variant-numeric:tabular-nums}
 @media (max-width:640px){
   .metrics-row{grid-template-columns:repeat(3,minmax(0,1fr))}
   .metric-tile:nth-child(4),.metric-tile:nth-child(5){display:none}
@@ -147,9 +174,9 @@ h1,h2,h3{font-family:var(--font-head);font-weight:600;margin:0;text-wrap:balance
 /* ---- page / tab header ---- */
 .page{padding:18px 16px 90px;max-width:960px;margin:0 auto}
 .tab-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;margin-bottom:16px}
-.tab-title{font-size:22px}
-.tab-sub{font-size:12.5px;color:var(--c-text-faint);margin-top:2px}
-.section-title{font-size:16px;margin:22px 0 10px}
+.tab-title{font-size:24px}
+.tab-sub{font-size:14px;color:var(--c-text-faint);margin-top:2px}
+.section-title{font-size:18px;margin:22px 0 10px}
 .section-title:first-child{margin-top:0}
 .section-head{display:flex;justify-content:space-between;align-items:baseline}
 .dash-section{margin-bottom:6px}
@@ -170,41 +197,41 @@ h1,h2,h3{font-family:var(--font-head);font-weight:600;margin:0;text-wrap:balance
 .credit-card-tile{border-radius:16px;padding:18px 18px 14px;color:#fff;position:relative;overflow:hidden;box-shadow:var(--shadow)}
 .credit-card-tile::after{content:"";position:absolute;inset:0;background:linear-gradient(135deg, rgba(255,255,255,.16), rgba(255,255,255,0) 55%);pointer-events:none}
 .cc-top{display:flex;align-items:center;justify-content:space-between;gap:8px}
-.cc-bank{font-size:11px;letter-spacing:.06em;text-transform:uppercase;opacity:.85}
+.cc-bank{font-size:12.5px;letter-spacing:.06em;text-transform:uppercase;opacity:.85}
 .cc-chip{width:30px;height:22px;border-radius:5px;background:linear-gradient(135deg,#e9d38a,#c9a94f);opacity:.9}
 /* Balance-type tiles (wallet/cash/electronic card) get a plain translucent
    mark instead of the chip — a chip specifically reads as "real EMV card",
    which none of these are. */
 .cc-mark{width:22px;height:22px;border-radius:999px;background:rgba(255,255,255,.28);border:1.5px solid rgba(255,255,255,.5)}
 .balance-tile .cc-row{margin-top:18px}
-.cc-name{display:block;font-family:var(--font-head);font-size:17px;color:#fff !important;margin-top:14px;padding:0 !important;min-height:0 !important}
+.cc-name{display:block;font-family:var(--font-head);font-size:18px;color:#fff !important;margin-top:14px;padding:0 !important;min-height:0 !important}
 .cc-row{display:flex;justify-content:space-between;align-items:flex-end;margin-top:16px}
-.cc-label{font-size:9px;letter-spacing:.06em;text-transform:uppercase;opacity:.75}
-.cc-amt{font-family:var(--font-head);font-size:19px;margin-top:2px}
-.cc-sub{font-size:13px;margin-top:2px}
+.cc-label{font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;opacity:.75}
+.cc-amt{font-family:var(--font-head);font-size:21px;margin-top:2px}
+.cc-sub{font-size:14.5px;margin-top:2px}
 .credit-card-tile .link-btn{color:#fff;opacity:.85}
 .credit-card-tile .link-btn:hover{opacity:1}
 
 /* ---- app lock screen ---- */
 .lock-screen{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;background:var(--c-bg)}
 .lock-card{width:100%;max-width:320px;text-align:center;background:var(--c-surface);border:1px solid var(--c-line);border-radius:var(--radius);box-shadow:var(--shadow);padding:32px 24px}
-.lock-mark{font-family:var(--font-head);font-size:28px;color:var(--c-accent);margin-bottom:6px}
-.lock-title{font-family:var(--font-head);font-size:20px;margin:0 0 2px}
-.lock-input{text-align:center;font-size:22px;letter-spacing:10px;margin-top:14px}
+.lock-mark{font-family:var(--font-head);font-size:30px;color:var(--c-accent);margin-bottom:6px}
+.lock-title{font-family:var(--font-head);font-size:22px;margin:0 0 2px}
+.lock-input{text-align:center;font-size:24px;letter-spacing:10px;margin-top:14px}
 .hero-card.alt{background:var(--c-surface);color:var(--c-text);border:1px solid var(--c-line)}
-.hero-label{font-size:10px;letter-spacing:.12em;text-transform:uppercase;opacity:.75}
-.hero-value{font-family:var(--font-head);font-size:clamp(34px,9vw,46px);line-height:1.05;letter-spacing:-.01em;margin-top:4px;font-variant-numeric:tabular-nums}
-.hero-note{font-size:12px;opacity:.75;max-width:44ch;margin-top:6px}
+.hero-label{font-size:11.5px;letter-spacing:.12em;text-transform:uppercase;opacity:.75}
+.hero-value{font-family:var(--font-head);font-size:clamp(38px,10vw,52px);line-height:1.05;letter-spacing:-.01em;margin-top:4px;font-variant-numeric:tabular-nums}
+.hero-note{font-size:13.5px;opacity:.75;max-width:44ch;margin-top:6px}
 .hero-sub-row{display:flex;gap:22px;margin-top:14px;padding-top:12px;border-top:1px solid color-mix(in srgb, currentColor 20%, transparent);flex-wrap:wrap}
-.hero-sub-label{font-size:9px;letter-spacing:.08em;text-transform:uppercase;opacity:.65}
-.hero-sub-value{font-family:var(--font-head);font-size:19px;margin-top:2px;font-variant-numeric:tabular-nums}
+.hero-sub-label{font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;opacity:.65}
+.hero-sub-value{font-family:var(--font-head);font-size:21px;margin-top:2px;font-variant-numeric:tabular-nums}
 
 /* ---- alerts (needs attention) ---- */
 .alert-list{display:flex;flex-direction:column;gap:8px}
 .alert-card{background:var(--c-surface);border:1px solid var(--c-line);border-inline-start:3px solid var(--c-neg);border-radius:8px;padding:12px 14px}
-.alert-title{font-weight:600;font-size:13.5px}
-.alert-body{font-size:12.5px;color:var(--c-text-soft);margin-top:2px}
-.alert-cta{margin-top:6px;background:none;border:0;color:var(--c-accent-700);font-size:12.5px;font-weight:600;cursor:pointer;padding:0;min-height:44px;display:inline-flex;align-items:center}
+.alert-title{font-weight:600;font-size:15px}
+.alert-body{font-size:14px;color:var(--c-text-soft);margin-top:2px}
+.alert-cta{margin-top:6px;background:none;border:0;color:var(--c-accent-700);font-size:14px;font-weight:600;cursor:pointer;padding:0;min-height:44px;display:inline-flex;align-items:center}
 
 /* ---- tiles / stats ---- */
 .tile-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
@@ -212,14 +239,14 @@ h1,h2,h3{font-family:var(--font-head);font-weight:600;margin:0;text-wrap:balance
 @media (max-width:560px){ .tile-grid.four{grid-template-columns:repeat(2,minmax(0,1fr))} }
 .pos-tile{padding:10px 11px;border-radius:8px;background:var(--c-surface)}
 .pos-tile.alt{background:var(--c-accent2-100)}
-.pos-label{font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--c-text-faint);min-height:22px;line-height:1.25}
-.pos-value{font-family:var(--font-head);font-size:16.5px;margin-top:2px;font-variant-numeric:tabular-nums}
+.pos-label{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--c-text-faint);min-height:22px;line-height:1.25}
+.pos-value{font-family:var(--font-head);font-size:19px;margin-top:2px;font-variant-numeric:tabular-nums}
 .two-col{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px}
 .stat-box{padding:12px;border-radius:8px;background:var(--c-surface)}
 
 /* ---- bars ---- */
 .bar-list{display:flex;flex-direction:column;gap:9px}
-.bar-row{display:grid;grid-template-columns:88px 1fr auto;gap:9px;align-items:center;font-size:12.5px}
+.bar-row{display:grid;grid-template-columns:96px 1fr auto;gap:9px;align-items:center;font-size:14.5px}
 button.bar-row{width:100%;border:0;background:none;padding:6px 0;min-height:44px;font:inherit;text-align:inherit;cursor:pointer;color:inherit;font-family:inherit}
 .bar-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--c-text-soft)}
 .bar-track{height:7px;border-radius:999px;background:var(--c-surface-3);overflow:hidden}
@@ -227,17 +254,17 @@ button.bar-row{width:100%;border:0;background:none;padding:6px 0;min-height:44px
 .bar-fill{height:100%;border-radius:999px;background:var(--c-accent)}
 .bar-fill.neg-fill{background:var(--c-neg)}
 .bar-fill.pos-fill{background:var(--c-pos)}
-.bar-val{font-variant-numeric:tabular-nums;white-space:nowrap;font-size:12px}
+.bar-val{font-variant-numeric:tabular-nums;white-space:nowrap;font-size:13.5px}
 
 /* ---- events ---- */
 .event-list{display:flex;flex-direction:column;gap:2px}
-.event-row{display:flex;align-items:center;gap:10px;padding:9px 2px;border-bottom:1px solid var(--c-line);font-size:13px}
+.event-row{display:flex;align-items:center;gap:10px;padding:9px 2px;border-bottom:1px solid var(--c-line);font-size:14.5px}
 .event-dot{width:7px;height:7px;border-radius:999px;flex:none}
 .event-dot.pos{background:var(--c-pos)}
 .event-dot.neg{background:var(--c-neg)}
 .event-title{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.event-when{color:var(--c-text-faint);font-size:11.5px;white-space:nowrap}
-.event-amt{font-variant-numeric:tabular-nums;font-weight:600;font-size:12.5px;white-space:nowrap}
+.event-when{color:var(--c-text-faint);font-size:13px;white-space:nowrap}
+.event-amt{font-variant-numeric:tabular-nums;font-weight:600;font-size:14px;white-space:nowrap}
 
 /* ---- filters ---- */
 .filter-row{display:grid;grid-template-columns:1.4fr 1fr 1fr 1fr;gap:8px;margin-bottom:14px}
@@ -252,11 +279,11 @@ button.bar-row{width:100%;border:0;background:none;padding:6px 0;min-height:44px
   .mobile-only{display:block}
 }
 .table-wrap{overflow-x:auto;border:1px solid var(--c-line);border-radius:var(--radius)}
-.table{width:100%;border-collapse:collapse;font-size:13px}
-.table th{text-align:start;font-size:10.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--c-text-faint);padding:10px 12px;border-bottom:1px solid var(--c-line);white-space:nowrap}
+.table{width:100%;border-collapse:collapse;font-size:14.5px}
+.table th{text-align:start;font-size:12px;letter-spacing:.05em;text-transform:uppercase;color:var(--c-text-faint);padding:10px 12px;border-bottom:1px solid var(--c-line);white-space:nowrap}
 .table td{padding:9px 12px;border-bottom:1px solid var(--c-line);white-space:nowrap}
 .table td.num, .table th.num{text-align:end;font-variant-numeric:tabular-nums;font-weight:600}
-.tag{display:inline-flex;font-size:10px;padding:2px 9px;border-radius:999px}
+.tag{display:inline-flex;font-size:11.5px;padding:2px 9px;border-radius:999px}
 .tag-pos{background:var(--c-pos-bg);color:var(--c-pos)}
 .tag-neg{background:var(--c-neg-bg);color:var(--c-neg)}
 .tag-neu{background:var(--c-surface-3);color:var(--c-text-soft)}
@@ -266,45 +293,54 @@ button.bar-row{width:100%;border:0;background:none;padding:6px 0;min-height:44px
 .card-row.voided{opacity:.5}
 .card-row-top{display:flex;align-items:flex-start;gap:10px}
 .card-row-top>div:first-child{flex:1;min-width:0}
-.card-row-title{font-weight:600;font-size:14px;overflow:hidden;text-overflow:ellipsis}
-.card-row-sub{font-size:11.5px;color:var(--c-text-faint);margin-top:1px}
-.card-row-amt{font-variant-numeric:tabular-nums;font-weight:600;font-size:14.5px;white-space:nowrap}
-.card-row-meta{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--c-text-soft);margin-top:8px}
+.card-row-title{font-weight:600;font-size:16px;overflow:hidden;text-overflow:ellipsis}
+.card-row-sub{font-size:13px;color:var(--c-text-faint);margin-top:1px}
+.card-row-amt{font-variant-numeric:tabular-nums;font-weight:600;font-size:16.5px;white-space:nowrap}
+.card-row-meta{display:flex;gap:14px;flex-wrap:wrap;font-size:13.5px;color:var(--c-text-soft);margin-top:8px}
 .acc-swatch{width:11px;height:11px;border-radius:999px;flex:none;margin-top:3px}
-.acc-sub{font-size:11.5px;color:var(--c-text-faint);margin-top:6px}
+.acc-sub{font-size:13px;color:var(--c-text-faint);margin-top:6px}
 /* Person avatar/color — same idea as an account's color+card-face swatch,
    just a circle with an initial instead of a card gradient (a person isn't
    a physical card). .person-id wraps the avatar + name/sub as a single
    flex unit so it still lands as .card-row-top's first (flex:1) child. */
 .person-id{display:flex;align-items:center;gap:10px;min-width:0}
-.person-avatar{width:36px;height:36px;border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:14px}
-.person-avatar.sm{width:26px;height:26px;font-size:11px}
-.person-avatar.lg{width:52px;height:52px;font-size:20px}
+.person-avatar{width:36px;height:36px;border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:15px}
+.person-avatar.sm{width:26px;height:26px;font-size:12px}
+.person-avatar.lg{width:52px;height:52px;font-size:22px}
 .person-tag{display:inline-flex;align-items:center;gap:3px}
 
 .sched-list{display:flex;flex-direction:column;gap:4px;margin-top:8px;padding-top:8px;border-top:1px solid var(--c-line)}
-.sched-row{display:flex;justify-content:space-between;font-size:12px;padding:4px 0;gap:8px}
+.sched-row{display:flex;justify-content:space-between;font-size:13.5px;padding:4px 0;gap:8px}
 .sched-row span{white-space:nowrap}
 .sched-row.status-overdue .sched-status{color:var(--c-neg)}
 .sched-row.status-paid .sched-status{color:var(--c-pos)}
 .sched-row.mine{font-weight:600}
 
 .pill-row{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:14px}
-.pill{border:1px solid var(--c-line);background:var(--c-surface);border-radius:999px;padding:7px 14px;font-size:12.5px;cursor:pointer;min-height:44px}
+.pill{border:1px solid var(--c-line);background:var(--c-surface);border-radius:999px;padding:7px 14px;font-size:14px;cursor:pointer;min-height:44px}
 .pill.on{background:var(--c-accent-fill);border-color:var(--c-accent-fill);color:#fff}
+/* Tag chip -- JS (UI.tagStyle) sets only --tag-h (a 0-360 hue hashed from
+   the tag's own text); lightness/saturation live here so dark mode can
+   step them down the same way every other status/chip color in this app
+   already does, instead of a fixed pastel fighting the dark palette. */
+.tag-chip{background:hsl(var(--tag-h) 55% 92%);color:hsl(var(--tag-h) 40% 28%);border-color:transparent}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]) .tag-chip{background:hsl(var(--tag-h) 40% 22%);color:hsl(var(--tag-h) 65% 80%)}
+}
+:root[data-theme="dark"] .tag-chip{background:hsl(var(--tag-h) 40% 22%);color:hsl(var(--tag-h) 65% 80%)}
 .proj-bar{height:8px;border-radius:999px;background:var(--c-surface-3);overflow:hidden;margin-top:14px}
 .proj-fill{height:100%}
 
 .chart-cols{display:flex;align-items:flex-end;gap:10px;height:120px;padding:0 4px 4px}
 .chart-col{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%}
 .chart-bar{width:70%;border-radius:6px 6px 0 0;min-height:4px}
-.chart-label{font-size:10.5px;color:var(--c-text-faint);margin-top:6px}
+.chart-label{font-size:12px;color:var(--c-text-faint);margin-top:6px}
 
 .rules-list{display:flex;flex-direction:column;gap:10px}
 .rule-row{padding:10px 0;border-bottom:1px solid var(--c-line)}
-.rule-k{font-weight:600;font-size:13px}
-.rule-v{font-size:12.5px;color:var(--c-text-soft);margin-top:2px}
-.audit-list{display:flex;flex-direction:column;gap:2px;font-size:12.5px}
+.rule-k{font-weight:600;font-size:14.5px}
+.rule-v{font-size:14px;color:var(--c-text-soft);margin-top:2px}
+.audit-list{display:flex;flex-direction:column;gap:2px;font-size:14px}
 .audit-row{display:flex;justify-content:space-between;gap:10px;padding:7px 0;border-bottom:1px solid var(--c-line);color:var(--c-text-soft)}
 
 /* ---- primary nav — fix #1: 5 fixed tabs + More sheet ---- */
@@ -312,14 +348,14 @@ button.bar-row{width:100%;border:0;background:none;padding:6px 0;min-height:44px
   border-top:1px solid var(--c-line);box-shadow:0 -4px 16px rgba(0,0,0,.06);padding:4px 4px calc(4px + env(safe-area-inset-bottom))}
 .navbtn{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;background:none;border:0;
   padding:7px 2px;border-radius:10px;color:var(--c-text-soft);min-height:52px;cursor:pointer}
-.navbtn span{font-size:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+.navbtn span{font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
 .navbtn.on{color:var(--c-accent-fill)}
 @media (min-width:900px) and (pointer:fine){
   .shell{flex-direction:row;padding-bottom:0}
   .primary-nav{position:sticky;top:0;inset-inline:auto;bottom:auto;flex-direction:column;width:196px;flex:none;height:100vh;
     border-top:0;border-inline-end:1px solid var(--c-line);box-shadow:none;padding:14px 8px;gap:2px}
   .navbtn{flex:none;flex-direction:row;justify-content:flex-start;padding:9px 12px;gap:10px;min-height:44px}
-  .navbtn span{font-size:13px}
+  .navbtn span{font-size:14px}
   .navbtn.on{background:var(--c-accent-fill);color:#fff}
   .main-col .topbar,.main-col .metrics-row{position:sticky;top:0;z-index:30}
   .main-col .metrics-row{top:57px}
@@ -331,12 +367,12 @@ button.bar-row{width:100%;border:0;background:none;padding:6px 0;min-height:44px
 .sheet{position:fixed;inset-inline:0;bottom:0;z-index:46;background:var(--c-surface);border-radius:16px 16px 0 0;
   padding:10px 18px calc(18px + env(safe-area-inset-bottom));box-shadow:0 -8px 30px rgba(0,0,0,.2);max-height:70vh;overflow:auto}
 .sheet-handle{width:36px;height:4px;border-radius:999px;background:var(--c-line);margin:0 auto 12px}
-.sheet-title{font-family:var(--font-head);font-size:15px;margin-bottom:12px}
+.sheet-title{font-family:var(--font-head);font-size:16.5px;margin-bottom:12px}
 .sheet-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
 .sheet-item{display:flex;flex-direction:column;align-items:center;gap:6px;padding:14px 6px;border-radius:12px;
   border:1px solid var(--c-line);background:var(--c-surface-2);color:var(--c-text-soft);cursor:pointer;min-height:76px}
 .sheet-item.on{color:var(--c-accent-fill);border-color:var(--c-accent-fill)}
-.sheet-item span{font-size:11px;text-align:center}
+.sheet-item span{font-size:12.5px;text-align:center}
 @media (min-width:900px) and (pointer:fine){
   .sheet{inset-inline:auto;bottom:auto;top:60px;inset-inline-start:210px;width:280px;border-radius:12px;max-height:80vh}
 }
@@ -344,17 +380,17 @@ button.bar-row{width:100%;border:0;background:none;padding:6px 0;min-height:44px
 /* ---- modal ---- */
 .dialog{position:fixed;inset-inline:12px;top:50%;transform:translateY(-50%);z-index:51;background:var(--c-surface);
   border-radius:14px;padding:20px;max-width:480px;margin-inline:auto;max-height:88vh;overflow:auto;box-shadow:var(--shadow)}
-.dialog-title{font-family:var(--font-head);font-size:19px;margin-bottom:12px}
-.dialog-err{background:var(--c-neg-bg);color:var(--c-neg);padding:9px 12px;border-radius:8px;font-size:13px;margin-bottom:10px}
+.dialog-title{font-family:var(--font-head);font-size:21px;margin-bottom:12px}
+.dialog-err{background:var(--c-neg-bg);color:var(--c-neg);padding:9px 12px;border-radius:8px;font-size:14.5px;margin-bottom:10px}
 .field-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
-.field{display:flex;flex-direction:column;gap:4px;font-size:12.5px}
+.field{display:flex;flex-direction:column;gap:4px;font-size:14px}
 .field.wide{grid-column:1 / -1}
 .field-label{color:var(--c-text-soft)}
-.field-hint{font-size:11px;color:var(--c-text-faint)}
+.field-hint{font-size:12.5px;color:var(--c-text-faint)}
 .dialog-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:16px}
 @media (max-width:480px){ .field-grid{grid-template-columns:1fr} }
 
-.flash{position:fixed;bottom:64px;inset-inline:0;text-align:center;font-size:11.5px;color:var(--c-text-faint);
+.flash{position:fixed;bottom:64px;inset-inline:0;text-align:center;font-size:13px;color:var(--c-text-faint);
   opacity:0;transition:opacity .3s ease;pointer-events:none;z-index:20}
 @media (min-width:900px) and (pointer:fine){ .flash{bottom:14px} }
 
@@ -1418,6 +1454,25 @@ class Engine {
       { v: "other", l: this.L("Other", "غير كده"), color: "#c15b6b", icon: "👤" }
     ];
   }
+  // Fixed category -> color-slot order (kept OUT of amount/rank -- a
+  // category's color never changes just because it moved up or down a
+  // list this month vs last, or because Reports slices to its top 8 by
+  // spend). Picked for which categories people most want to tell apart at
+  // a glance, not by declaration order in FORMS(). Capped at 8 slots on
+  // purpose: --cat-1..--cat-8 (app.css) are a validated categorical
+  // palette (colorblind-safe adjacent-pair spacing, checked against both
+  // this app's light and dark surfaces) -- adding a 9th slot or reordering
+  // these 8 would need re-validating from scratch, so anything past slot 8
+  // (or a custom category) falls back to --cat-neutral instead.
+  CATEGORY_COLOR_ORDER = {
+    expense: ["Food", "Rent", "Transportation", "Shopping", "Medical", "Entertainment", "Family", "Car"],
+    income: ["Salary", "Freelance", "Business", "Commission", "Rental", "Interest", "Selling items", "Other"]
+  };
+  categoryColor(name, kind) {
+    const order = this.CATEGORY_COLOR_ORDER[kind === "income" ? "income" : "expense"];
+    const i = order.indexOf(name);
+    return i >= 0 ? "var(--cat-" + (i + 1) + ")" : "var(--cat-neutral)";
+  }
   personHasRecords(id) {
     const d = this.state.data;
     return d.tx.some(t => !t.void && t.personId === id) || (d.plans || []).some(p => p.personId === id);
@@ -1994,6 +2049,39 @@ const UI = {
     }
   },
 
+  // Soft, hashed tint for free-form tags -- unlike categories, tags aren't
+  // a fixed list, so they don't get a "slot" from the validated palette
+  // (app.categoryColor); a low-saturation tint derived from the tag's own
+  // text is enough to tell tags apart at a glance without ever reading as
+  // a category color. Only the hue is computed here -- lightness/saturation
+  // live in the .tag-chip CSS rule (app.css) so a dark-mode override can
+  // step them down the same way every other chip/status color in this app
+  // already does, instead of a fixed pastel chip fighting the dark palette.
+  tagStyle(tag) {
+    // A simple "multiply-then-mod" rolling hash (h = h*31+c, modded on every
+    // step) clusters short lowercase words hard: common tags like "trip",
+    // "food", "gift", "travel", "car" all landed within a ~90deg band and
+    // rendered as the same shade of pink. DJB2-with-XOR, modding only once
+    // at the end, spreads the same words across the full hue circle.
+    let h = 5381;
+    for (let i = 0; i < tag.length; i++) h = ((h * 33) ^ tag.charCodeAt(i)) >>> 0;
+    return "--tag-h:" + (h % 360);
+  },
+
+  // Category bar row -- shared by Dashboard ("This month") and Reports
+  // (by-category, by-source) so the color logic can't drift between them
+  // the way "this month"'s date bounds once did. Over-budget still reads
+  // as a status (red ring + red value), not a color fight: the category
+  // keeps its own identity color underneath instead of being overridden by
+  // a solid "neg-fill" the way it used to.
+  catBar(name, v, max, kind, over, suffix) {
+    const app = this.app;
+    const ring = over ? ";outline:2px solid var(--c-neg);outline-offset:1px" : "";
+    return '<button class="bar-row" onclick="UI.viewCategoryTx(\'' + esc(name).replace(/'/g, "\\'") + '\')"><span class="bar-name">' + esc(name) + '</span>' +
+      '<div class="bar-track"><div class="bar-fill" style="width:' + Math.max(4, v / max * 100) + '%;background:' + app.categoryColor(name, kind) + ring + '"></div></div>' +
+      '<span class="bar-val' + (over ? " tone-neg" : "") + '">' + app.fmt(v) + (suffix || "") + "</span></button>";
+  },
+
   // ---- Dashboard (fix #5: single summary pass, Needs Attention promoted) --
   renderDashboard(D, t) {
     const app = this.app, S = app.state, d = app.state.data;
@@ -2155,7 +2243,7 @@ const UI = {
       (catArr.length ? '<div class="bar-list">' + catArr.slice(0, 5).map(([name, v]) => {
         const budget = (d.budgets || {})[name];
         const over = budget && v > budget;
-        return '<button class="bar-row" onclick="UI.viewCategoryTx(\'' + esc(name).replace(/'/g, "\\'") + '\')"><span class="bar-name">' + esc(name) + '</span><div class="bar-track"><div class="bar-fill' + (over ? " neg-fill" : "") + '" style="width:' + Math.max(4, v / maxCat * 100) + '%"></div></div><span class="bar-val' + (over ? " tone-neg" : "") + '">' + app.fmt(v) + (budget ? " / " + app.fmt(budget) : "") + "</span></button>";
+        return this.catBar(name, v, maxCat, "expense", over, budget ? " / " + app.fmt(budget) : "");
       }).join("") + "</div>" : "") +
     "</section>";
 
@@ -2293,7 +2381,7 @@ const UI = {
     // Income/expense only carry tags (see FORMS()) — every other type's
     // `tags` is simply absent, so this renders nothing for them.
     const tagChips = (r) => (r.tags && r.tags.length) ? '<div class="pill-row" style="margin:4px 0 0">' + r.tags.map((tag) =>
-      '<button class="pill" onclick="UI.viewCategoryTx(\'' + esc(tag).replace(/'/g, "\\'") + '\')">#' + esc(tag) + "</button>"
+      '<button class="pill tag-chip" style="' + this.tagStyle(tag) + '" onclick="UI.viewCategoryTx(\'' + esc(tag).replace(/'/g, "\\'") + '\')">#' + esc(tag) + "</button>"
     ).join("") + "</div>" : "";
     const rowActions = (r) => '<div class="btn-row wrap">' +
       '<button class="link-btn small" onclick="UI.reverseTx(\'' + r.id + '\')" ' + (r.void ? "disabled" : "") + ">" + esc(r.void ? app.L("reversed") : app.L("reverse")) + "</button>" +
@@ -2404,7 +2492,7 @@ const UI = {
       }).join("") + "</tbody></table></div>";
 
     const cards = '<div class="card-list mobile-only">' + rows.map((row) => { const { p, r, y, net } = row;
-      return '<div class="card-row person-card" style="border-left:4px solid ' + this.personColor(p) + '"><div class="card-row-top"><div class="person-id">' + this.personAvatar(p) + '<div><button class="link-btn card-row-title" onclick="UI.viewPerson(\'' + p.id + '\')">' + esc(p.name) + '</button><div class="card-row-sub">' + this.personTag(p) + (p.phone ? " · " + esc(p.phone) : "") + "</div></div></div>" +
+      return '<div class="card-row person-card" style="border-inline-start:4px solid ' + this.personColor(p) + '"><div class="card-row-top"><div class="person-id">' + this.personAvatar(p) + '<div><button class="link-btn card-row-title" onclick="UI.viewPerson(\'' + p.id + '\')">' + esc(p.name) + '</button><div class="card-row-sub">' + this.personTag(p) + (p.phone ? " · " + esc(p.phone) : "") + "</div></div></div>" +
       '<div class="card-row-amt ' + (net >= 0 ? "tone-pos" : "tone-neg") + '">' + app.fmt(net) + "</div></div>" +
       '<div class="card-row-meta"><span>' + esc(t.owesMe) + ": " + app.fmt(r) + '</span><span>' + esc(t.iOwe) + ": " + app.fmt(y) + "</span></div>" +
       '<div class="btn-row wrap"><button class="link-btn small" onclick="UI.setPage(\'transactions\');UI.setFilter(\'q\',\'' + esc(p.name).replace(/'/g, "\\'") + '\')">' + esc(t.viewTx) + "</button>" + personActions(row) + "</div></div>";
@@ -2734,12 +2822,12 @@ const UI = {
     const srcArr = Object.entries(srcMap).sort((a, b) => b[1] - a[1]).slice(0, 8);
     const maxSrc = Math.max(1, ...srcArr.map(c => c[1]));
 
-    const barList = (arr, max, tone) => '<div class="bar-list">' + arr.map(([name, v]) => '<button class="bar-row" onclick="UI.viewCategoryTx(\'' + esc(name).replace(/'/g, "\\'") + '\')"><span class="bar-name">' + esc(name) + '</span><div class="bar-track"><div class="bar-fill ' + tone + '" style="width:' + Math.max(4, v / max * 100) + '%"></div></div><span class="bar-val">' + app.fmt(v) + "</span></button>").join("") + "</div>";
+    const barList = (arr, max, kind) => '<div class="bar-list">' + arr.map(([name, v]) => this.catBar(name, v, max, kind, false)).join("") + "</div>";
 
     return this.tabHeader(t.reports, app.L("Six-month history plus aging and category analysis"), []) +
       '<h2 class="section-title">' + esc(t.netWorthTrend) + "</h2>" + nwChart +
-      '<h2 class="section-title">' + esc(t.byCategory) + "</h2>" + (catArr.length ? barList(catArr, maxCat, "neg-fill") : '<p class="muted">—</p>') +
-      '<h2 class="section-title">' + esc(t.bySource) + "</h2>" + (srcArr.length ? barList(srcArr, maxSrc, "pos-fill") : '<p class="muted">—</p>');
+      '<h2 class="section-title">' + esc(t.byCategory) + "</h2>" + (catArr.length ? barList(catArr, maxCat, "expense") : '<p class="muted">—</p>') +
+      '<h2 class="section-title">' + esc(t.bySource) + "</h2>" + (srcArr.length ? barList(srcArr, maxSrc, "income") : '<p class="muted">—</p>');
   },
 
   // ---- Settings --------------------------------------------------------------
@@ -2764,8 +2852,10 @@ const UI = {
     // list that could drift out of sync with it.
     const catOptions = app.FORMS().expense.fields.find(f => f.k === "category").options;
     const budgets = d.budgets || {};
+    // Same category color as its own bar on Dashboard/Reports -- a quick
+    // "which budget is this" cue in a list that's otherwise just names.
     const budgetRows = Object.keys(budgets).length ? '<div class="card-list">' + Object.entries(budgets).sort((a, b) => b[1] - a[1]).map(([cat, amt]) =>
-      '<div class="card-row"><div class="card-row-top"><div class="card-row-title">' + esc(cat) + '</div><div class="card-row-amt">' + app.fmt(amt) + "/" + esc(app.L("mo", "شهر")) + "</div></div>" +
+      '<div class="card-row" style="border-inline-start:4px solid ' + app.categoryColor(cat, "expense") + '"><div class="card-row-top"><div class="card-row-title">' + esc(cat) + '</div><div class="card-row-amt">' + app.fmt(amt) + "/" + esc(app.L("mo", "شهر")) + "</div></div>" +
       '<button class="link-btn small" onclick="UI.clearBudgetC(\'' + cat.replace(/'/g, "\\'") + '\')">' + esc(app.L("Remove")) + "</button></div>"
     ).join("") + "</div>" : '<p class="muted small">' + esc(app.L("No budgets set yet.", "لسه مفيش ميزانيات متحددة.")) + "</p>";
     const budgetsSection = '<section class="dash-section"><h2 class="section-title">' + esc(app.L("Budgets")) + '</h2><p class="muted small">' + esc(app.L("Set a monthly limit per expense category — the Dashboard flags it once you're near or over.", "حدد سقف شهري لكل فئة مصروف — الداشبورد هينبهك لما تقرب أو تتخطاه.")) + '</p>' +
