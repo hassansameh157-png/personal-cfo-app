@@ -2784,45 +2784,51 @@ const UI = {
       '<div class="card-list">' + rows + "</div>";
   },
 
-  // ---- Transactions (fix #2 cards, fix #4 pagination) -------------------
-  renderTransactions(D, t) {
-    const app = this.app, S = app.state, d = app.state.data;
-    const typeLabels = S.lang === "ar"
+  // Shared English/Arabic type-label dict for a transaction row -- used by
+  // both Transactions (every row) and Person Detail's History section
+  // (this person's rows only), so the two can never show a different label
+  // for the same stored type.
+  txTypeLabels() {
+    const app = this.app;
+    return app.state.lang === "ar"
       ? { income: "إيراد", expense: "مصروف", transfer: "تحويل", receivable: "سلفة لي", receivable_payment: "تحصيل", payable: "دين عليّ", debt_payment: "سداد", investment_buy: "استثمار", investment_return: "عائد استثمار", installment_sale: "بيع بالتقسيط", installment_payment: "دفعة قسط", gam3ya_payment: "قسط جمعية", gam3ya_payout: "قبض جمعية", statement_payment: "سداد كشف حساب", refund: "مرتجع", adjustment: "تسوية", reversal_marker: "عكس قيد" }
       : { income: "Income", expense: "Expense", transfer: "Transfer", receivable: "Receivable", receivable_payment: "Collection", payable: "Debt", debt_payment: "Repayment", investment_buy: "Investment", investment_return: "Inv. return", installment_sale: "Inst. sale", installment_payment: "Inst. payment", gam3ya_payment: "Gam3ya in", gam3ya_payout: "Gam3ya payout", statement_payment: "Statement payment", refund: "Refund", adjustment: "Adjustment", reversal_marker: "Reversal" };
-    const presetStart = { today: 0, week: 7, month: 30, quarter: 90, year: 365 };
-    let rows = d.tx.slice().sort((a, b) => a.date < b.date ? 1 : (a.date > b.date ? -1 : 0));
-    const F = S.filt;
-    if (F.type !== "all") rows = rows.filter(r => r.type === F.type);
-    if (F.account !== "all") rows = rows.filter(r => r.accountId === F.account || r.fromId === F.account || r.toId === F.account);
-    if (F.preset !== "all") { const from = app.iso(app.addDays(new Date(), -presetStart[F.preset])); rows = rows.filter(r => r.date >= from); }
-    if (F.q.trim()) { const q = F.q.toLowerCase(); rows = rows.filter(r => [r.desc, r.category, typeLabels[r.type], app.personName(r.personId), app.accName(r.accountId), app.accName(r.fromId), app.accName(r.toId), (r.tags || []).join(" ")].join(" ").toLowerCase().includes(q)); }
+  },
+  // Sign/amount-text/account-text/tone for one transaction row -- shared by
+  // Transactions and Person Detail's History so a type added to outTypes/
+  // inTypes, or the transfer-like carve-out, is automatically correct in
+  // both places instead of only wherever someone remembered to update it.
+  txSign(r) {
+    const app = this.app;
     const outTypes = ["expense", "debt_payment", "receivable", "investment_buy", "gam3ya_payment"];
     const inTypes = ["income", "receivable_payment", "payable", "installment_payment", "investment_return", "refund", "gam3ya_payout"];
     // statement_payment moves money exactly like a transfer (fromId/toId,
     // no sign of its own) -- everywhere transfer gets special-cased below,
     // this does too, or it'd show as a plain negative with a blank account.
-    const isTransferLike = (type) => type === "transfer" || type === "statement_payment";
-    const total = rows.length;
-    const visible = rows.slice(0, S.txVisible);
-    const items = visible.map(r => {
-      const isIn = inTypes.includes(r.type) && !(r.type === "installment_payment" && app.planDir(r.planId) === "out");
-      const signed = (isTransferLike(r.type) || r.type === "reversal_marker") ? 0 : (isIn ? r.amount : -r.amount);
-      const amtTxt = r.type === "reversal_marker" ? "—" : (signed === 0 ? app.fmt(r.amount) : app.fmtS(signed));
-      const acc = isTransferLike(r.type) ? app.accName(r.fromId) + " → " + app.accName(r.toId) : (r.accountId ? app.accName(r.accountId) : "—");
-      const tone = r.void ? "muted-amt" : (signed > 0 ? "tone-pos" : signed < 0 ? "tone-neg" : "");
-      return { r, isIn, signed, amtTxt, acc, tone };
-    });
-    // Reverse stays available on every non-void row, for a formal audit-
-    // trail correction; Edit and Delete only show for the plain entry types
-    // txEditable() recognizes (a structural row like an installment sale or
-    // an investment purchase is corrected through its own record instead).
-    // Income/expense only carry tags (see FORMS()) — every other type's
-    // `tags` is simply absent, so this renders nothing for them.
-    const tagChips = (r) => (r.tags && r.tags.length) ? '<div class="pill-row" style="margin:4px 0 0">' + r.tags.map((tag) =>
+    const isTransferLike = r.type === "transfer" || r.type === "statement_payment";
+    const isIn = inTypes.includes(r.type) && !(r.type === "installment_payment" && app.planDir(r.planId) === "out");
+    const signed = (isTransferLike || r.type === "reversal_marker") ? 0 : (isIn ? r.amount : -r.amount);
+    const amtTxt = r.type === "reversal_marker" ? "—" : (signed === 0 ? app.fmt(r.amount) : app.fmtS(signed));
+    const acc = isTransferLike ? app.accName(r.fromId) + " → " + app.accName(r.toId) : (r.accountId ? app.accName(r.accountId) : "—");
+    const tone = r.void ? "muted-amt" : (signed > 0 ? "tone-pos" : signed < 0 ? "tone-neg" : "");
+    return { isIn, isTransferLike, signed, amtTxt, acc, tone };
+  },
+  // Income/expense only carry tags (see FORMS()) — every other type's
+  // `tags` is simply absent, so this renders nothing for them. Shared by
+  // Transactions and Person Detail's History.
+  txTagChips(r) {
+    return (r.tags && r.tags.length) ? '<div class="pill-row" style="margin:4px 0 0">' + r.tags.map((tag) =>
       '<button class="pill tag-chip" style="' + this.tagStyle(tag) + '" onclick="UI.viewCategoryTx(\'' + esc(tag).replace(/'/g, "\\'") + '\')">#' + esc(tag) + "</button>"
     ).join("") + "</div>" : "";
-    const rowActions = (r) => '<div class="btn-row wrap">' +
+  },
+  // Reverse stays available on every non-void row, for a formal audit-trail
+  // correction; Edit/Delete/Duplicate only show for the plain entry types
+  // txEditable() recognizes (a structural row like an installment sale or
+  // an investment purchase is corrected through its own record instead).
+  // Shared by Transactions and Person Detail's History.
+  txRowActions(r) {
+    const app = this.app;
+    return '<div class="btn-row wrap">' +
       '<button class="link-btn small" onclick="UI.reverseTx(\'' + r.id + '\')" ' + (r.void ? "disabled" : "") + ">" + esc(r.void ? app.L("reversed") : app.L("reverse")) + "</button>" +
       (app.txEditable(r) ?
         '<button class="link-btn small" onclick="UI.openTxEdit(\'' + r.id + '\')">' + esc(app.L("Edit")) + "</button>" +
@@ -2830,13 +2836,31 @@ const UI = {
         '<button class="link-btn small" onclick="UI.duplicateTxC(\'' + r.id + '\')">' + esc(app.L("Duplicate", "كررها")) + "</button>"
         : "") +
       "</div>";
+  },
+
+  // ---- Transactions (fix #2 cards, fix #4 pagination) -------------------
+  renderTransactions(D, t) {
+    const app = this.app, S = app.state, d = app.state.data;
+    const typeLabels = this.txTypeLabels();
+    const presetStart = { today: 0, week: 7, month: 30, quarter: 90, year: 365 };
+    let rows = d.tx.slice().sort((a, b) => a.date < b.date ? 1 : (a.date > b.date ? -1 : 0));
+    const F = S.filt;
+    if (F.type !== "all") rows = rows.filter(r => r.type === F.type);
+    if (F.account !== "all") rows = rows.filter(r => r.accountId === F.account || r.fromId === F.account || r.toId === F.account);
+    if (F.preset !== "all") { const from = app.iso(app.addDays(new Date(), -presetStart[F.preset])); rows = rows.filter(r => r.date >= from); }
+    if (F.q.trim()) { const q = F.q.toLowerCase(); rows = rows.filter(r => [r.desc, r.category, typeLabels[r.type], app.personName(r.personId), app.accName(r.accountId), app.accName(r.fromId), app.accName(r.toId), (r.tags || []).join(" ")].join(" ").toLowerCase().includes(q)); }
+    const total = rows.length;
+    const visible = rows.slice(0, S.txVisible);
+    const items = visible.map(r => Object.assign({ r }, this.txSign(r)));
+    const tagChips = (r) => this.txTagChips(r);
+    const rowActions = (r) => this.txRowActions(r);
 
     const table = '<div class="table-wrap desktop-only"><table class="table"><thead><tr>' +
       "<th>" + esc(t.date) + "</th><th>" + esc(t.type) + "</th><th>" + esc(t.details) + "</th><th>" + esc(t.person) + "</th><th>" + esc(t.account) + "</th><th class=\"num\">" + esc(t.amount) + "</th><th></th>" +
-      "</tr></thead><tbody>" + items.map(({ r, isIn, amtTxt, acc, tone }) =>
+      "</tr></thead><tbody>" + items.map(({ r, isIn, isTransferLike, amtTxt, acc, tone }) =>
         '<tr style="' + (r.void ? "opacity:.45;text-decoration:line-through" : "") + '">' +
           "<td>" + r.date + "</td>" +
-          '<td><span class="tag ' + (isIn ? "tag-pos" : isTransferLike(r.type) ? "tag-neu" : "tag-neg") + '">' + esc(typeLabels[r.type] || r.type) + "</span></td>" +
+          '<td><span class="tag ' + (isIn ? "tag-pos" : isTransferLike ? "tag-neu" : "tag-neg") + '">' + esc(typeLabels[r.type] || r.type) + "</span></td>" +
           "<td>" + esc(r.desc || "—") + tagChips(r) + "</td>" +
           "<td>" + esc(r.personId ? app.personName(r.personId) : "—") + "</td>" +
           "<td>" + esc(acc) + "</td>" +
@@ -2997,6 +3021,31 @@ const UI = {
       return '<h2 class="section-title" style="margin-top:20px">' + esc(label) + '</h2><div class="card-list">' + items + "</div>";
     };
 
+    // History -- every transaction actually carrying this person's id, most
+    // recent first. The sections above only ever show what's still OPEN (an
+    // unsettled loan row, a plan's remaining schedule) -- the collection/
+    // repayment transaction itself, or a loan already fully settled, never
+    // appeared anywhere on this page even though it's unmistakably this
+    // person's. Real bug this closes: recording a collection correctly
+    // updated the balance and showed up in the main Transactions tab, but
+    // was invisible here on the one page that's supposed to be "everything
+    // tied to this person." Same Edit/Delete/Duplicate/Reverse wiring
+    // Transactions itself uses (see txRowActions), so a mistake can be
+    // corrected right from here too.
+    const typeLabels = this.txTypeLabels();
+    const historyTx = d.tx.filter(x => x.personId === p.id).sort((a, b) => a.date < b.date ? 1 : (a.date > b.date ? -1 : 0));
+    const historyRows = historyTx.map(x => {
+      const s = this.txSign(x);
+      return '<div class="card-row' + (x.void ? " voided" : "") + '">' +
+        '<div class="card-row-top"><div><div class="card-row-title">' + esc(x.desc || "—") + '</div><div class="card-row-sub">' + x.date + " · " + esc(typeLabels[x.type] || x.type) + "</div></div>" +
+        '<div class="card-row-amt ' + s.tone + '">' + s.amtTxt + "</div></div>" +
+        '<div class="card-row-meta"><span>' + esc(s.acc) + "</span></div>" +
+        this.txTagChips(x) +
+        this.txRowActions(x) +
+        "</div>";
+    }).join("");
+    const historySection = historyTx.length ? '<h2 class="section-title" style="margin-top:20px">' + esc(t.history) + '</h2><div class="card-list">' + historyRows + "</div>" : "";
+
     const actions = '<div class="btn-row wrap">' +
       (y > 0 ? '<button class="btn btn-primary small" onclick="UI.openModal(\'debt_payment\',{personId:\'' + p.id + '\'})">' + esc(t.pay) + "</button>" : "") +
       (r > 0 ? '<button class="btn btn-primary small" onclick="UI.openModal(\'receivable_payment\',{personId:\'' + p.id + '\'})">' + esc(t.collect) + "</button>" : "") +
@@ -3019,7 +3068,8 @@ const UI = {
       loanSection("payable", app.L("Loans I owe", "ديون عليّا")) +
       planSection(planIn, app.L("Installment plans owed to me", "أقساط ليّا")) +
       planSection(planOut, app.L("Installment plans I owe", "أقساط عليّا")) +
-      (!r && !y && !planIn.length && !planOut.length ? '<p class="muted" style="margin-top:16px">' + esc(app.L("Nothing on record for this person yet.", "لسه مفيش أي حاجة مسجلة لهذا الشخص.")) + "</p>" : "");
+      historySection +
+      (!r && !y && !planIn.length && !planOut.length && !historyTx.length ? '<p class="muted" style="margin-top:16px">' + esc(app.L("Nothing on record for this person yet.", "لسه مفيش أي حاجة مسجلة لهذا الشخص.")) + "</p>" : "");
   },
 
   // ---- Installments (P1 KPI quirk intentionally preserved) -----------------
