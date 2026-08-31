@@ -189,6 +189,17 @@ h1,h2,h3{font-family:var(--font-head);font-weight:600;margin:0;text-wrap:balance
 
 /* ---- hero ---- */
 .hero-card{background:var(--c-accent-900);color:#f5efe8;border-radius:var(--radius);padding:22px 22px 20px;box-shadow:var(--shadow)}
+/* "You can spend today" -- its own tinted banner inside the hero card, same
+   technique as the credit-card tile's .cc-stmt badge: fixed colors, not the
+   theme's --c-pos/--c-neg, so it reads reliably against this card's always-
+   dark #0a303e background (--c-accent-900 is the same value in both light
+   and dark mode). Mint while there's room; a warning amber once today's own
+   obligations would already eat into what's on hand (spendToday < 0). */
+.spend-today{margin-top:14px;padding:10px 14px;border-radius:10px;display:flex;justify-content:space-between;align-items:center;gap:10px;
+  background:rgba(112,224,180,.16);border:1px solid rgba(112,224,180,.4)}
+.spend-today.tight{background:rgba(255,166,110,.2);border-color:rgba(255,166,110,.5)}
+.spend-today-label{font-size:13px}
+.spend-today-value{font-family:var(--font-head);font-size:20px;font-weight:600;white-space:nowrap}
 
 /* ---- credit card tile ---- */
 /* No bank logos/wordmarks drawn here (trademarked) — just the account's
@@ -1282,6 +1293,41 @@ class Engine {
     const fc = this.forecast(days || 7, D);
     const outflow = fc.events.filter(e => e.amount < 0).reduce((s, e) => s + e.amount, 0);
     return Math.round((D.available + outflow) * 100) / 100;
+  }
+  // "How much can I spend today" -- one plain answer, not two numbers
+  // (Available balance, Safe to spend) the user has to reconcile in their
+  // head. Available minus only what's actually due TODAY specifically (a
+  // statement/loan/installment/recurring rule dated today) -- forecast()'s
+  // own event list already clamps anything overdue to today's date, so
+  // this reads directly off it instead of re-deriving due dates a second
+  // way. Deliberately narrower than safeToSpend(7) (still shown on
+  // Forecast, unchanged): that one is the cautious "don't get caught out
+  // this week" runway view; this one only ever shrinks for something
+  // actually leaving the account today.
+  spendableToday(D) {
+    const fc = this.forecast(1, D);
+    const today = this.today();
+    const outflow = fc.events.filter(e => e.date === today && e.amount < 0).reduce((s, e) => s + e.amount, 0);
+    return Math.round((D.available + outflow) * 100) / 100;
+  }
+  // Rolling 7-day window vs. the 7 days before that -- same "compare like
+  // for like" idea as monthOverMonth(), just weekly, and a rolling window
+  // rather than a calendar week (sidesteps picking which day a week
+  // "starts" on -- the app already uses a rolling 7 days elsewhere: Safe to
+  // spend, the Transactions "Last 7 days" preset).
+  weekSummary() {
+    const d = this.state.data, today = this.today();
+    const start = this.iso(this.addDays(new Date(), -6)); // 7 days total, today included
+    const prevEnd = this.iso(this.addDays(new Date(), -7));
+    const prevStart = this.iso(this.addDays(new Date(), -13));
+    const sum = (from, to, types) => d.tx.filter(x => !x.void && x.date >= from && x.date <= to && types.includes(x.type)).reduce((s, x) => s + x.amount, 0);
+    const expense = sum(start, today, ["expense"]);
+    const prevExpense = sum(prevStart, prevEnd, ["expense"]);
+    const catMap = {};
+    d.tx.filter(x => !x.void && x.type === "expense" && x.date >= start && x.date <= today).forEach(x => { const c = x.category || "Other"; catMap[c] = (catMap[c] || 0) + x.amount; });
+    const topEntry = Object.entries(catMap).sort((a, b) => b[1] - a[1])[0] || null;
+    const pct = prevExpense > 0 ? Math.round(((expense - prevExpense) / prevExpense) * 100) : null;
+    return { start, end: today, expense, prevExpense, pct, topCategory: topEntry ? { name: topEntry[0], amount: topEntry[1] } : null };
   }
   // ---- Cash Flow Statement -------------------------------------------------
   // Classic three-bucket view (Operating / Investing / Financing), built
@@ -2478,11 +2524,19 @@ const UI = {
     // the one that actually answers "can I afford this today" without
     // walking through Forecast by hand first.
     const safeToSpend = app.safeToSpend(D, 7);
+    // The single plain answer to "can I afford this right now" -- Available
+    // minus only what's due TODAY specifically, as its own tinted banner
+    // (not a plain tone-pos/tone-neg text color) so it stays legible
+    // regardless of theme, same technique as the credit-card tile's
+    // .cc-stmt badge against its own always-dark background.
+    const spendToday = app.spendableToday(D);
+    const spendTodayBanner = '<div class="spend-today' + (spendToday < 0 ? " tight" : "") + '"><span class="spend-today-label">' + esc(app.L("You can spend today", "تقدر تصرف النهاردة")) + '</span><span class="spend-today-value">' + app.fmt(spendToday) + "</span></div>";
     const hero =
       '<div class="hero-card">' +
         '<div class="hero-label">' + esc(t.availableBalance) + "</div>" +
         '<div class="hero-value">' + app.fmt(D.available) + "</div>" +
         '<div class="hero-note">' + esc(t.availableNote) + "</div>" +
+        spendTodayBanner +
         '<div class="hero-sub-row">' +
           // Not tone-neg/tone-pos here on purpose: those colors are tuned
           // for a light surface and read at ~1.9:1 against this card's dark
@@ -2629,6 +2683,30 @@ const UI = {
       ).join("") + "</div>" : '<p class="muted">—</p>') +
     "</section>";
 
+    // Shared "up/down X% vs <period>" badge -- used by both This week and
+    // This month below, so the arrow/color logic (which direction counts
+    // as "good") can't drift between the two the way "this month"'s own
+    // date bounds once did against the budget alerts.
+    const periodBadge = (pct, goodIsDown, label) => {
+      if (pct === null) return "";
+      const up = pct >= 0;
+      const good = goodIsDown ? !up : up;
+      return ' <span class="' + (good ? "tone-pos" : "tone-neg") + '" style="font-size:11px">' + (up ? "▲" : "▼") + Math.abs(pct) + "% " + esc(label) + "</span>";
+    };
+
+    // This week — a rolling 7 days (see Engine.weekSummary), not a calendar
+    // week: sidesteps picking which day a week "starts" on, and matches the
+    // rolling-7-days convention Safe to spend and the Transactions "Last 7
+    // days" preset already use.
+    const ws = app.weekSummary();
+    const thisWeek = '<section class="dash-section">' +
+      '<h2 class="section-title">' + esc(app.L("This week", "الأسبوع ده")) + "</h2>" +
+      '<div class="two-col">' +
+        '<div class="stat-box"><div class="pos-label">' + esc(app.L("Spent this week", "المصروف الأسبوع ده")) + '</div><div class="pos-value tone-neg">' + app.fmt(ws.expense) + "</div>" + periodBadge(ws.pct, true, app.L("vs last week", "عن الأسبوع اللي فات")) + "</div>" +
+        '<div class="stat-box"><div class="pos-label">' + esc(app.L("Top category", "أكبر بند")) + '</div><div class="pos-value">' + (ws.topCategory ? esc(ws.topCategory.name) + " · " + app.fmt(ws.topCategory.amount) : "—") + "</div></div>" +
+      "</div>" +
+    "</section>";
+
     // This month — bounded to today at both ends (not just from the 1st),
     // matching monthCategorySpend()/monthOverMonth() below: otherwise a
     // future-dated entry within the current month could show up in this
@@ -2641,12 +2719,7 @@ const UI = {
     // vs. the same number of days into last month (see monthOverMonth) —
     // null when last month had nothing in that window to compare against.
     const mom = app.monthOverMonth();
-    const momBadge = (pct, goodIsDown) => {
-      if (pct === null) return "";
-      const up = pct >= 0;
-      const good = goodIsDown ? !up : up;
-      return ' <span class="' + (good ? "tone-pos" : "tone-neg") + '" style="font-size:11px">' + (up ? "▲" : "▼") + Math.abs(pct) + "% " + esc(app.L("vs last month", "عن الشهر اللي فات")) + "</span>";
-    };
+    const momBadge = (pct, goodIsDown) => periodBadge(pct, goodIsDown, app.L("vs last month", "عن الشهر اللي فات"));
     // app.monthCategorySpend(), not a locally-filtered copy — it's also
     // what the budget/unusual-spending alerts above check against, so a
     // category can't show over-budget red here while staying silent there
@@ -2669,7 +2742,7 @@ const UI = {
       }).join("") + "</div>" : "") +
     "</section>";
 
-    return hero + needsAttention + quickAdd + goalsTeaser + whereMoney + next30 + thisMonth;
+    return hero + needsAttention + quickAdd + goalsTeaser + whereMoney + next30 + thisWeek + thisMonth;
   },
 
   // ---- Accounts -------------------------------------------------------------
@@ -3502,6 +3575,27 @@ const UI = {
     const notifSection = '<section class="dash-section"><h2 class="section-title">' + esc(app.L("Notifications")) + '</h2><p class="muted small">' + esc(app.L("Only fires while the app is open in a tab — this is a browser page, not an installed app with background push, so nothing arrives while it's closed.", "بيشتغل بس والأبلكيشن مفتوح في تاب — دي صفحة متصفح مش أبلكيشن مثبت بإشعارات في الخلفية، فمفيش حاجة توصل وهو مقفول.")) + "</p>" +
       '<label style="display:flex;align-items:center;gap:8px;cursor:pointer;min-height:44px"><input type="checkbox" id="notifToggle" ' + (app.notifEnabled() ? "checked" : "") + ' onchange="UI.toggleNotifC()"><span>' + esc(app.L("Notify me about overdue items when I open the app", "نبهني بالبنود المتأخرة لما أفتح الأبلكيشن")) + "</span></label>" +
     "</section>";
+    // A true OS home-screen "widget" (a live glanceable block, not just an
+    // icon) isn't something a web app can do without native wrapping -- out
+    // of scope here. What a PWA *can* do, already wired since manifest.json
+    // shipped its "shortcuts" (long-press the installed icon -> "+ مصروف" /
+    // "+ إيراد"): Android/Chrome reads that manifest automatically once
+    // installed. iOS Safari's "Add to Home Screen" doesn't read manifest
+    // shortcuts at all, but it DOES create a standalone icon for whatever
+    // URL you add it from -- these two links exist so adding *this specific
+    // page* gives an iOS one-tap "+Expense"/"+Income" icon too, no install
+    // required first. init() already opens the matching modal on load
+    // whenever ?action= is present (see personal_cfo_app.html).
+    const shortcutsSection = '<section class="dash-section"><h2 class="section-title">' + esc(app.L("Home screen shortcuts", "اختصارات الشاشة الرئيسية")) + '</h2><p class="muted small">' + esc(app.L("A real home-screen widget needs a native app, which this isn't — but a one-tap shortcut straight to + Expense or + Income is real and already works.", "الويدجت الحقيقي محتاج أبلكيشن أصلي، والتطبيق ده مش كده — لكن اختصار بلمسة واحدة لـ + مصروف أو + إيراد حقيقي وشغال بالفعل.")) + "</p>" +
+      '<div class="field-grid">' +
+        '<div class="field"><span class="field-label">' + esc(app.L("Installed on Android", "متثبت على أندرويد")) + '</span><span class="field-hint">' + esc(app.L("Long-press this app's home-screen icon — \"+ مصروف\" and \"+ إيراد\" show up automatically.", "اعمل ضغطة مطولة على أيقونة الأبلكيشن في الشاشة الرئيسية — \"+ مصروف\" و\"+ إيراد\" هيظهروا تلقائي.")) + "</span></div>" +
+        '<div class="field"><span class="field-label">' + esc(app.L("iPhone, or without installing", "آيفون، أو من غير تثبيت")) + '</span><span class="field-hint">' + esc(app.L("Open one of these links, then Share → Add to Home Screen — it becomes its own one-tap icon.", "افتح واحد من الرابطين، بعدين مشاركة ← إضافة للشاشة الرئيسية — هيبقى أيقونة لوحده بلمسة واحدة.")) + "</span></div>" +
+      "</div>" +
+      '<div class="btn-row wrap">' +
+        '<button class="btn btn-secondary small" onclick="location.href=\'?action=expense\'">' + esc(t.aExpense) + "</button>" +
+        '<button class="btn btn-secondary small" onclick="location.href=\'?action=income\'">' + esc(t.aIncome) + "</button>" +
+      "</div>" +
+    "</section>";
     const rules = [
       { k: app.L("Receivables & assets"), v: app.L("Money owed to you counts as an asset toward net worth by default.") },
       { k: app.L("Installment allocation"), v: app.L("payments fill schedule rows oldest first; a short payment leaves the row partial, an overpayment rolls into the next rows.") },
@@ -3519,6 +3613,7 @@ const UI = {
       "</div></section>" +
       appLockSection +
       notifSection +
+      shortcutsSection +
       (app.state.lang === "ar" ?
         '<section class="dash-section"><h2 class="section-title">' + esc(app.L("Display")) + "</h2>" +
         '<label style="display:flex;align-items:center;gap:8px;cursor:pointer;min-height:44px">' +
