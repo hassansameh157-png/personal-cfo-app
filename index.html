@@ -408,6 +408,7 @@ button.bar-row{width:100%;border:0;background:none;padding:6px 0;min-height:44px
 @media (prefers-reduced-motion:no-preference){
   .dash-section, .card-row{transition:none}
 }
+
 </style>
 
 <div id="root"><p style="padding:40px;text-align:center;color:#7d7979">Loading…</p></div>
@@ -501,6 +502,7 @@ class Engine {
     // real alert is showing on the Dashboard.
     const stmtSoon = this.iso(this.addDays(new Date(), 7));
     n += D.cardStatements.filter((s) => s.overdue || (s.status !== "paid" && s.due <= stmtSoon)).length;
+    n += D.savingsGoals.filter((g) => g.overdue).length;
     const monthSpend = this.monthCategorySpend(), budgets = this.state.data.budgets || {};
     n += Object.keys(budgets).filter((cat) => (monthSpend[cat] || 0) >= budgets[cat] * 0.9).length;
     n += this.unusualSpending(monthSpend).length;
@@ -583,11 +585,11 @@ class Engine {
 
   // ---- translations ------------------------------------------------------
   T = {
-    en: { brand: "Personal CFO", brandSub: "Financial control", dashboard: "Dashboard", accounts: "Accounts", transactions: "Transactions", people: "People", installments: "Installments", statements: "Card statements", ledgers: "Receivables & Payables", investments: "Investments", recurring: "Recurring", forecast: "Forecast", reports: "Reports", settings: "Settings",
+    en: { brand: "Personal CFO", brandSub: "Financial control", dashboard: "Dashboard", accounts: "Accounts", transactions: "Transactions", people: "People", installments: "Installments", statements: "Card statements", goals: "Savings goals", ledgers: "Receivables & Payables", investments: "Investments", recurring: "Recurring", forecast: "Forecast", reports: "Reports", cashflow: "Cash flow", settings: "Settings",
       availableBalance: "Available balance", availableNote: "Spendable right now — cash, bank and wallets. Receivables, investments and credit lines are excluded.", netWorth: "Net worth", receivables: "Owed to me", payables: "I owe", investmentsShort: "Invested", available: "Available",
       position: "Current financial position", whereMoney: "Where my money is", upcoming30: "Next 30 days", seeForecast: "Forecast →", thisMonth: "This month", income: "Income", expenses: "Expenses", topCategories: "Top spend categories", needsAttention: "Needs attention",
       cash: "Cash", bank: "Bank accounts", wallets: "Smart wallets", other: "Other / cards", totalAssets: "Total assets", liabilities: "Liabilities",
-      aIncome: "+ Income", aExpense: "+ Expense", aTransfer: "Transfer", aReceivable: "+ Lend / owed to me", aDebt: "+ Debt I owe", aSale: "+ Installment sale", aPurchasePlan: "+ Installment purchase", aInvest: "+ Investment", aPerson: "+ Person", aAccount: "+ Account", aCollect: "Record collection", aRepay: "Record repayment", aRecurring: "+ Recurring rule", aStatement: "+ Statement", payStatement: "Pay statement",
+      aIncome: "+ Income", aExpense: "+ Expense", aTransfer: "Transfer", aReceivable: "+ Lend / owed to me", aDebt: "+ Debt I owe", aSale: "+ Installment sale", aPurchasePlan: "+ Installment purchase", aInvest: "+ Investment", aPerson: "+ Person", aAccount: "+ Account", aCollect: "Record collection", aRepay: "Record repayment", aRecurring: "+ Recurring rule", aStatement: "+ Statement", payStatement: "Pay statement", aGoal: "+ Savings goal",
       search: "Search", type: "Type", account: "Account", period: "Period", clear: "Clear", date: "Date", details: "Details", person: "Person", category: "Category", amount: "Amount", phone: "Phone", owesMe: "Owes me", iOwe: "I owe", net: "Net", plans: "Plans", history: "History",
       total: "Sale total", collected: "Collected", remaining: "Remaining", dueDate: "Due", paid: "Paid", status: "Status", recordPayment: "Record payment", showSchedule: "Show schedule", hideSchedule: "Hide schedule",
       source: "Source", collect: "Collect", pay: "Pay", name: "Name", invested: "Invested", currentValue: "Current value", pnl: "Profit / loss", updateValue: "Update value",
@@ -599,11 +601,11 @@ class Engine {
       creditCards: "Credit cards", payCard: "Pay card", aCard: "+ Credit card", limitLabel: "Total limit", owedLabel: "Outstanding", availLabel: "Available to spend",
       edit: "Edit", delete: "Delete", loadMore: "Load more", noMatches: "No records match your filters.", more: "More", primaryNav: "Sections",
       cur: "EGP" },
-    ar: { brand: "المدير المالي", brandSub: "تحكم مالي", dashboard: "الرئيسية", accounts: "الحسابات", transactions: "الحركات", people: "الأشخاص", installments: "الأقساط", statements: "كشوف حساب الكروت", ledgers: "لي وعليّ", investments: "الاستثمارات", recurring: "المتكررة", forecast: "التوقعات", reports: "التقارير", settings: "الإعدادات",
+    ar: { brand: "المدير المالي", brandSub: "تحكم مالي", dashboard: "الرئيسية", accounts: "الحسابات", transactions: "الحركات", people: "الأشخاص", installments: "الأقساط", statements: "كشوف حساب الكروت", goals: "أهداف الادخار", ledgers: "لي وعليّ", investments: "الاستثمارات", recurring: "المتكررة", forecast: "التوقعات", reports: "التقارير", cashflow: "التدفقات النقدية", settings: "الإعدادات",
       availableBalance: "الرصيد المتاح", availableNote: "المتاح للصرف الآن — كاش وبنك ومحافظ. لا يشمل المستحقات ولا الاستثمارات ولا حدود الكريدت.", netWorth: "صافي الثروة", receivables: "لي عند الناس", payables: "عليّ للناس", investmentsShort: "مستثمر", available: "المتاح",
       position: "الموقف المالي الحالي", whereMoney: "أين أموالي", upcoming30: "الـ 30 يوم القادمة", seeForecast: "التوقعات →", thisMonth: "هذا الشهر", income: "الإيرادات", expenses: "المصروفات", topCategories: "أكبر بنود الصرف", needsAttention: "يحتاج انتباه",
       cash: "كاش", bank: "حسابات بنكية", wallets: "محافظ إلكترونية", other: "أخرى / بطاقات", totalAssets: "إجمالي الأصول", liabilities: "الالتزامات",
-      aIncome: "+ إيراد", aExpense: "+ مصروف", aTransfer: "تحويل", aReceivable: "+ سلفة / لي", aDebt: "+ دين عليّ", aSale: "+ بيع بالتقسيط", aPurchasePlan: "+ شراء بالتقسيط", aInvest: "+ استثمار", aPerson: "+ شخص", aAccount: "+ حساب", aCollect: "تسجيل تحصيل", aRepay: "تسجيل سداد", aRecurring: "+ قاعدة متكررة", aStatement: "+ كشف حساب", payStatement: "سداد كشف حساب",
+      aIncome: "+ إيراد", aExpense: "+ مصروف", aTransfer: "تحويل", aReceivable: "+ سلفة / لي", aDebt: "+ دين عليّ", aSale: "+ بيع بالتقسيط", aPurchasePlan: "+ شراء بالتقسيط", aInvest: "+ استثمار", aPerson: "+ شخص", aAccount: "+ حساب", aCollect: "تسجيل تحصيل", aRepay: "تسجيل سداد", aRecurring: "+ قاعدة متكررة", aStatement: "+ كشف حساب", payStatement: "سداد كشف حساب", aGoal: "+ هدف ادخار",
       search: "بحث", type: "النوع", account: "الحساب", period: "الفترة", clear: "مسح", date: "التاريخ", details: "التفاصيل", person: "الشخص", category: "التصنيف", amount: "المبلغ", phone: "الهاتف", owesMe: "له عندي", iOwe: "عليّ", net: "الصافي", plans: "خطط", history: "السجل",
       total: "إجمالي البيع", collected: "المحصّل", remaining: "المتبقي", dueDate: "الاستحقاق", paid: "مدفوع", status: "الحالة", recordPayment: "تسجيل دفعة", showSchedule: "عرض الجدول", hideSchedule: "إخفاء الجدول",
       source: "المصدر", collect: "تحصيل", pay: "سداد", name: "الاسم", invested: "المستثمر", currentValue: "القيمة الحالية", pnl: "ربح / خسارة", updateValue: "تحديث القيمة",
@@ -635,6 +637,7 @@ class Engine {
     "cash": "كاش", "bank": "بنك", "wallet": "محفظة", "card": "بطاقة", "other": "أخرى",
     "Overdue collection · ": "تحصيل متأخر · ", "Overdue payment · ": "سداد متأخر · ", " was due ": " كان مستحق ",
     "Overdue statement · ": "كشف حساب متأخر · ", "Statement due soon · ": "كشف حساب قرب ميعاده · ",
+    "Savings goal behind — ": "هدف ادخار متأخر — ", " still needed — target date ": " لسه محتاج — تاريخ الهدف ", " has passed.": " فات.",
     "Overdue since ": "متأخر من ", "Due ": "مستحق في ",
     " installment(s) past due — ": " قسط متأخر — ", " on ": " على ",
     "Largest open receivable": "أكبر مستحق مفتوح", " owes ": " عليه ", " outside any plan.": " خارج أي خطة.",
@@ -712,12 +715,14 @@ class Engine {
     ["people", "M16 19v-1a4 4 0 0 0-8 0v1M12 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6"],
     ["installments", "M4 5h16v15H4zM8 3v4M16 3v4M4 10h16M9 14h2M14 14h2"],
     ["statements", "M6 2h12v20l-3-2-3 2-3-2-3 2zM9 8h6M9 12h6M9 16h3"],
+    ["goals", "M5 21V3M5 4h13l-3 4 3 4H5"],
     ["groups", "M12 4a8 8 0 1 0 0 16 8 8 0 0 0 0-16M12 8v4l3 2"],
     ["ledgers", "M12 4v16M6 9l6-5 6 5"],
     ["investments", "M4 19V9M10 19V5M16 19v-7M22 19H2"],
     ["recurring", "M4 12a8 8 0 0 1 13-6M20 12a8 8 0 0 1-13 6M17 3v3h-3M7 21v-3h3"],
     ["forecast", "M3 17l5-6 4 3 5-8 4 5"],
     ["reports", "M6 20V10M12 20V4M18 20v-8"],
+    ["cashflow", "M3 7h12l-3-3M21 17H9l3 3M3 12h18"],
     ["settings", "M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6M19 12l2-1-2-4-2 .6-2-1.2L14.6 4h-5.2L9 6.4 7 7.6 5 7 3 11l2 1-2 1 2 4 2-.6 2 1.2.4 2.4h5.2l.4-2.4 2-1.2 2 .6 2-4z"]
   ];
   // primary tabs shown at all times; the rest live under "More"
@@ -816,6 +821,16 @@ class Engine {
     add({ date: iso(aM(T0, -1)), type: "statement_payment", amount: 6200, statementId: "st1", fromId: "cib", toId: "card", desc: "Titanium statement — last month" });
     add({ date: iso(T0), type: "statement_payment", amount: 3000, statementId: "st2", fromId: "cash", toId: "card", desc: "Titanium statement — partial" });
 
+    // Savings goals demo: Emergency fund tracks CIB Savings and is on
+    // schedule (target date still ahead); New laptop tracks Instapay and its
+    // target date has already passed — shows the overdue path (Needs
+    // Attention, attentionCount) the same way Platinum's untouched statement
+    // above does for statements.
+    const savingsGoals = [
+      { id: "sg_emergency", name: "Emergency fund", target: 80000, due: iso(aM(T0, 3)), accountId: "sav", baseline: 20000, color: "#2a9d8f", created: iso(aM(T0, -4)) },
+      { id: "sg_laptop", name: "New laptop", target: 45000, due: iso(aM(T0, -1)), accountId: "ip", baseline: 0, color: "#4a6fa5", created: iso(aM(T0, -2)) }
+    ];
+
     const targets = { cash: 7500, cib: 118000, sav: 57700, vf: 4200, ip: 12600, card: -8400, card_bm: -14200, card_nbe: -3100 };
     const eff = {}; accounts.forEach(a => eff[a.id] = 0);
     const EF = (id, v) => { if (id && eff[id] !== undefined) eff[id] = Math.round((eff[id] + v) * 100) / 100; };
@@ -849,7 +864,7 @@ class Engine {
       { id: "r4", name: "Mobile line", type: "expense", amount: 250, accountId: "vf", category: "Mobile", freq: "monthly", day: 15 },
       { id: "r5", name: "Streaming bundle", type: "expense", amount: 300, accountId: "card", category: "Subscriptions", freq: "yearly", day: 8 }
     ];
-    return { accounts, people, tx, plans, groups, cardStatements, investments, recurring, customCategories: { income: [], expense: [] }, budgets: {}, audit: [{ at: new Date().toISOString().slice(0, 16).replace("T", " "), what: "Demo data seeded" }] };
+    return { accounts, people, tx, plans, groups, cardStatements, savingsGoals, investments, recurring, customCategories: { income: [], expense: [] }, budgets: {}, audit: [{ at: new Date().toISOString().slice(0, 16).replace("T", " "), what: "Demo data seeded" }] };
   }
 
   // ---- engine: single source of truth ------------------------------------
@@ -886,6 +901,7 @@ class Engine {
     });
     const plans = d.plans.map(p => this.planState(p, cut));
     const cardStatements = (d.cardStatements || []).map(s => this.statementState(s, cut));
+    const savingsGoals = this.savingsGoalStates(bal);
     const groups = (d.groups || []).map(g => this.groupState(g, cut));
     const gRecv = groups.reduce((x, g) => x + Math.max(0, g.net), 0), gPay = groups.reduce((x, g) => x + Math.max(0, -g.net), 0);
     const planRecv = plans.filter(p => p.direction === "in").reduce((s, p) => s + p.remaining, 0);
@@ -907,7 +923,60 @@ class Engine {
     const countRecv = this.props.receivablesAreAssets !== false;
     const assets = available + invValue + (countRecv ? recvTotal : 0);
     const liab = payTotal + Math.abs(Math.min(0, cards));
-    return { bal, recv, pay, plans, cardStatements, groups, gRecv, gPay, cash, bank, wallets, cards, invValue, invCost, recvTotal, payTotal, planRecv, planPay, available, assets, liab, netWorth: assets - liab, live };
+    return { bal, recv, pay, plans, cardStatements, savingsGoals, groups, gRecv, gPay, cash, bank, wallets, cards, invValue, invCost, recvTotal, payTotal, planRecv, planPay, available, assets, liab, netWorth: assets - liab, live };
+  }
+  // A goal doesn't get its own ledger -- it just watches one existing
+  // account's balance grow from wherever it stood the moment the goal was
+  // created (g.baseline, captured once in submit()'s "goal" branch). Reusing
+  // the tracked account's real balance (rather than inventing a separate
+  // "money set aside" pool) means anything that already moves money into
+  // that account -- salary, a transfer in -- pushes every goal watching it
+  // forward automatically, and a withdrawal moves it back just as honestly;
+  // no new transaction type, no separate envelope to keep in sync.
+  //
+  // Two or more goals CAN watch the same account -- nothing stops it, and
+  // it's a reasonable thing to want (one savings account, several things
+  // being saved for). If each goal simply computed bal[accountId] -
+  // g.baseline on its own, a single real deposit made after both goals
+  // exist would get counted as progress on *every* goal watching that
+  // account at once, overstating how much has actually been saved. Instead,
+  // goals sharing an account draw from one shared pool of real growth since
+  // the EARLIEST goal's baseline, allocated FIFO -- oldest goal first, up
+  // to its own target -- the same "shared pool" idiom this app already uses
+  // for installment and gam3eya payments (see planState/groupState). With
+  // only one goal on an account (the common case), this reduces to exactly
+  // the simple bal-minus-baseline calculation.
+  savingsGoalStates(bal) {
+    const goals = this.state.data.savingsGoals || [];
+    const byAcc = {};
+    goals.forEach(g => { (byAcc[g.accountId] = byAcc[g.accountId] || []).push(g); });
+    const out = {};
+    Object.keys(byAcc).forEach(accId => {
+      const siblings = byAcc[accId].slice().sort((a, b) => (a.created || "") < (b.created || "") ? -1 : (a.created || "") > (b.created || "") ? 1 : 0);
+      const earliestBaseline = siblings[0].baseline;
+      const cur = bal[accId] !== undefined ? bal[accId] : earliestBaseline;
+      let pool = Math.max(0, Math.round((cur - earliestBaseline) * 100) / 100);
+      siblings.forEach(sib => {
+        const take = Math.min(sib.target, pool);
+        pool = Math.round((pool - take) * 100) / 100;
+        out[sib.id] = this.goalState(sib, take);
+      });
+    });
+    return goals.map(g => out[g.id]);
+  }
+  goalState(g, saved) {
+    const today = this.today();
+    saved = Math.max(0, Math.round(saved * 100) / 100);
+    const remaining = Math.max(0, Math.round((g.target - saved) * 100) / 100);
+    const done = saved >= g.target - 0.001;
+    // Capped at 99 when NOT done, not just at 100 overall: rounding
+    // 897/900 (still 3 short, remaining > 0) up to Math.round(...) = 100
+    // would show a full "100%" bar right alongside "Still needed: 3" --
+    // done is the single source of truth for "finished", pct is only ever
+    // allowed to agree with it, never contradict it.
+    const pct = done ? 100 : (g.target > 0 ? Math.min(99, Math.round((saved / g.target) * 100)) : 0);
+    const overdue = !done && !!g.due && g.due < today;
+    return { id: g.id, name: g.name, target: g.target, due: g.due, accountId: g.accountId, color: g.color, baseline: g.baseline, saved, remaining, pct, done, overdue };
   }
   // A statement's own `amount` is typed in by hand from the real bank
   // statement -- it deliberately does NOT feed into the account's own
@@ -1214,6 +1283,55 @@ class Engine {
     const outflow = fc.events.filter(e => e.amount < 0).reduce((s, e) => s + e.amount, 0);
     return Math.round((D.available + outflow) * 100) / 100;
   }
+  // ---- Cash Flow Statement -------------------------------------------------
+  // Classic three-bucket view (Operating / Investing / Financing), built
+  // straight off the ledger -- no new data model, everything here is
+  // derived from tx already recorded elsewhere. A transfer between two of
+  // the user's own spendable accounts (cash, bank, wallet, ecard, other) is
+  // excluded entirely: it's genuinely net-zero to total spendable money.
+  // The one exception is anything that crosses into or out of a *card*
+  // account -- a plain "transfer" targeting a card (how this app's own seed
+  // data paid cards down before the statement_payment feature existed) or
+  // statement_payment itself: a card's balance isn't part of "available"
+  // money, so that crossing is a real cash outflow (or, paid the other way,
+  // inflow), bucketed as Financing same as any other debt repayment.
+  cashFlowBucket(t) {
+    const acc = (id) => (this.state.data.accounts || []).find(a => a.id === id);
+    switch (t.type) {
+      case "income": case "refund": case "investment_return": return { bucket: "operating", amt: t.amount };
+      case "expense": return { bucket: "operating", amt: -t.amount };
+      case "investment_buy": return t.accountId ? { bucket: "investing", amt: -t.amount } : null;
+      case "receivable": return t.accountId ? { bucket: "financing", amt: -t.amount } : null;
+      case "receivable_payment": return { bucket: "financing", amt: t.amount };
+      case "payable": return t.accountId ? { bucket: "financing", amt: t.amount } : null;
+      case "debt_payment": return { bucket: "financing", amt: -t.amount };
+      case "installment_sale": return t.accountId ? { bucket: "financing", amt: this.planDir(t.planId) === "out" ? -t.amount : t.amount } : null;
+      case "installment_payment": return { bucket: "financing", amt: this.planDir(t.planId) === "out" ? -t.amount : t.amount };
+      case "gam3ya_payment": return { bucket: "financing", amt: -t.amount };
+      case "gam3ya_payout": return { bucket: "financing", amt: t.amount };
+      case "statement_payment": return { bucket: "financing", amt: -t.amount };
+      case "transfer": {
+        const from = acc(t.fromId), to = acc(t.toId);
+        const fromCard = !!(from && from.type === "card"), toCard = !!(to && to.type === "card");
+        if (fromCard === toCard) return null; // both cards or neither -- internal, net zero
+        return { bucket: "financing", amt: toCard ? -t.amount : t.amount };
+      }
+      default: return null;
+    }
+  }
+  cashFlowStatement(from, to) {
+    const tx = this.state.data.tx.filter(t => !t.void && t.date >= from && t.date <= to);
+    const totals = { operating: { in: 0, out: 0 }, investing: { in: 0, out: 0 }, financing: { in: 0, out: 0 } };
+    tx.forEach(t => {
+      const r = this.cashFlowBucket(t);
+      if (!r) return;
+      const b = totals[r.bucket];
+      if (r.amt >= 0) b.in = Math.round((b.in + r.amt) * 100) / 100; else b.out = Math.round((b.out + Math.abs(r.amt)) * 100) / 100;
+    });
+    const withNet = (b) => Object.assign({}, b, { net: Math.round((b.in - b.out) * 100) / 100 });
+    const operating = withNet(totals.operating), investing = withNet(totals.investing), financing = withNet(totals.financing);
+    return { operating, investing, financing, netChange: Math.round((operating.net + investing.net + financing.net) * 100) / 100 };
+  }
   // ---- forms --------------------------------------------------------------
   FORMS() {
     const d = this.state.data, t = this.T[this.state.lang];
@@ -1303,6 +1421,24 @@ class Engine {
       statement_payment: { title: t.payStatement, fields: [D("date", t.date, "date"), D("statementId", this.L("Statement", "كشف الحساب"), "select", { options: stmtOptions }),
         D("amount", t.amount, "number", { hint: this.L("Partial payments are fine.", "السداد الجزئي مقبول.") }),
         D("fromId", this.L("Paid from", "اتسدد من"), "select", { options: fundingAccs }), D("desc", t.details, "text", { wide: true })] },
+      // A goal is watched against one existing account -- not editable after
+      // creation (goal_edit omits it), same reasoning as a card statement's
+      // card: switching accounts mid-goal would strand the baseline against
+      // an account nobody's tracking progress on anymore.
+      goal: { title: this.L("+ Savings goal", "+ هدف ادخار"), fields: [
+        D("name", this.L("Goal name", "اسم الهدف"), "text", { wide: true }),
+        D("target", this.L("Target amount", "المبلغ المستهدف"), "number"),
+        // Cards excluded, same as statement_payment's fundingAccs -- a
+        // card's balance is debt, not savings; paying it down would read as
+        // "progress" and a new purchase on it as the goal going backward.
+        D("accountId", this.L("Track using account", "تتبّع باستخدام حساب"), "select", { options: fundingAccs, hint: this.L("Progress = how much this account's balance has grown since you set the goal.", "التقدم = قد إيه زاد رصيد الحساب ده من وقت ما حددت الهدف.") }),
+        D("due", this.L("Target date (optional)", "تاريخ مستهدف (اختياري)"), "date"),
+        D("color", this.L("Color", "اللون"), "color")] },
+      goal_edit: { title: this.L("Edit goal", "تعديل الهدف"), fields: [
+        D("name", this.L("Goal name", "اسم الهدف"), "text", { wide: true }),
+        D("target", this.L("Target amount", "المبلغ المستهدف"), "number"),
+        D("due", this.L("Target date (optional)", "تاريخ مستهدف (اختياري)"), "date"),
+        D("color", this.L("Color", "اللون"), "color")] },
       invest_update: { title: t.updateValue, fields: [D("investmentId", "Investment", "select", { options: d.investments.map(i => ({ v: i.id, l: i.name })) }), D("value", "New current value", "number"), D("date", "As of", "date")] },
       investment_edit: { title: this.L("Edit investment"), fields: [D("name", t.name, "text"), D("type", t.type, "select", { options: ["Stocks", "Gold", "Mutual fund", "Fixed deposit", "Certificate", "Crypto", "Business", "Other"].map(v => ({ v, l: v })) }), D("invested", "Amount invested", "number")] },
       // Relation picks a default avatar color (relationTypes()) so a fresh
@@ -1359,7 +1495,7 @@ class Engine {
     // left as a documented follow-up rather than silently changed here.
     const form = { date: this.today(), freq: "monthly", count: 12, down: 0, balloon: 0, type: kind === "recurring" ? "expense" : undefined, day: 1,
       relation: kind === "person" ? "other" : undefined,
-      color: kind === "card" ? "#004961" : (kind === "person" ? this.relationTypes().find(r => r.v === "other").color : "#7d7979") };
+      color: kind === "card" ? "#004961" : (kind === "person" ? this.relationTypes().find(r => r.v === "other").color : (kind === "goal" ? "#2a9d8f" : "#7d7979")) };
     F.fields.forEach(f => { if (form[f.k] === undefined) form[f.k] = f.type === "select" ? (f.options[0] ? f.options[0].v : "") : (f.type === "number" ? "" : ""); });
     form.date = this.today();
     this.state.modal = kind; this.state.form = Object.assign(form, pre || {}); this.state.err = "";
@@ -1499,6 +1635,37 @@ class Engine {
         push({ date: f.date, type: "statement_payment", amount: N("amount"), statementId: stmt.id, fromId: f.fromId, toId: stmt.accountId, desc: f.desc || "Statement payment" });
         note = "Statement payment " + this.fmt(N("amount"));
       }
+    } else if (k === "goal") {
+      if (!need(f.name, "Give the goal a name.")) return false;
+      if (!need(N("target") > 0, "Target must be greater than zero.")) return false;
+      if (!need(f.accountId, "Pick an account to track.")) return false;
+      // Belt and suspenders, same as statement_payment's fromId check below:
+      // the form's own options already exclude cards (see FORMS()'s "goal"
+      // entry), this just refuses to trust that a pre-filled accountId
+      // (nothing does this today, but nothing has to stay that way) can't
+      // sneak a card in.
+      const trackedAcc = data.accounts.find(a => a.id === f.accountId);
+      if (!need(trackedAcc && trackedAcc.type !== "card", "Pick a real spendable account, not a credit card.")) return false;
+      // Baseline = that account's real balance right now, before this goal
+      // exists -- everything the account already held is "already there",
+      // not part of this goal's own progress (see Engine.goalState). Uses
+      // the same plain derive() (no cutoff) that every later read of this
+      // account's balance uses (Dashboard, the goals page, savingsGoalStates
+      // itself) -- passing today() as a cutoff here would exclude any
+      // future-dated transaction from the baseline while later reads of the
+      // SAME account still include it, inflating "saved" by that future
+      // amount the moment it's entered.
+      const D0 = this.derive();
+      const baseline = D0.bal[f.accountId] !== undefined ? D0.bal[f.accountId] : 0;
+      data.savingsGoals = (data.savingsGoals || []).concat([{ id: this.uid("gl"), name: f.name, target: N("target"), due: f.due || null, accountId: f.accountId, baseline, color: f.color || "#2a9d8f", created: this.today() }]);
+      note = "Savings goal " + f.name + " · " + this.fmt(N("target"));
+    } else if (k === "goal_edit") {
+      const g = (data.savingsGoals || []).find(x => x.id === f.id);
+      if (!need(g, "Pick a goal.")) return false;
+      if (!need(f.name, "Give the goal a name.")) return false;
+      if (!need(N("target") > 0, "Target must be greater than zero.")) return false;
+      g.name = f.name; g.target = N("target"); g.due = f.due || null; g.color = f.color || g.color;
+      note = "Updated goal " + g.name;
     } else if (k === "investment") {
       if (!need(f.name, "Give the investment a name.")) return false;
       const id = this.uid("iv");
@@ -1678,7 +1845,11 @@ class Engine {
     const used = d.tx.some(t => !t.void && (t.accountId === id || t.fromId === id || t.toId === id));
     const scheduled = (d.recurring || []).some(r => r.accountId === id);
     const hasStatement = (d.cardStatements || []).some(s => s.accountId === id);
-    return !used && !scheduled && !hasStatement;
+    // A savings goal watches this account's own balance directly (see
+    // goalState) -- deleting the account out from under it would leave the
+    // goal pointing at nothing, same reasoning as hasStatement above.
+    const hasGoal = (d.savingsGoals || []).some(g => g.accountId === id);
+    return !used && !scheduled && !hasStatement && !hasGoal;
   }
   deleteAccount(id) {
     if (!this.accountCanDelete(id)) return;
@@ -1731,6 +1902,15 @@ class Engine {
     const s = (data.cardStatements || []).find(x => x.id === id); if (!s) return;
     data.cardStatements = data.cardStatements.filter(x => x.id !== id);
     this.persist(data, "Deleted statement " + (s.period || s.due || ""));
+  }
+  // No dependent records ever point at a goal (it isn't referenced by any
+  // tx, unlike a plan/investment/statement) -- always deletable, no
+  // CanDelete gate needed.
+  deleteSavingsGoal(id) {
+    const data = JSON.parse(JSON.stringify(this.state.data));
+    const g = (data.savingsGoals || []).find(x => x.id === id); if (!g) return;
+    data.savingsGoals = data.savingsGoals.filter(x => x.id !== id);
+    this.persist(data, "Deleted goal " + g.name);
   }
   // Custom income/expense categories — added from Settings, then show up
   // in every category dropdown (FORMS()) right alongside the built-in ones.
@@ -1847,6 +2027,7 @@ class Engine {
 }
 
 if (typeof module !== "undefined") module.exports = { Engine };
+
 </script>
 <script>/* Personal CFO — presentation layer (rebuilt).
    Fixes the 5 agreed P0 mobile issues only:
@@ -2038,6 +2219,10 @@ const UI = {
     const g = (this.app.state.data.groups || []).find(x => x.id === id); if (!g) return;
     if (this.app.groupCanDelete(id) && confirm(this.app.L("Delete ") + g.name + "?")) { this.app.deleteGroup(id); this.render(); }
   },
+  deleteSavingsGoalC(id) {
+    const g = (this.app.state.data.savingsGoals || []).find(x => x.id === id); if (!g) return;
+    if (confirm(this.app.L("Delete ") + g.name + "?")) { this.app.deleteSavingsGoal(id); this.render(); }
+  },
   setBudgetC() {
     const cat = document.getElementById("budgetCat").value;
     const amt = document.getElementById("budgetAmt").value;
@@ -2088,7 +2273,7 @@ const UI = {
   reseed() { if (confirm(this.app.L("Reload demo data? This replaces everything currently stored.", "تحميل البيانات التجريبية؟ ده هيستبدل كل البيانات المحفوظة حالياً."))) { this.app.persist(this.app.seed(), "Demo data reloaded"); this.render(); } },
   wipe() {
     if (confirm(this.app.L("Erase all data? This cannot be undone.", "حذف كل البيانات؟ الإجراء ده لا يمكن التراجع عنه."))) {
-      const empty = { accounts: [], people: [], tx: [], plans: [], groups: [], cardStatements: [], investments: [], recurring: [], audit: [{ at: new Date().toISOString().slice(0, 16).replace("T", " "), what: "Wiped all data" }] };
+      const empty = { accounts: [], people: [], tx: [], plans: [], groups: [], cardStatements: [], savingsGoals: [], investments: [], recurring: [], audit: [{ at: new Date().toISOString().slice(0, 16).replace("T", " "), what: "Wiped all data" }] };
       this.app.persist(empty, null); this.render();
     }
   },
@@ -2214,12 +2399,14 @@ const UI = {
       case "person_detail": return this.renderPersonDetail(D, t);
       case "installments": return this.renderInstallments(D, t);
       case "statements": return this.renderCardStatements(D, t);
+      case "goals": return this.renderSavingsGoals(D, t);
       case "groups": return this.renderGroups(D, t);
       case "ledgers": return this.renderLedgers(D, t);
       case "investments": return this.renderInvestments(D, t);
       case "recurring": return this.renderRecurring(D, t);
       case "forecast": return this.renderForecast(D, t);
       case "reports": return this.renderReports(D, t);
+      case "cashflow": return this.renderCashFlow(D, t);
       case "settings": return this.renderSettings(D, t);
       default: return "";
     }
@@ -2254,6 +2441,19 @@ const UI = {
     if (days < 0) return app.L(Math.abs(days) + "d overdue", "متأخر " + Math.abs(days) + " يوم");
     if (days === 0) return app.L("due today", "مستحق النهارده");
     return app.L("in " + days + "d", "خلال " + days + " يوم");
+  },
+
+  // Shared bar-chart builder -- the .chart-cols/.chart-col/.chart-bar/
+  // .chart-label markup, each bar scaled against the tallest in `items`.
+  // `colorFn(item)` picks each bar's own color (up/down tone, paid/overdue
+  // status, whatever the caller's data means) -- this only owns the shared
+  // layout/scaling, used by Reports' net worth trend, Card statements'
+  // per-card statement trend, and Cash Flow's operating trend.
+  barChart(items, colorFn) {
+    const max = Math.max(1, ...items.map((i) => Math.abs(i.value)));
+    return '<div class="chart-cols">' + items.map((i) =>
+      '<div class="chart-col"><div class="chart-bar" style="height:' + Math.max(4, Math.abs(i.value) / max * 100) + '%;background:' + colorFn(i) + '"></div><div class="chart-label">' + esc(i.label) + "</div></div>"
+    ).join("") + "</div>";
   },
 
   // Category bar row -- shared by Dashboard ("This month") and Reports
@@ -2343,6 +2543,15 @@ const UI = {
       body: app.fmt(s.remaining) + " · " + app.L("Due ") + s.due,
       cta: t.pay + " →", act: "UI.openModal('statement_payment',{statementId:'" + s.id + "'})"
     }));
+    // Savings goals whose target date has already passed without reaching
+    // the target -- same "before it's actually late" spirit as the
+    // statement alerts above, just with nothing to "pay": the nudge is to
+    // either add money to the tracked account, or push the target date out.
+    D.savingsGoals.filter(g => g.overdue).forEach(g => alerts.push({
+      title: app.L("Savings goal behind — ") + g.name,
+      body: app.fmt(g.remaining) + app.L(" still needed — target date ") + g.due + app.L(" has passed."),
+      cta: t.goals + " →", go: "goals"
+    }));
     // Budgets set in Settings, 90%+ spent this month — a nudge before it's
     // actually over, not just an after-the-fact tally.
     const monthSpend = app.monthCategorySpend(), budgets = d.budgets || {};
@@ -2384,6 +2593,17 @@ const UI = {
         const pre = JSON.stringify({ desc: f.desc, category: f.category || "", amount: f.amount }).replace(/"/g, "&quot;");
         return '<button class="pill" onclick="UI.openModal(\'expense\',' + pre + ')">' + esc(f.desc) + " · " + app.fmt(f.amount) + "</button>";
       }).join("") + "</div>" +
+    "</section>" : "";
+
+    // Savings goals — a compact teaser (top 3, by nearest target date, same
+    // ordering as the goals page itself) so progress is visible without a
+    // trip to More -> Savings goals; hidden entirely once there are none.
+    const goalsTeaser = D.savingsGoals.length ? '<section class="dash-section">' +
+      '<div class="section-head"><h2 class="section-title">' + esc(t.goals) + '</h2><button class="link-btn" onclick="UI.setPage(\'goals\')">' + esc(app.L("See all", "عرض الكل")) + " →</button></div>" +
+      '<div class="card-list">' + D.savingsGoals.slice().sort((a, b) => (a.due || "9999") < (b.due || "9999") ? -1 : 1).slice(0, 3).map(g =>
+        '<div class="card-row"><div class="card-row-top"><div class="card-row-title">' + esc(g.name) + '</div><div class="card-row-amt">' + g.pct + "%</div></div>" +
+        '<div class="bar-track thin"><div class="bar-fill" style="width:' + Math.max(2, g.pct) + '%;background:' + (g.done ? "var(--c-pos)" : g.color) + '"></div></div></div>'
+      ).join("") + "</div>" +
     "</section>" : "";
 
     // Where my money is — position breakdown, single instance only.
@@ -2449,7 +2669,7 @@ const UI = {
       }).join("") + "</div>" : "") +
     "</section>";
 
-    return hero + needsAttention + quickAdd + whereMoney + next30 + thisMonth;
+    return hero + needsAttention + quickAdd + goalsTeaser + whereMoney + next30 + thisMonth;
   },
 
   // ---- Accounts -------------------------------------------------------------
@@ -2864,6 +3084,23 @@ const UI = {
       '<div class="pos-tile"><div class="pos-label">' + esc(app.L("Overdue", "متأخر")) + '</div><div class="pos-value ' + (overdueAmt > 0 ? "tone-neg" : "tone-neu") + '">' + app.fmt(overdueAmt) + "</div></div>" +
     "</div>";
 
+    // Per-card trend -- how a card's own statement amount has moved from one
+    // period to the next, at a glance. Reuses Reports' own chart-cols/
+    // chart-bar/chart-label pattern (see renderReports' nwChart) rather than
+    // inventing a new chart style; only cards that actually have a statement
+    // get a chart, and each one's bars are its own statements ordered by due
+    // date, colored by that statement's own status (paid/overdue/open) so
+    // the trend reads as more than just a bar-height comparison.
+    const byCard = {};
+    list.forEach(s => { (byCard[s.accountId] = byCard[s.accountId] || []).push(s); });
+    const trendSection = Object.keys(byCard).map(accId => {
+      const stmts = byCard[accId].slice().sort((a, b) => (a.due || "9999") < (b.due || "9999") ? -1 : 1);
+      if (stmts.length < 2) return ""; // nothing to trend with just one statement
+      const items = stmts.map(s => ({ label: s.period || app.dshort(s.due), value: s.amount, status: s.status, overdue: s.overdue }));
+      const chart = this.barChart(items, (i) => i.status === "paid" ? "var(--c-pos)" : i.overdue ? "var(--c-neg)" : "var(--cat-1)");
+      return '<h2 class="section-title">' + esc(app.accName(accId)) + " · " + esc(app.L("statement trend", "اتجاه كشف الحساب")) + "</h2>" + chart;
+    }).join("");
+
     const editArgs = (s) => JSON.stringify({ id: s.id, period: s.period || "", amount: s.amount, due: s.due || "", desc: s.desc || "" }).replace(/"/g, "&quot;");
     const statusLabel = { paid: app.L("Fully paid", "متسدد بالكامل"), overdue: app.L("Overdue", "متأخر"), partial: app.L("Partially paid", "متسدد جزئيًا"), open: app.L("Open", "مفتوح") };
     const cards = list.map(s => {
@@ -2883,8 +3120,38 @@ const UI = {
     }).join("");
 
     return this.tabHeader(t.statements, D.cardStatements.length + app.L(" statements · amounts are typed in by hand each month, from the real bank statement", " كشف · المبالغ بتتكتب بإيدك كل شهر، من كشف حساب البنك الحقيقي"),
-      [[t.aStatement, "UI.openModal('card_statement')"]]) + kpiRow +
+      [[t.aStatement, "UI.openModal('card_statement')"]]) + kpiRow + trendSection +
       (list.length ? '<div class="card-list" style="margin-top:14px">' + cards + "</div>" : '<p class="muted" style="margin-top:14px">' + esc(app.L("No statements yet.", "لسه مفيش كشوف حساب.")) + "</p>");
+  },
+
+  // ---- Savings goals -------------------------------------------------------
+  // A goal doesn't get its own ledger -- it just watches one existing
+  // account's balance grow from wherever it stood the moment the goal was
+  // created (see Engine.goalState). Adding money to that account (income, a
+  // transfer in) moves every goal watching it forward automatically; taking
+  // money out moves it back just as honestly -- there's nothing extra to log.
+  renderSavingsGoals(D, t) {
+    const app = this.app;
+    const goals = D.savingsGoals.slice().sort((a, b) => (a.due || "9999") < (b.due || "9999") ? -1 : 1);
+    const cards = goals.map(g => {
+      const editArgs = JSON.stringify({ id: g.id, name: g.name, target: g.target, due: g.due || "", color: g.color }).replace(/"/g, "&quot;");
+      return '<div class="card-row">' +
+        '<div class="card-row-top"><div><div class="card-row-title">' + esc(g.name) + '</div><div class="card-row-sub">' + esc(app.accName(g.accountId)) + (g.due ? " · " + esc(t.dueDate) + " " + g.due + (!g.done ? " · " + esc(this.daysUntilText(g.due)) : "") : "") + "</div></div>" +
+        '<div class="card-row-amt ' + (g.done ? "tone-pos" : "") + '">' + app.fmt(g.saved) + " / " + app.fmt(g.target) + "</div></div>" +
+        '<div class="bar-track thin"><div class="bar-fill" style="width:' + Math.max(2, g.pct) + '%;background:' + (g.done ? "var(--c-pos)" : g.color) + '"></div></div>' +
+        '<div class="card-row-meta"><span>' + g.pct + "%</span>" +
+        (g.done ? '<span class="tone-pos">' + esc(app.L("Goal reached!", "الهدف اتحقق! 🎉")) + "</span>" :
+          g.overdue ? '<span class="tone-neg">' + esc(app.L("Past target date", "فات التاريخ المستهدف")) + "</span>" :
+          '<span>' + esc(app.L("Still needed: ", "لسه محتاج: ")) + app.fmt(g.remaining) + "</span>") +
+        "</div>" +
+        '<div class="btn-row wrap">' +
+        '<button class="link-btn small" onclick="UI.openModal(\'goal_edit\',' + editArgs + ')">' + esc(app.L("Edit")) + "</button>" +
+        '<button class="link-btn small" onclick="UI.deleteSavingsGoalC(\'' + g.id + '\')">' + esc(app.L("Delete")) + "</button>" +
+        "</div></div>";
+    }).join("");
+    return this.tabHeader(t.goals, goals.length + app.L(" goal(s) · progress follows the linked account's own balance since the goal was set", " هدف · التقدم بيتابع رصيد الحساب المرتبط من وقت ما اتحدد الهدف"),
+      [[t.aGoal, "UI.openModal('goal')"]]) +
+      (goals.length ? '<div class="card-list" style="margin-top:14px">' + cards + "</div>" : '<p class="muted" style="margin-top:14px">' + esc(app.L("No savings goals yet.", "لسه مفيش أهداف ادخار.")) + "</p>");
   },
 
   // ---- Savings groups (gam3eya) -----------------------------------------
@@ -3071,8 +3338,7 @@ const UI = {
       const Dm = app.derive(cutoff);
       months.push({ label: end.toLocaleDateString(app.state.lang === "ar" ? "ar-EG" : "en-GB", { month: "short" }), netWorth: Dm.netWorth });
     }
-    const maxNW = Math.max(1, ...months.map(m => Math.abs(m.netWorth)));
-    const nwChart = '<div class="chart-cols">' + months.map(m => '<div class="chart-col"><div class="chart-bar" style="height:' + Math.max(4, Math.abs(m.netWorth) / maxNW * 100) + '%;background:' + (m.netWorth >= 0 ? "var(--c-pos)" : "var(--c-neg)") + '"></div><div class="chart-label">' + esc(m.label) + "</div></div>").join("") + "</div>";
+    const nwChart = this.barChart(months.map(m => ({ label: m.label, value: m.netWorth })), (i) => i.value >= 0 ? "var(--c-pos)" : "var(--c-neg)");
 
     const catMap = {}; D.live.filter(x => x.type === "expense").forEach(x => catMap[x.category || "Other"] = (catMap[x.category || "Other"] || 0) + x.amount);
     const catArr = Object.entries(catMap).sort((a, b) => b[1] - a[1]).slice(0, 8);
@@ -3088,6 +3354,49 @@ const UI = {
       '<h2 class="section-title">' + esc(t.netWorthTrend) + "</h2>" + nwChart +
       '<h2 class="section-title">' + esc(t.byCategory) + "</h2>" + (catArr.length ? barList(catArr, maxCat, "expense") : '<p class="muted">—</p>') +
       '<h2 class="section-title">' + esc(t.bySource) + "</h2>" + (srcArr.length ? barList(srcArr, maxSrc, "income") : '<p class="muted">—</p>');
+  },
+
+  // ---- Cash Flow Statement --------------------------------------------------
+  // Operating / Investing / Financing, the standard three-bucket structure --
+  // built straight off the ledger (Engine.cashFlowStatement), not a new data
+  // model. A transfer between two of the user's own spendable accounts never
+  // appears here at all (net zero to total spendable money); crossing into
+  // or out of a card does -- paying one down is a real outflow, same as any
+  // other debt repayment. See Engine.cashFlowBucket for the exact rule.
+  renderCashFlow(D, t) {
+    const app = this.app;
+    const today = app.today(), mStart = today.slice(0, 8) + "01";
+    const cur = app.cashFlowStatement(mStart, today);
+    const rows = [
+      [app.L("Operating", "التشغيلي"), cur.operating, app.L("Everyday income and spending.", "الإيرادات والمصروفات اليومية.")],
+      [app.L("Investing", "الاستثماري"), cur.investing, app.L("Money placed into investments.", "أموال موجهة للاستثمار.")],
+      [app.L("Financing", "التمويلي"), cur.financing, app.L("Loans, installments, gam3eya and card repayments.", "السلف والأقساط والجمعيات وسداد الكروت.")]
+    ];
+    const bucketCards = rows.map(([label, b, note]) =>
+      '<div class="card-row"><div class="card-row-top"><div><div class="card-row-title">' + esc(label) + '</div><div class="card-row-sub">' + esc(note) + "</div></div>" +
+      '<div class="card-row-amt ' + (b.net >= 0 ? "tone-pos" : "tone-neg") + '">' + app.fmtS(b.net) + "</div></div>" +
+      '<div class="card-row-meta"><span class="tone-pos">' + esc(app.L("In: ", "داخل: ")) + app.fmt(b.in) + '</span><span class="tone-neg">' + esc(app.L("Out: ", "خارج: ")) + app.fmt(b.out) + "</span></div></div>"
+    ).join("");
+
+    // Six-month trend of operating net cash flow -- the same "how did I earn
+    // vs. spend, month over month" view Reports gives net worth, but for the
+    // number a cash flow statement actually centers on.
+    const months = [];
+    for (let i = 5; i >= 0; i--) {
+      const d0 = app.addMonths(new Date(), -i);
+      const mS = app.iso(new Date(d0.getFullYear(), d0.getMonth(), 1));
+      const isCurrent = i === 0;
+      const mE = isCurrent ? today : app.iso(new Date(d0.getFullYear(), d0.getMonth() + 1, 0));
+      const cf = app.cashFlowStatement(mS, mE);
+      months.push({ label: d0.toLocaleDateString(app.state.lang === "ar" ? "ar-EG" : "en-GB", { month: "short" }), net: cf.operating.net });
+    }
+    const trendChart = this.barChart(months.map(m => ({ label: m.label, value: m.net })), (i) => i.value >= 0 ? "var(--c-pos)" : "var(--c-neg)");
+
+    return this.tabHeader(t.cashflow, app.L("Where cash actually came from and went, this month", "من فين جت الفلوس وراحت فين، الشهر ده"), []) +
+      '<div class="hero-card alt"><div class="hero-label">' + esc(app.L("Net cash change this month", "صافي التغير النقدي الشهر ده")) + '</div><div class="hero-value">' + app.fmtS(cur.netChange) + "</div></div>" +
+      '<div class="card-list" style="margin-top:14px">' + bucketCards + "</div>" +
+      '<h2 class="section-title">' + esc(app.L("Operating cash flow — 6 months", "التدفق النقدي التشغيلي — 6 أشهر")) + "</h2>" + trendChart +
+      '<p class="muted small">' + esc(app.L("Transfers between your own cash, bank and wallet accounts are excluded — they never change your total spendable money. Paying down a card does count, the same as any other debt repayment.", "التحويلات بين حساباتك الكاش والبنك والمحافظ مش محسوبة — هي مبتغيرش إجمالي فلوسك المتاحة. سداد كارت بيتحسب، زي أي سداد دين تاني.")) + "</p>";
   },
 
   // ---- Settings --------------------------------------------------------------
@@ -3285,6 +3594,7 @@ const UI = {
       "</div>";
   }
 };
+
 </script>
 <script>
 window.addEventListener("DOMContentLoaded", function () {
