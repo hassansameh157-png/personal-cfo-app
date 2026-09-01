@@ -776,7 +776,19 @@ button.bar-row{width:100%;border:0;background:none;padding:6px 0;min-height:44px
 .dialog-title{font-family:var(--font-head);font-size:21px;margin-bottom:12px}
 .dialog-err{background:var(--c-neg-bg);color:var(--c-neg);padding:9px 12px;border-radius:8px;font-size:14.5px;margin-bottom:10px}
 .field-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
-.field{display:flex;flex-direction:column;gap:4px;font-size:14px}
+/* min-width:0 -- a grid/flex item's default min-width is auto (its own
+   content's intrinsic size), not 0, so a field whose content can run
+   wide (the category picker's un-wrapped pill row, its own overflow-x:
+   auto is exactly why) would otherwise force this track -- and the whole
+   dialog with it -- to grow to fit that content instead of actually
+   scrolling inside .cat-pill-row's own box. Real bug caught after the
+   category picker shipped: every category, however many the user has
+   added, ended up laid out in one line stretching the whole entry form
+   wide, .cat-pill-row's overflow-x:auto never getting the chance to
+   kick in. Safe as a general rule for every field, not just this one --
+   an .input/.select doesn't need its intrinsic width to win over its
+   grid track either. */
+.field{display:flex;flex-direction:column;gap:4px;font-size:14px;min-width:0}
 .field.wide{grid-column:1 / -1}
 .field-label{color:var(--c-text-soft)}
 .field-hint{font-size:12.5px;color:var(--c-text-faint)}
@@ -1888,8 +1900,8 @@ class Engine {
     // showing them on an edit would silently do nothing if filled in.
     const isEditingExpense = this.state.modal === "expense" && this.state.form && this.state.form.id;
     const F = {
-      income: { title: t.aIncome, fields: [D("date", t.date, "date"), D("amount", t.amount, "number"), D("accountId", t.account, "select", { options: accs }), D("category", t.category, "select", { options: inc }), D("personId", t.person + this.L(" (optional)", " (اختياري)"), "select", { options: [{ v: "", l: "—" }].concat(ppl) }), D("desc", t.details, "text", { wide: true }), D("tags", this.L("Tags (optional)", "تاجات (اختياري)"), "text", { wide: true, hint: this.L("Comma separated — a way to slice spending across categories, e.g. \"trip, work\".", "افصل بينهم بفاصلة — طريقة لتجميع مصاريف من فئات مختلفة، زي \"رحلة، شغل\".") })] },
-      expense: { title: t.aExpense, fields: [D("date", t.date, "date"), D("amount", t.amount, "number"), D("accountId", t.account, "select", { options: accs }), D("category", t.category, "select", { options: cats }), D("personId", "Merchant / person", "select", { options: [{ v: "", l: "—" }].concat(ppl) }), D("desc", t.details, "text", { wide: true }), D("tags", this.L("Tags (optional)", "تاجات (اختياري)"), "text", { wide: true, hint: this.L("Comma separated — a way to slice spending across categories, e.g. \"trip, work\".", "افصل بينهم بفاصلة — طريقة لتجميع مصاريف من فئات مختلفة، زي \"رحلة، شغل\".") })].concat(isEditingExpense ? [] : [
+      income: { title: t.aIncome, fields: [D("date", t.date, "date"), D("amount", t.amount, "number"), D("accountId", t.account, "select", { options: accs }), D("category", t.category, "select", { options: inc, wide: true }), D("personId", t.person + this.L(" (optional)", " (اختياري)"), "select", { options: [{ v: "", l: "—" }].concat(ppl) }), D("desc", t.details, "text", { wide: true }), D("tags", this.L("Tags (optional)", "تاجات (اختياري)"), "text", { wide: true, hint: this.L("Comma separated — a way to slice spending across categories, e.g. \"trip, work\".", "افصل بينهم بفاصلة — طريقة لتجميع مصاريف من فئات مختلفة، زي \"رحلة، شغل\".") })] },
+      expense: { title: t.aExpense, fields: [D("date", t.date, "date"), D("amount", t.amount, "number"), D("accountId", t.account, "select", { options: accs }), D("category", t.category, "select", { options: cats, wide: true }), D("personId", "Merchant / person", "select", { options: [{ v: "", l: "—" }].concat(ppl) }), D("desc", t.details, "text", { wide: true }), D("tags", this.L("Tags (optional)", "تاجات (اختياري)"), "text", { wide: true, hint: this.L("Comma separated — a way to slice spending across categories, e.g. \"trip, work\".", "افصل بينهم بفاصلة — طريقة لتجميع مصاريف من فئات مختلفة، زي \"رحلة، شغل\".") })].concat(isEditingExpense ? [] : [
         D("splitPersonId", this.L("Split with (optional)", "قسمها مع (اختياري)"), "select", { options: [{ v: "", l: "—" }].concat(ppl) }),
         D("splitAmount", this.L("Their share", "حصتهم"), "number", { hint: this.L("Optional — also records this amount as owed to you by that person.", "اختياري — بيسجل المبلغ ده كمان كمبلغ مستحق ليك من الشخص ده.") })
       ]) },
