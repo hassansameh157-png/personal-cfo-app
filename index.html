@@ -344,19 +344,37 @@ h1,h2,h3{font-family:var(--font-head);font-weight:600;margin:0;text-wrap:balance
 
 /* ---- credit card tile ---- */
 /* No bank logos/wordmarks drawn here (trademarked) — just the account's
-   own color as a gradient, in a card-shaped layout. Picking your bank's
-   color in Edit is what makes it "look like" the real card. */
-.credit-card-tile{border-radius:16px;padding:18px 18px 14px;color:#fff;position:relative;overflow:hidden;box-shadow:var(--shadow)}
-.credit-card-tile::after{content:"";position:absolute;inset:0;background:linear-gradient(135deg, rgba(255,255,255,.16), rgba(255,255,255,0) 55%);pointer-events:none}
+   own color (and, for the 3 non-default patterns, a second color) in a
+   card-shaped layout -- see UI.cardBackground(). Picking your bank's
+   color in Edit is what makes it "look like" the real card.
+   "Holo Shine" -- the approved depth treatment from the card-tile preview:
+   a bright top / dark bottom bevel (the box-shadow stack) makes the card
+   read as a thick, embossed object rather than a flat rectangle, and a
+   slow iridescent sheen sweeps across it like a real card's security
+   strip. color is no longer hardcoded #fff -- UI.cardTextColor(a) sets it
+   per account (inline style, same place background is set), so .cc-name/
+   .link-btn below inherit it instead of forcing white regardless. */
+.credit-card-tile{border-radius:16px;padding:18px 18px 14px;position:relative;overflow:hidden;
+  border:1.5px solid rgba(255,255,255,.28);
+  box-shadow:
+    0 1.5px 0 rgba(255,255,255,.4) inset,
+    0 -10px 18px -6px rgba(0,0,0,.5) inset,
+    0 16px 34px -14px rgba(0,0,0,.6)}
+.credit-card-tile::after{content:"";position:absolute;inset:0;pointer-events:none;
+  background:linear-gradient(100deg, transparent 30%, rgba(255,255,255,.35) 46%, rgba(180,220,255,.25) 50%, rgba(255,200,240,.22) 54%, transparent 68%);
+  mix-blend-mode:overlay;animation:holoSweep 5s ease-in-out infinite}
+@keyframes holoSweep{ 0%,100%{transform:translateX(-18%)} 50%{transform:translateX(18%)} }
+@media (prefers-reduced-motion: reduce){ .credit-card-tile::after{animation:none} }
 .cc-top{display:flex;align-items:center;justify-content:space-between;gap:8px}
 .cc-bank{font-size:12.5px;letter-spacing:.06em;text-transform:uppercase;opacity:.85}
-.cc-chip{width:30px;height:22px;border-radius:5px;background:linear-gradient(135deg,#e9d38a,#c9a94f);opacity:.9}
+.cc-chip{width:30px;height:22px;border-radius:5px;background:linear-gradient(155deg,#fff4d6,#d9b658 45%,#8f6f2e);
+  box-shadow:0 1px 0 rgba(255,255,255,.6) inset}
 /* Balance-type tiles (wallet/cash/electronic card) get a plain translucent
    mark instead of the chip — a chip specifically reads as "real EMV card",
    which none of these are. */
 .cc-mark{width:22px;height:22px;border-radius:999px;background:rgba(255,255,255,.28);border:1.5px solid rgba(255,255,255,.5)}
 .balance-tile .cc-row{margin-top:18px}
-.cc-name{display:block;font-family:var(--font-head);font-size:18px;color:#fff !important;margin-top:14px;padding:0 !important;min-height:0 !important}
+.cc-name{display:block;font-family:var(--font-head);font-size:18px;color:inherit;margin-top:14px;padding:0 !important;min-height:0 !important}
 .cc-row{display:flex;justify-content:space-between;align-items:flex-end;margin-top:16px}
 .cc-label{font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;opacity:.75}
 .cc-amt{font-family:var(--font-head);font-size:21px;margin-top:2px}
@@ -372,7 +390,7 @@ h1,h2,h3{font-family:var(--font-head);font-weight:600;margin:0;text-wrap:balance
 .cc-stmt.overdue{background:rgba(255,110,110,.22);border-color:rgba(255,130,130,.5)}
 .cc-stmt .cc-label{opacity:.9}
 .cc-stmt-amt{font-weight:700;font-size:14.5px;white-space:nowrap}
-.credit-card-tile .link-btn{color:#fff;opacity:.85}
+.credit-card-tile .link-btn{color:inherit;opacity:.85}
 .credit-card-tile .link-btn:hover{opacity:1}
 
 /* ---- app lock screen ---- */
@@ -640,6 +658,15 @@ button.bar-row{width:100%;border:0;background:none;padding:6px 0;min-height:44px
 .field.wide{grid-column:1 / -1}
 .field-label{color:var(--c-text-soft)}
 .field-hint{font-size:12.5px;color:var(--c-text-faint)}
+/* Preset swatches -- every color field (account/card color, its new
+   secondary color, a person's avatar color) gets this row in front of the
+   plain native <input type="color"> that was already there, which stays
+   and still works exactly as before -- clicking a swatch just sets that
+   same input's value (UI.setColorField), so submit()'s FormData read is
+   completely unaffected by which path set it. */
+.swatch-row{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px}
+.swatch-btn{width:26px;height:26px;border-radius:7px;border:1px solid rgba(0,0,0,.12);cursor:pointer;padding:0;flex:none}
+.swatch-btn:hover{transform:scale(1.08)}
 .dialog-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:16px}
 @media (max-width:480px){ .field-grid{grid-template-columns:1fr} }
 
@@ -781,6 +808,19 @@ class Engine {
 
   // ---- helpers ---------------------------------------------------------
   uid(p) { return p + "_" + Math.random().toString(36).slice(2, 9); }
+  // Same 62%-of-primary darkening UI.cardBackground() applies via CSS
+  // color-mix() for the single-color card face, but as a real hex string --
+  // needed to seed a sensible default into the "Secondary color" field
+  // (see open() below): a native <input type="color"> can never hold/submit
+  // an empty value, so leaving that field's default value "" makes the
+  // browser normalize it to literal black on save, not "no color2 chosen".
+  darkenHex(hex) {
+    const h = (hex || "").replace("#", "");
+    if (h.length !== 6) return "#3a3a3a";
+    const r = Math.round(parseInt(h.slice(0, 2), 16) * 0.62), g = Math.round(parseInt(h.slice(2, 4), 16) * 0.62), b = Math.round(parseInt(h.slice(4, 6), 16) * 0.62);
+    const hx = (n) => n.toString(16).padStart(2, "0");
+    return "#" + hx(r) + hx(g) + hx(b);
+  }
   iso(d) { const x = new Date(d); return new Date(x.getTime() - x.getTimezoneOffset() * 6e4).toISOString().slice(0, 10); }
   today() { return this.iso(new Date()); }
   addDays(d, n) { const x = new Date(d); x.setDate(x.getDate() + n); return x; }
@@ -1645,6 +1685,27 @@ class Engine {
     const cats = ["Food", "Transportation", "Rent", "Electricity", "Water", "Internet", "Mobile", "Shopping", "Clothing", "Medical", "Education", "Entertainment", "Family", "Children", "Car", "Home", "Subscriptions", "Loans", "Other"].concat(custom.expense || []).map(c => ({ v: c, l: c }));
     const inc = ["Salary", "Freelance", "Business", "Commission", "Rental", "Interest", "Selling items", "Other"].concat(custom.income || []).map(c => ({ v: c, l: c }));
     const D = (k, l, type, extra) => Object.assign({ k, label: l, type: type || "text" }, extra || {});
+    // Card-face styling fields -- shared by account/account_edit/card so
+    // the three don't drift (approved from the card customizer preview:
+    // Holo Shine's depth/bevel is CSS-only and applies to every tile
+    // automatically, these three are what the user actually picks).
+    // color2 only matters for the three non-default patterns -- diag1 (the
+    // long-standing look, still the default) keeps auto-darkening `color`
+    // alone the same way it always has (see UI.cardBackground).
+    const cardStyleFields = () => [
+      D("color2", this.L("Secondary color (optional)", "لون تاني (اختياري)"), "color", { hint: this.L("Only used by the two-color patterns below.", "بيتستخدم بس مع الأنماط اللي بلونين.") }),
+      D("pattern", this.L("Pattern", "النمط"), "select", { options: [
+        { v: "diag1", l: this.L("Diagonal (1 color)", "قطري (لون واحد)") },
+        { v: "diag2", l: this.L("Diagonal (2 colors)", "قطري (لونين)") },
+        { v: "radial", l: this.L("Radial burst", "انفجار دائري") },
+        { v: "split", l: this.L("Split block", "تقسيمة حادة") }
+      ] }),
+      D("textColor", this.L("Text color", "لون الخط"), "select", { options: [
+        { v: "auto", l: this.L("Auto", "تلقائي") },
+        { v: "white", l: this.L("White", "أبيض") },
+        { v: "dark", l: this.L("Dark", "غامق") }
+      ], hint: this.L("Auto picks white or dark based on the color above.", "تلقائي بيختار أبيض أو غامق حسب اللون فوق.") })
+    ];
     // Split-expense fields (below) only make sense when adding a new
     // expense, not editing one — they aren't stored on the transaction
     // itself (nothing links the two rows together, see submit()), so
@@ -1734,7 +1795,7 @@ class Engine {
       // "Electronic card" (ecard) — a prepaid/gift-card-style balance, e.g.
       // an Amazon or store gift card: holds a real balance like cash or a
       // wallet (no limit/debt concept), just rendered as its own card tile.
-      account: { title: t.aAccount, fields: [D("name", t.name, "text"), D("type", t.type, "select", { options: [{ v: "cash", l: "Cash" }, { v: "bank", l: "Bank" }, { v: "wallet", l: "Smart wallet" }, { v: "card", l: "Credit card" }, { v: "ecard", l: "Electronic card" }, { v: "other", l: "Other" }] }), D("bank", "Bank / issuer", "text"), D("opening", "Opening balance", "number"), D("limit", "Credit limit", "number", { hint: "Leave 0 for non-card accounts." }), D("color", this.L("Color", "اللون"), "color", { hint: this.L("Every account type but \"Other\" renders as a card face in this color — pick a real one to match.", "كل أنواع الحسابات غير \"أخرى\" بتتعرض بشكل كارت باللون ده — اختار لون حقيقي عشان يشبهه.") }), D("desc", "Reference / notes", "text", { wide: true })] },
+      account: { title: t.aAccount, fields: [D("name", t.name, "text"), D("type", t.type, "select", { options: [{ v: "cash", l: "Cash" }, { v: "bank", l: "Bank" }, { v: "wallet", l: "Smart wallet" }, { v: "card", l: "Credit card" }, { v: "ecard", l: "Electronic card" }, { v: "other", l: "Other" }] }), D("bank", "Bank / issuer", "text"), D("opening", "Opening balance", "number"), D("limit", "Credit limit", "number", { hint: "Leave 0 for non-card accounts." }), D("color", this.L("Color", "اللون"), "color", { hint: this.L("Every account type but \"Other\" renders as a card face in this color — pick a real one to match.", "كل أنواع الحسابات غير \"أخرى\" بتتعرض بشكل كارت باللون ده — اختار لون حقيقي عشان يشبهه.") })].concat(cardStyleFields()).concat([D("desc", "Reference / notes", "text", { wide: true })]) },
       // Start amount / current outstanding is editable here too, same as
       // any other opening position (see the "Opening positions" rule in
       // Settings) — it's just the baseline the balance is computed from,
@@ -1743,9 +1804,9 @@ class Engine {
       account_edit: { title: this.L("Edit account"), fields: [D("name", t.name, "text"), D("bank", "Bank / issuer", "text"),
         D("opening", this.state.form && this.state.form.type === "card" ? this.L("Current outstanding") : this.L("Start amount", "الرصيد الافتتاحي"), "number", this.state.form && this.state.form.type === "card" ? { hint: this.L("What you owe on the card today.") } : {}),
         D("limit", "Credit limit", "number", { hint: "Leave 0 for non-card accounts." }),
-        D("color", this.L("Color", "اللون"), "color", { hint: this.L("Renders as a card face in this color — pick a real one to match.", "بيتعرض بشكل كارت باللون ده — اختار لون حقيقي عشان يشبهه.") }),
-        D("desc", "Reference / notes", "text", { wide: true })] },
-      card: { title: t.aCard, fields: [D("bank", "Bank / issuer", "text"), D("name", "Card name", "text"), D("limit", "Credit limit", "number"), D("opening", "Current outstanding", "number", { hint: "What you owe on the card today." }), D("color", this.L("Color", "اللون"), "color", { hint: this.L("Renders the card face — pick your bank's color to match.", "بيحدد شكل الكارت — اختار لون بنكك عشان يشبهه.") }), D("desc", "Reference / notes", "text", { wide: true })] },
+        D("color", this.L("Color", "اللون"), "color", { hint: this.L("Renders as a card face in this color — pick a real one to match.", "بيتعرض بشكل كارت باللون ده — اختار لون حقيقي عشان يشبهه.") })
+      ].concat(cardStyleFields()).concat([D("desc", "Reference / notes", "text", { wide: true })]) },
+      card: { title: t.aCard, fields: [D("bank", "Bank / issuer", "text"), D("name", "Card name", "text"), D("limit", "Credit limit", "number"), D("opening", "Current outstanding", "number", { hint: "What you owe on the card today." }), D("color", this.L("Color", "اللون"), "color", { hint: this.L("Renders the card face — pick your bank's color to match.", "بيحدد شكل الكارت — اختار لون بنكك عشان يشبهه.") })].concat(cardStyleFields()).concat([D("desc", "Reference / notes", "text", { wide: true })]) },
       group: { title: this.L("+ Savings group (gam3ya)"), fields: [D("name", "Group name", "text", { wide: true }), D("amount", "Contribution per period", "number"), D("periods", "Number of periods", "number"), D("myTurn", "My turn (position)", "number"), D("freq", "Frequency", "select", { options: [{ v: "monthly", l: "Monthly" }, { v: "weekly", l: "Weekly" }] }), D("first", "First contribution date", "date"), D("accountId", "Paid from", "select", { options: accs })] },
       group_edit: { title: this.L("Edit savings group"), fields: [D("name", "Group name", "text", { wide: true }), D("amount", "Contribution per period", "number"), D("periods", "Number of periods", "number"), D("myTurn", "My turn (position)", "number"), D("freq", "Frequency", "select", { options: [{ v: "monthly", l: "Monthly" }, { v: "weekly", l: "Weekly" }] }), D("first", "First contribution date", "date")] },
       group_payment: { title: this.L("Record contribution"), fields: [D("date", t.date, "date"), D("groupId", "Group", "select", { options: (d.groups || []).map(g => ({ v: g.id, l: g.name })) }), D("amount", t.amount, "number"), D("accountId", "Paid from", "select", { options: accs })] },
@@ -1776,9 +1837,37 @@ class Engine {
     F.fields.forEach(f => { if (form[f.k] === undefined) form[f.k] = f.type === "select" ? (f.options[0] ? f.options[0].v : "") : (f.type === "number" ? "" : ""); });
     form.date = this.today();
     this.state.modal = kind; this.state.form = Object.assign(form, pre || {}); this.state.err = "";
+    // A blank "color2" (never set, or a legacy account from before this
+    // field existed) would otherwise show the native color input as pure
+    // black -- see darkenHex() -- so seed it with the same auto-darkened
+    // shade the card face falls back to when no secondary color is chosen,
+    // computed from whatever primary color the form ends up with. A real
+    // saved color2 (from pre) is left untouched. _color2Seeded records
+    // which case this was so UI.openModal can decide whether it's safe to
+    // keep this placeholder tracking the primary Color field live as the
+    // user edits it (only ever true for a value we invented here, never
+    // for a real customization someone already chose).
+    if (F.fields.some(f => f.k === "color2")) {
+      this.state.form._color2Seeded = !this.state.form.color2;
+      if (!this.state.form.color2) this.state.form.color2 = this.darkenHex(this.state.form.color);
+    }
   }
   submit() {
     const k = this.state.modal, f = this.state.form, d = this.state.data, N = (x) => this.n(f[x]);
+    // What to actually persist for color2: if it's still exactly the
+    // auto-darkened shade of the submitted primary color -- true whether
+    // the user never touched it at all, or let UI.syncColor2Default keep
+    // tracking Color live without ever picking their own secondary --
+    // save "" instead of that computed hex. Rendering is identical either
+    // way (cardBackground()'s own fallback computes the same shade), but
+    // storing "" is what lets the NEXT edit re-seed and re-enable live
+    // tracking; storing the real hex would freeze it and (per
+    // _color2Seeded in open()) permanently look like a deliberate choice,
+    // even after the primary color changes again on some future edit.
+    const resolveColor2 = () => {
+      const c2 = f.color2 || "";
+      return c2 && c2.toLowerCase() !== this.darkenHex(f.color).toLowerCase() ? c2 : "";
+    };
     const data = JSON.parse(JSON.stringify(d));
     const push = (o) => data.tx.push(Object.assign({ id: this.uid("t"), created: new Date().toISOString(), void: false }, o));
     const need = (cond, msg) => { if (!cond) { this.state.err = msg; return false; } return true; };
@@ -1977,7 +2066,7 @@ class Engine {
       // is the normal way in) — whichever door it comes through, debt has
       // to land negative, or balance/net-worth would count it as an asset.
       const openingVal = f.type === "card" ? -Math.abs(N("opening")) : N("opening");
-      data.accounts.push({ id: this.uid("a"), name: f.name, type: f.type, bank: f.bank || "", limit: N("limit"), opening: openingVal, color: f.color || (f.type === "card" ? "#004961" : "#7d7979"), active: true, desc: f.desc || "" });
+      data.accounts.push({ id: this.uid("a"), name: f.name, type: f.type, bank: f.bank || "", limit: N("limit"), opening: openingVal, color: f.color || (f.type === "card" ? "#004961" : "#7d7979"), color2: resolveColor2(), pattern: f.pattern || "diag1", textColor: f.textColor || "auto", active: true, desc: f.desc || "" });
       note = "Added account " + f.name;
     } else if (k === "account_edit") {
       if (!need(f.name, "Name is required.")) return false;
@@ -1985,6 +2074,7 @@ class Engine {
       if (!need(a, "Pick an account.")) return false;
       if (a.type === "card" && !need(N("opening") <= N("limit"), "Outstanding cannot exceed the credit limit.")) return false;
       a.name = f.name; a.bank = f.bank || ""; if (a.type === "card") a.limit = N("limit"); a.desc = f.desc || ""; a.color = f.color || a.color;
+      a.color2 = resolveColor2(); a.pattern = f.pattern || "diag1"; a.textColor = f.textColor || "auto";
       // Card debt is stored negative (see the "card" quick-add above); the
       // field shows the positive "current outstanding" the user actually
       // types, same convention as creating one.
@@ -1994,7 +2084,7 @@ class Engine {
       if (!need(f.bank || f.name, "Give the card a bank or a name.")) return false;
       if (!need(N("limit") > 0, "A credit card needs a limit.")) return false;
       if (!need(N("opening") <= N("limit"), "Outstanding cannot exceed the credit limit.")) return false;
-      data.accounts.push({ id: this.uid("card"), name: f.name || "Credit card", type: "card", bank: f.bank || "", limit: N("limit"), opening: -Math.abs(N("opening")), color: f.color || "#004961", active: true, desc: f.desc || "" });
+      data.accounts.push({ id: this.uid("card"), name: f.name || "Credit card", type: "card", bank: f.bank || "", limit: N("limit"), opening: -Math.abs(N("opening")), color: f.color || "#004961", color2: resolveColor2(), pattern: f.pattern || "diag1", textColor: f.textColor || "auto", active: true, desc: f.desc || "" });
       note = "Added credit card " + (f.bank ? f.bank + " " : "") + (f.name || "");
     } else if (k === "group") {
       const amt = N("amount"), per = Math.round(N("periods")), turn = Math.round(N("myTurn"));
@@ -2329,6 +2419,18 @@ function svgIcon(d, size) {
   size = size || 16;
   return '<svg width="' + size + '" height="' + size + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="' + d + '"></path></svg>';
 }
+// Curated preset swatches for every color field (account/card color, its
+// secondary color, a person's avatar color) -- approved from the card
+// customizer preview. Chosen to look good as a card face specifically
+// (rich/saturated, not pastel), spread across the same aurora-adjacent
+// hue family the rest of the Neon Aurora system already uses. Purely a
+// shortcut in front of the plain native color input, which stays and
+// still works exactly as before for any color outside this list.
+const COLOR_PALETTE = [
+  "#0088b0", "#1d4ed8", "#2563eb", "#0ea5e9", "#0d9488", "#10b981", "#16a34a", "#65a30d",
+  "#7c3aed", "#8b5cf6", "#a855f7", "#6d28d9", "#db2777", "#ec4899", "#be185d", "#e11d48",
+  "#dc2626", "#f43f5e", "#d97706", "#f59e0b", "#ca8a04", "#334155", "#1e293b", "#475569"
+];
 
 const UI = {
   app: null,
@@ -2400,10 +2502,43 @@ const UI = {
     const el = document.getElementById("f_color");
     if (el) el.value = rt.color;
   },
+  // A preset swatch button click -- same "set the real input's value
+  // directly, no render()" reasoning as setPersonRelation just above, so
+  // it can't wipe out unsaved text elsewhere in the same modal. fieldKey
+  // is which color field the swatch belongs to (a modal with a secondary
+  // color has two independent rows, each wired to its own input).
+  setColorField(fieldKey, hex) {
+    const el = document.getElementById("f_" + fieldKey);
+    if (el) el.value = hex;
+    if (fieldKey === "color") this.syncColor2Default(hex);
+    else if (fieldKey === "color2") this._color2Touched = true;
+  },
+  // While color2 is still just the auto-darkened placeholder Engine.open()
+  // invented (never a real choice -- see _color2Seeded there), keep it
+  // tracking live edits to the primary Color field/swatches, so picking a
+  // two-color pattern without ever touching Secondary color still pairs it
+  // with a shade of whatever color ended up primary, not a stale one from
+  // whatever the primary color was when the form first opened. The moment
+  // the user touches color2 themselves (here or via its own swatches),
+  // _color2Touched latches true and this stops overwriting their choice.
+  syncColor2Default(hex) {
+    if (this._color2Touched) return;
+    const el = document.getElementById("f_color2");
+    if (el) el.value = this.app.darkenHex(hex);
+  },
   // Reorder accounts -- swap one step up/down within their own visual
   // section (see Engine.moveAccount).
   moveAccountC(id, dir) { this.app.moveAccount(id, dir); this.render(); },
-  openModal(kind, pre) { this.app.open(kind, pre); this.render(); },
+  openModal(kind, pre) {
+    this.app.open(kind, pre);
+    // A real saved color2 (not just our placeholder) must never be
+    // silently overwritten by a later primary-color edit -- see
+    // syncColor2Default -- so start "touched" whenever it wasn't freshly
+    // seeded this open (including forms with no color2 field at all,
+    // where _color2Seeded is undefined and this is simply inert).
+    this._color2Touched = !this.app.state.form._color2Seeded;
+    this.render();
+  },
   closeModal() { this.app.state.modal = null; this.app.state.err = ""; this.render(); },
   submitModal() {
     const modalEl = document.getElementById("modalForm");
@@ -2977,12 +3112,69 @@ const UI = {
   },
 
   // ---- Accounts -------------------------------------------------------------
+  // Card face background -- pattern-driven (approved from the card
+  // customizer preview). "diag1" is the long-standing default and needs
+  // only the account's own color, auto-darkening a second stop the same
+  // way it always has; the other three patterns use color2 explicitly,
+  // falling back to that same auto-darkened shade if the user picked one
+  // of them but never actually set a second color, so nothing renders
+  // broken (a diagonal/radial/split against itself is still a valid,
+  // if unexciting, gradient).
+  cardBackground(a) {
+    const c1 = a.color || "#7d7979";
+    const dark = "color-mix(in srgb, " + c1 + " 62%, black)";
+    const c2 = a.color2 || dark;
+    switch (a.pattern) {
+      case "diag2": return "linear-gradient(135deg, " + c1 + ", " + c2 + ")";
+      case "radial": return "radial-gradient(130% 120% at 15% 0%, " + c1 + ", " + c2 + " 75%)";
+      case "split": return "linear-gradient(102deg, " + c1 + " 0%, " + c1 + " 47%, " + c2 + " 53%, " + c2 + " 100%)";
+      default: return "linear-gradient(135deg, " + c1 + ", " + dark + ")";
+    }
+  },
+  // Text color -- "auto" (what every account made before this existed
+  // effectively already had, hardcoded) picks white or dark from the
+  // account's own primary color's perceived lightness (the standard YIQ-
+  // weighted formula); "white"/"dark" pin it regardless of which color is
+  // actually chosen, for a light card that would otherwise read as
+  // low-contrast either way "auto" guesses.
+  // For a two-color pattern (diag2/radial/split), text sits over BOTH
+  // colors at once (e.g. split's stat row spans both halves), so "auto"
+  // blends both colors' luminance rather than judging by the primary
+  // color alone -- that alone can pick e.g. dark text for a near-white +
+  // near-black split and render unreadable dark-on-near-black on the
+  // second half. The blend is weighted per pattern to roughly match how
+  // much of the card face each color actually covers (see cardBackground):
+  // split/diag2 are close to an even 50/50 split of the visible area, but
+  // radial's color2 only shows past 75% of an ellipse centered near the
+  // top-left corner, so color1 dominates most of the face -- weighting it
+  // evenly there would pick text for a card that's mostly still color1.
+  // This still can't guarantee every combination is legible (no single
+  // text color can be, for two very different halves) but it's a real
+  // improvement over ignoring color2, or weighting it as if every pattern
+  // split the face evenly.
+  cardTextColor(a) {
+    if (a.textColor === "white") return "#fff";
+    if (a.textColor === "dark") return "#1c1b18";
+    const yiq = (hex) => {
+      const h = (hex || "").replace("#", "");
+      if (h.length !== 6) return 255;
+      const r = parseInt(h.slice(0, 2), 16), g = parseInt(h.slice(2, 4), 16), b = parseInt(h.slice(4, 6), 16);
+      return 0.299 * r + 0.587 * g + 0.114 * b;
+    };
+    let lum = yiq(a.color || "#7d7979");
+    if (a.pattern && a.pattern !== "diag1" && a.color2) {
+      const w = a.pattern === "radial" ? 0.8 : 0.5; // c1's share of the visible face
+      lum = w * lum + (1 - w) * yiq(a.color2);
+    }
+    return lum > 165 ? "#1c1b18" : "#fff";
+  },
+
   renderAccounts(D, t) {
     const app = this.app, d = app.state.data;
     const typeLabel = { cash: app.L("Cash", "كاش"), bank: app.L("Bank", "بنك"), wallet: app.L("Smart wallet", "محفظة إلكترونية"), card: app.L("Credit card", "بطاقة ائتمان"), ecard: app.L("Electronic card", "كارت إلكتروني"), other: app.L("Other", "أخرى") };
     const accs = d.accounts.filter(a => a.active);
     const maxAbs = Math.max(1, ...accs.map(a => Math.abs(D.bal[a.id])));
-    const editArgsFor = (a) => JSON.stringify({ id: a.id, name: a.name, type: a.type, bank: a.bank || "", opening: a.type === "card" ? Math.abs(a.opening || 0) : (a.opening || 0), limit: a.limit || 0, color: a.color || "#7d7979", desc: a.desc || "" }).replace(/"/g, "&quot;");
+    const editArgsFor = (a) => JSON.stringify({ id: a.id, name: a.name, type: a.type, bank: a.bank || "", opening: a.type === "card" ? Math.abs(a.opening || 0) : (a.opening || 0), limit: a.limit || 0, color: a.color || "#7d7979", color2: a.color2 || "", pattern: a.pattern || "diag1", textColor: a.textColor || "auto", desc: a.desc || "" }).replace(/"/g, "&quot;");
 
     // Every account type renders as a card-shaped tile in its own color,
     // instead of the plain list row (no bank logos anywhere — trademarked;
@@ -3030,7 +3222,6 @@ const UI = {
     const tiles = tileAccs.map((a, i, arr) => {
       const bal = D.bal[a.id];
       const canDelete = app.accountCanDelete(a.id);
-      const dark = "color-mix(in srgb, " + a.color + " 62%, black)";
       const isDebt = a.type === "card";
       // Available = how much of the limit is left to spend -- the number a
       // card actually needs day to day, not just Outstanding/Limit on their
@@ -3054,7 +3245,7 @@ const UI = {
       // red for overdue -- both read against any base card color, not
       // just this account's own.
       const stmtLine = nearestStmt ? '<div class="cc-stmt' + (nearestStmt.overdue ? " overdue" : "") + '"><span class="cc-label">' + esc(app.L("Statement due", "كشف الحساب")) + '</span><span class="cc-stmt-amt">' + app.fmt(nearestStmt.remaining) + " · " + esc(this.daysUntilText(nearestStmt.due)) + "</span></div>" : "";
-      return '<div class="credit-card-tile' + (isDebt ? "" : " balance-tile") + '" style="background:linear-gradient(135deg, ' + a.color + ', ' + dark + ')">' +
+      return '<div class="credit-card-tile' + (isDebt ? "" : " balance-tile") + '" style="background:' + this.cardBackground(a) + ';color:' + this.cardTextColor(a) + '">' +
         '<div class="cc-top"><span class="cc-bank">' + esc(a.bank || typeLabel[a.type]) + '</span><span class="' + (isDebt ? "cc-chip" : "cc-mark") + '"></span></div>' +
         '<button class="link-btn cc-name" onclick="UI.viewAccountTx(\'' + a.id + '\')">' + esc(a.name) + "</button>" +
         face + stmtLine +
@@ -3950,6 +4141,20 @@ const UI = {
         // select's onchange to touch another field.
         const relOnchange = f.k === "relation" && ["person", "person_edit"].includes(S.modal) ? ' onchange="UI.setPersonRelation(this.value)"' : "";
         input = '<select class="input" id="f_' + f.k + '" name="' + f.k + '"' + relOnchange + '>' + f.options.map(o => '<option value="' + esc(o.v) + '"' + (String(val) === String(o.v) ? " selected" : "") + ">" + esc(o.l) + "</option>").join("") + "</select>";
+      } else if (f.type === "color") {
+        // Preset swatches in front of the plain native color input -- see
+        // COLOR_PALETTE/UI.setColorField up top. The swatches are plain
+        // buttons, not form-associated, so they can't confuse FormData on
+        // submit; clicking one just sets this same #f_<k> input's value,
+        // same as picking from the native picker would.
+        // The native input's own oninput mirrors setColorField's side
+        // effects (live-sync color2 from the primary color; mark color2
+        // touched once the user edits it directly) so dragging the native
+        // picker behaves the same as clicking a swatch -- see
+        // syncColor2Default.
+        const liveSync = f.k === "color" ? ' oninput="UI.syncColor2Default(this.value)"' : (f.k === "color2" ? ' oninput="UI._color2Touched=true"' : "");
+        const swatches = COLOR_PALETTE.map(hex => '<button type="button" class="swatch-btn" style="background:' + hex + '" onclick="UI.setColorField(\'' + f.k + '\',\'' + hex + '\')" aria-label="' + hex + '"></button>').join("");
+        input = '<div class="swatch-row">' + swatches + '</div><input class="input" id="f_' + f.k + '" name="' + f.k + '" type="color" value="' + esc(val) + '"' + liveSync + '">';
       } else {
         // Description → category autocomplete, income/expense only: as the
         // user types, suggest whatever category their past entries with a
