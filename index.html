@@ -520,7 +520,19 @@ button.bar-row{width:100%;border:0;background:none;padding:6px 0;min-height:44px
 .bar-fill{height:100%;border-radius:999px;background:var(--c-accent);box-shadow:0 1px 0 rgba(255,255,255,.4) inset}
 .bar-fill.neg-fill{background:var(--c-neg)}
 .bar-fill.pos-fill{background:var(--c-pos)}
+.bar-fill.warn-fill{background:var(--c-warn)}
 .bar-val{font-variant-numeric:tabular-nums;white-space:nowrap;font-size:13.5px}
+
+/* Overall monthly expense budget (Settings) -- one cap across every
+   expense, shown right in "This month" next to the per-category bars
+   below it. Plain by default; .near/.over add the same severity-glow
+   language (border + box-shadow token) the Needs Attention alerts and
+   .cc-stmt already use, so a user who's about to blow their whole
+   month's budget gets the same visual weight as any other real alert. */
+.overall-budget{margin:14px 0 4px;padding:10px 12px;border-radius:10px;border:1px solid var(--c-line)}
+.overall-budget-row{display:flex;justify-content:space-between;font-size:13.5px;margin-bottom:8px;font-variant-numeric:tabular-nums}
+.overall-budget.near{border-color:var(--c-warn);box-shadow:var(--glow-warn)}
+.overall-budget.over{border-color:var(--c-neg);box-shadow:var(--glow-neg)}
 
 /* ---- events ---- */
 .event-list{display:flex;flex-direction:column;gap:2px}
@@ -908,6 +920,14 @@ class Engine {
     n += D.savingsGoals.filter((g) => g.overdue).length;
     const monthSpend = this.monthCategorySpend(), budgets = this.state.data.budgets || {};
     n += Object.keys(budgets).filter((cat) => (monthSpend[cat] || 0) >= budgets[cat] * 0.9).length;
+    // Matches the Dashboard's own overall-budget alert (renderDashboard) --
+    // one nudge across every expense, same 90%-before-it's-over threshold
+    // as a per-category budget.
+    const overallBudget = this.state.data.overallBudget || 0;
+    if (overallBudget > 0) {
+      const totalSpend = Object.values(monthSpend).reduce((s, v) => s + v, 0);
+      if (totalSpend >= overallBudget * 0.9) n += 1;
+    }
     n += this.unusualSpending(monthSpend).length;
     return n;
   }
@@ -1644,6 +1664,16 @@ class Engine {
     const amt = this.n(amount);
     if (amt <= 0) delete data.budgets[category]; else data.budgets[category] = amt;
     this.persist(data, amt > 0 ? "Set budget for " + category + " to " + this.fmt(amt) : "Cleared budget for " + category);
+  }
+  // A single monthly cap across every expense, not per category (Settings →
+  // Overall monthly budget) -- same amount<=0-clears convention as
+  // setBudget(). A top-level field rather than a special key inside
+  // `budgets` (that map is keyed by real category names, and this isn't one).
+  setOverallBudget(amount) {
+    const data = JSON.parse(JSON.stringify(this.state.data));
+    const amt = this.n(amount);
+    if (amt <= 0) delete data.overallBudget; else data.overallBudget = amt;
+    this.persist(data, amt > 0 ? "Set overall monthly budget to " + this.fmt(amt) : "Cleared overall monthly budget");
   }
   // Categories running hot this month vs. their own recent history — not a
   // fixed threshold, so it works without the user ever setting a budget.
@@ -2796,6 +2826,13 @@ const UI = {
     this.render();
   },
   clearBudgetC(cat) { this.app.setBudget(cat, 0); this.render(); },
+  setOverallBudgetC() {
+    const amt = document.getElementById("overallBudgetAmt").value;
+    if (this.app.n(amt) <= 0) return;
+    this.app.setOverallBudget(amt);
+    this.render();
+  },
+  clearOverallBudgetC() { this.app.setOverallBudget(0); this.render(); },
   addCategoryC(kind) {
     const input = document.getElementById(kind === "income" ? "newIncomeCat" : "newExpenseCat");
     const res = this.app.addCategory(kind, input.value);
@@ -3068,6 +3105,17 @@ const UI = {
   // ---- Dashboard (fix #5: single summary pass, Needs Attention promoted) --
   renderDashboard(D, t) {
     const app = this.app, S = app.state, d = app.state.data;
+    // Hoisted above the Needs Attention alerts (which want to flag this
+    // before it's over, same as a per-category budget) even though the
+    // "This month" section further down is the only other place this is
+    // used -- both need the exact same date-bounded total, so this is
+    // computed once and shared rather than each recomputing its own copy
+    // that could silently drift out of agreement with the other.
+    const monthToday = app.today(), monthStart = monthToday.slice(0, 8) + "01";
+    const monthExpense = D.live.filter(x => x.date >= monthStart && x.date <= monthToday && x.type === "expense").reduce((s, x) => s + x.amount, 0);
+    const overallBudget = d.overallBudget || 0;
+    const overallOver = overallBudget > 0 && monthExpense > overallBudget;
+    const overallNear = overallBudget > 0 && !overallOver && monthExpense >= overallBudget * 0.9;
     // "What do I have" (available) vs. "what can I actually spend" (safe to
     // spend, minus the coming week's obligations) — the second number is
     // the one that actually answers "can I afford this today" without
@@ -3188,6 +3236,16 @@ const UI = {
         cta: t.transactions + " →", act: "UI.setPage('transactions');UI.setFilter('q','" + esc(cat).replace(/'/g, "\\'") + "')", sev: over ? "neg" : "warn"
       });
     });
+    // Overall monthly budget (Settings) -- same 90%-before-it's-over nudge
+    // as a per-category budget, just across every expense at once instead
+    // of one category. monthExpense/overallBudget/overallOver/overallNear
+    // are computed at the top of renderDashboard (shared with the "This
+    // month" progress bar below, so the two can't disagree).
+    if (overallOver || overallNear) alerts.push({
+      title: app.L(overallOver ? "Over your overall budget" : "Near your overall budget", overallOver ? "تجاوزت ميزانيتك الكلية" : "قربت من ميزانيتك الكلية"),
+      body: app.fmt(monthExpense) + app.L(" of ") + app.fmt(overallBudget) + app.L(" spent this month across every expense."),
+      cta: t.transactions + " →", go: "transactions", sev: overallOver ? "neg" : "warn"
+    });
     // Categories running well above their own recent average — a
     // history-based nudge for whoever hasn't set a budget for that category.
     app.unusualSpending(monthSpend).slice(0, 2).forEach(u => alerts.push({
@@ -3280,10 +3338,11 @@ const UI = {
     // future-dated entry within the current month could show up in this
     // total while the "vs last month" badge next to it (which is bounded
     // to today) silently doesn't reflect it, making the two disagree.
-    const today = app.today(), mStart = today.slice(0, 8) + "01";
-    const monthTx = D.live.filter(x => x.date >= mStart && x.date <= today);
+    // monthExpense/monthToday/monthStart are hoisted above (see top of
+    // renderDashboard) since the overall-budget Needs Attention alert
+    // needs the same total.
+    const monthTx = D.live.filter(x => x.date >= monthStart && x.date <= monthToday);
     const monthIncome = monthTx.filter(x => ["income", "refund", "investment_return"].includes(x.type)).reduce((s, x) => s + x.amount, 0);
-    const monthExpense = monthTx.filter(x => x.type === "expense").reduce((s, x) => s + x.amount, 0);
     // vs. the same number of days into last month (see monthOverMonth) —
     // null when last month had nothing in that window to compare against.
     const mom = app.monthOverMonth();
@@ -3297,12 +3356,20 @@ const UI = {
     const catMap = app.monthCategorySpend();
     const catArr = Object.entries(catMap).sort((a, b) => b[1] - a[1]);
     const maxCat = Math.max(1, ...catArr.map(c => c[1]));
+    // Overall monthly budget (Settings) -- one cap across every expense,
+    // not per category. Only rendered once a budget is actually set (>0);
+    // otherwise this section looks exactly as it always has.
+    const overallBudgetBar = overallBudget > 0 ? '<div class="overall-budget' + (overallOver ? " over" : overallNear ? " near" : "") + '">' +
+      '<div class="overall-budget-row"><span>' + esc(app.L("All expenses this month", "كل المصروفات الشهر ده")) + '</span><span>' + app.fmt(monthExpense) + " / " + app.fmt(overallBudget) + "</span></div>" +
+      '<div class="bar-track"><div class="bar-fill' + (overallOver ? " neg-fill" : overallNear ? " warn-fill" : "") + '" style="width:' + Math.min(100, monthExpense / overallBudget * 100) + '%"></div></div>' +
+    "</div>" : "";
     const thisMonth = '<section class="dash-section">' +
       '<h2 class="section-title">' + esc(t.thisMonth) + "</h2>" +
       '<div class="two-col">' +
         '<div class="stat-box"><div class="pos-label">' + esc(t.income) + '</div><div class="pos-value tone-pos">' + app.fmt(monthIncome) + "</div>" + momBadge(mom.incomePct, false) + "</div>" +
         '<div class="stat-box"><div class="pos-label">' + esc(t.expenses) + '</div><div class="pos-value tone-neg">' + app.fmt(monthExpense) + "</div>" + momBadge(mom.expensePct, true) + "</div>" +
       "</div>" +
+      overallBudgetBar +
       (catArr.length ? '<div class="bar-list">' + catArr.slice(0, 5).map(([name, v]) => {
         const budget = (d.budgets || {})[name];
         const over = budget && v > budget;
@@ -4199,6 +4266,18 @@ const UI = {
       '<button class="btn btn-secondary" onclick="UI.setBudgetC()">' + esc(app.L("Set budget", "حدد الميزانية")) + "</button>" +
       '<div style="margin-top:12px">' + budgetRows + "</div>" +
     "</section>";
+    // One overall cap across every expense, separate from the per-category
+    // list above (data.overallBudget, not a key inside data.budgets --
+    // that map is keyed by real category names). Shows "All expenses this
+    // month" on the Dashboard once set; see UI.renderDashboard.
+    const overallSection = '<section class="dash-section"><h2 class="section-title">' + esc(app.L("Overall monthly budget", "الميزانية الشهرية الكلية")) + '</h2><p class="muted small">' + esc(app.L("One limit across every expense, on top of any per-category budgets below.", "سقف واحد لكل المصاريف مجتمعة، فوق أي ميزانيات لكل فئة تحت.")) + '</p>' +
+      (d.overallBudget ? '<div class="card-row"><div class="card-row-top"><div class="card-row-title">' + esc(app.L("Current limit", "السقف الحالي")) + '</div><div class="card-row-amt">' + app.fmt(d.overallBudget) + "/" + esc(app.L("mo", "شهر")) + "</div></div>" +
+        '<button class="link-btn small" onclick="UI.clearOverallBudgetC()">' + esc(app.L("Remove")) + "</button></div>" :
+      '<div class="field-grid">' +
+        '<label class="field wide"><span class="field-label">' + esc(app.L("Monthly limit")) + '</span><input class="input" id="overallBudgetAmt" type="number" min="0"></label>' +
+      "</div>" +
+      '<button class="btn btn-secondary" onclick="UI.setOverallBudgetC()">' + esc(app.L("Set overall budget", "حدد الميزانية الكلية")) + "</button>") +
+    "</section>";
     const pinSet = app.hasPin();
     const appLockSection = '<section class="dash-section"><h2 class="section-title">' + esc(app.L("App lock")) + '</h2><p class="muted small">' + esc(app.L("A quick screen lock for this device — not encryption. It only gates the screen; the data underneath is still stored exactly as before, so anyone with direct access to this browser's storage can still see it. Locks each time the app is opened or reloaded.", "قفل سريع للشاشة على الجهاز ده — مش تشفير. بيقفل الشاشة بس؛ البيانات لسه متخزنة زي ما هي، فأي حد يقدر يوصل لتخزين المتصفح مباشرة يقدر يشوفها. بيقفل في كل مرة تفتح فيها الأبلكيشن أو تعمل ريلود.")) + "</p>" +
       (pinSet ?
@@ -4263,6 +4342,7 @@ const UI = {
         "</label></section>"
         : "") +
       categoriesSection +
+      overallSection +
       budgetsSection +
       '<section class="dash-section"><h2 class="section-title">' + esc(t.rules) + '</h2><div class="rules-list">' + rules.map(r => '<div class="rule-row"><div class="rule-k">' + esc(r.k) + '</div><div class="rule-v">' + esc(r.v) + "</div></div>").join("") + "</div></section>" +
       '<section class="dash-section"><h2 class="section-title">' + esc(t.auditTrail) + '</h2><div class="audit-list">' + (d.audit || []).slice(0, 20).map(a => '<div class="audit-row"><span>' + esc(a.at) + '</span><span>' + esc(a.what) + "</span></div>").join("") + "</div></section>" +
