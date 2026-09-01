@@ -100,6 +100,19 @@
      now, the blur actually does something, in light mode same as dark. */
   --c-accent2:#d6006c; --c-accent2-700:#aa0b56; --c-accent2-100:rgba(170,11,86,.07);
   --c-pos:#006786; --c-pos-bg:#e9f8ff; --c-neg:#aa0b56; --c-neg-bg:rgba(170,11,86,.07);
+  /* New severity tier -- "this is coming due, not late yet" -- distinct
+     from --c-neg ("this is actually overdue/over"). Approved from the
+     Next Wave preview: the Needs Attention list and the credit-card
+     statement badge (.cc-stmt, already gold-vs-red before this) both used
+     to fold every non-neutral alert into the same red regardless of
+     whether it was truly overdue or just a heads-up. Text-safe on its own
+     (~4.9:1 on light --c-bg); the actual border/glow usage below is what
+     it's really for. --glow-neg/-warn: empty in light, same reasoning as
+     --glow-1 above -- these are box-shadow glows, not the drop-shadow
+     filter --glow-1 is, so they get their own tokens rather than reusing
+     it, but the "no glow on white glass" rule is identical. */
+  --c-warn:#a15c00;
+  --glow-neg:none; --glow-neg-strong:none; --glow-warn:none;
   /* Categorical palette for category bars (Dashboard/Reports) and budget
      rows -- 8 fixed slots, assigned by CATEGORY_COLOR_ORDER (engine.js),
      never by amount/rank. UNCHANGED from before the Neon Aurora glass pass,
@@ -156,6 +169,10 @@
     --c-accent-fill:#7c3aed;
     --c-accent2:#f472b6; --c-accent2-700:#f9a8d4; --c-accent2-100:rgba(244,114,182,.16);
     --c-pos:#4ee9c2; --c-pos-bg:rgba(78,233,194,.14); --c-neg:#ff7fa1; --c-neg-bg:rgba(255,127,161,.14);
+    --c-warn:#ffc86b;
+    --glow-neg:0 0 0 1px rgba(255,127,161,.35),0 4px 16px -6px rgba(255,127,161,.5);
+    --glow-neg-strong:0 0 0 1px rgba(255,127,161,.6),0 6px 22px -4px rgba(255,127,161,.75);
+    --glow-warn:0 0 0 1px rgba(255,200,107,.3),0 4px 16px -6px rgba(255,200,107,.45);
     /* Same 8 hues, UNCHANGED from the pre-glass palette -- re-validated
        (dataviz-skill validator) rather than assumed, against this surface's
        real composite (--c-surface-3 over the aurora --c-bg, ~#1f1a30):
@@ -191,6 +208,10 @@
   --c-accent-fill:#7c3aed;
   --c-accent2:#f472b6; --c-accent2-700:#f9a8d4; --c-accent2-100:rgba(244,114,182,.16);
   --c-pos:#4ee9c2; --c-pos-bg:rgba(78,233,194,.14); --c-neg:#ff7fa1; --c-neg-bg:rgba(255,127,161,.14);
+  --c-warn:#ffc86b;
+  --glow-neg:0 0 0 1px rgba(255,127,161,.35),0 4px 16px -6px rgba(255,127,161,.5);
+  --glow-neg-strong:0 0 0 1px rgba(255,127,161,.6),0 6px 22px -4px rgba(255,127,161,.75);
+  --glow-warn:0 0 0 1px rgba(255,200,107,.3),0 4px 16px -6px rgba(255,200,107,.45);
   --shadow: 0 1px 2px rgba(0,0,0,.5), 0 22px 46px -20px rgba(139,92,246,.4);
   --glow-1:drop-shadow(0 0 8px currentColor);
 }
@@ -285,7 +306,22 @@ h1,h2,h3{font-family:var(--font-head);font-weight:600;margin:0;text-wrap:balance
   cursor:pointer;font-size:14.5px;min-height:44px;white-space:nowrap}
 .btn.small{min-height:44px;padding:7px 13px;font-size:14px}
 .btn.block{width:100%;margin-top:10px}
-.btn-primary{background:var(--c-accent-fill);border-color:var(--c-accent-fill);color:#fff;font-weight:600}
+/* "Deep Press" -- approved from the Next Wave preview, same bevel language
+   as the credit-card tiles' Holo Shine (bright top inset, dark bottom
+   inset) so the app's one truly solid-fill, most-tapped control (+ Expense,
+   every dialog's Save, Pay/Collect, Unlock -- all share .btn-primary) reads
+   as a raised, pressable object instead of a flat tinted rectangle. The
+   outer drop shadow is un-gated by theme (present, just softer, in light
+   too) -- it's a plain shadow, not a colored glow, same "shadow exists
+   everywhere, glow is dark-only" split as --shadow vs --glow-1 elsewhere.
+   :active flattens the bevel and nudges the button down 1px -- the actual
+   "being pressed" feedback, not just decoration. */
+.btn-primary{background:linear-gradient(180deg,color-mix(in srgb,var(--c-accent-fill) 88%,white 12%),var(--c-accent-fill));
+  border-color:var(--c-accent-fill);color:#fff;font-weight:600;
+  box-shadow:0 1px 0 rgba(255,255,255,.45) inset,0 -5px 10px -4px rgba(0,0,0,.4) inset,
+    0 8px 18px -9px color-mix(in srgb,var(--c-accent-fill) 65%,transparent)}
+.btn-primary:active{transform:translateY(1px);
+  box-shadow:0 1px 0 rgba(255,255,255,.25) inset,0 -2px 6px -3px rgba(0,0,0,.35) inset}
 .btn-secondary{background:var(--c-surface-2)}
 .btn-ghost{background:transparent}
 .btn-danger{background:var(--c-neg-bg);border-color:var(--c-neg);color:var(--c-neg)}
@@ -385,9 +421,20 @@ h1,h2,h3{font-family:var(--font-head);font-weight:600;margin:0;text-wrap:balance
    chip color (a real card's statement is due soon, not urgent yet); red
    takes over once it's actually overdue. Both colors are fixed regardless
    of the card's own chosen color, so they stay legible against any of them. */
+/* Approved from the Next Wave preview: the gold/red split above already
+   existed, this just adds the same glow language the cards/buttons got --
+   a static amber glow while it's still just "due soon", a red glow that
+   gently pulses once it's actually overdue (pulse is the one difference
+   from the plain glow -- reserved for genuinely late, not every badge).
+   --glow-warn/--glow-neg are empty in light (see where they're defined),
+   so this is a dark-mode-only addition, same as the rest of the glow
+   family -- the gold/red background above already carries the badge in
+   light regardless. */
 .cc-stmt{margin-top:10px;padding:7px 10px;border-radius:8px;display:flex;justify-content:space-between;align-items:center;gap:8px;
-  background:rgba(233,211,138,.22);border:1px solid rgba(233,211,138,.45)}
-.cc-stmt.overdue{background:rgba(255,110,110,.22);border-color:rgba(255,130,130,.5)}
+  background:rgba(233,211,138,.22);border:1px solid rgba(233,211,138,.45);box-shadow:var(--glow-warn)}
+.cc-stmt.overdue{background:rgba(255,110,110,.22);border-color:rgba(255,130,130,.5);
+  box-shadow:var(--glow-neg);animation:pulseGlowNeg 2.6s ease-in-out infinite}
+@media (prefers-reduced-motion: reduce){ .cc-stmt.overdue{animation:none} }
 .cc-stmt .cc-label{opacity:.9}
 .cc-stmt-amt{font-weight:700;font-size:14.5px;white-space:nowrap}
 .credit-card-tile .link-btn{color:inherit;opacity:.85}
@@ -409,7 +456,20 @@ h1,h2,h3{font-family:var(--font-head);font-weight:600;margin:0;text-wrap:balance
 
 /* ---- alerts (needs attention) ---- */
 .alert-list{display:flex;flex-direction:column;gap:8px}
-.alert-card{background:var(--c-surface);border:1px solid var(--c-line);border-inline-start:3px solid var(--c-neg);border-radius:8px;padding:12px 14px}
+/* Every Needs Attention card used to get the same red left border
+   regardless of what it actually was -- a genuinely overdue payment read
+   identically to a 90%-of-budget nudge or a "here's your largest
+   receivable" FYI. Each alert pushed in UI.renderDashboard() now carries
+   its own sev: "neg" (already late/over -- pulses, see pulseGlowNeg), "warn"
+   (heads-up before it's late/over) or "info" (not urgency at all, e.g.
+   "largest open receivable"), rendered as a sev-{X} class this picks the
+   border/glow from; the base rule below is the info look, so an untagged
+   sev still renders as a plain card instead of alarming red by default. */
+.alert-card{background:var(--c-surface);border:1px solid var(--c-line);border-inline-start:3px solid var(--c-line);border-radius:8px;padding:12px 14px}
+.alert-card.sev-neg{border-inline-start-color:var(--c-neg);box-shadow:var(--glow-neg);animation:pulseGlowNeg 2.6s ease-in-out infinite}
+.alert-card.sev-warn{border-inline-start-color:var(--c-warn);box-shadow:var(--glow-warn)}
+@media (prefers-reduced-motion: reduce){ .alert-card.sev-neg{animation:none} }
+@keyframes pulseGlowNeg{0%,100%{box-shadow:var(--glow-neg)}50%{box-shadow:var(--glow-neg-strong)}}
 .alert-title{font-weight:600;font-size:15px}
 .alert-body{font-size:14px;color:var(--c-text-soft);margin-top:2px}
 .alert-cta{margin-top:6px;background:none;border:0;color:var(--c-accent-700);font-size:14px;font-weight:600;cursor:pointer;padding:0;min-height:44px;display:inline-flex;align-items:center}
@@ -432,7 +492,13 @@ button.bar-row{width:100%;border:0;background:none;padding:6px 0;min-height:44px
 .bar-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--c-text-soft)}
 .bar-track{height:7px;border-radius:999px;background:var(--c-surface-3);overflow:hidden}
 .bar-track.thin{height:5px;margin-top:8px}
-.bar-fill{height:100%;border-radius:999px;background:var(--c-accent)}
+/* Every .bar-fill's actual color is set inline (category hex, an
+   account's own chosen color, pos/neg) so this can't hue-match a glow the
+   way barChart()'s color-mix() trick does without touching every one of
+   the several call sites that set it -- an inset top-edge sheen instead,
+   same "glossy" language, works identically regardless of the color
+   underneath and needs no per-caller change. */
+.bar-fill{height:100%;border-radius:999px;background:var(--c-accent);box-shadow:0 1px 0 rgba(255,255,255,.4) inset}
 .bar-fill.neg-fill{background:var(--c-neg)}
 .bar-fill.pos-fill{background:var(--c-pos)}
 .bar-val{font-variant-numeric:tabular-nums;white-space:nowrap;font-size:13.5px}
@@ -808,6 +874,18 @@ class Engine {
 
   // ---- helpers ---------------------------------------------------------
   uid(p) { return p + "_" + Math.random().toString(36).slice(2, 9); }
+  // Shared #rrggbb parser -- both this file's darkenHex() and UI's
+  // cardTextColor() (its luminance check) need the same {r,g,b} bytes, and
+  // used to each parse the hex string independently; a single source here
+  // means a future format change (3-digit hex, alpha) only has to be
+  // taught once. Callers decide their own fallback for an unparsable hex
+  // (darkenHex wants a visible gray, cardTextColor wants "treat as light"),
+  // so this only ever returns real bytes or null, never a guessed default.
+  hexToRgb(hex) {
+    const h = (hex || "").replace("#", "");
+    if (h.length !== 6) return null;
+    return { r: parseInt(h.slice(0, 2), 16), g: parseInt(h.slice(2, 4), 16), b: parseInt(h.slice(4, 6), 16) };
+  }
   // Same 62%-of-primary darkening UI.cardBackground() applies via CSS
   // color-mix() for the single-color card face, but as a real hex string --
   // needed to seed a sensible default into the "Secondary color" field
@@ -815,9 +893,9 @@ class Engine {
   // an empty value, so leaving that field's default value "" makes the
   // browser normalize it to literal black on save, not "no color2 chosen".
   darkenHex(hex) {
-    const h = (hex || "").replace("#", "");
-    if (h.length !== 6) return "#3a3a3a";
-    const r = Math.round(parseInt(h.slice(0, 2), 16) * 0.62), g = Math.round(parseInt(h.slice(2, 4), 16) * 0.62), b = Math.round(parseInt(h.slice(4, 6), 16) * 0.62);
+    const rgb = this.hexToRgb(hex);
+    if (!rgb) return "#3a3a3a";
+    const r = Math.round(rgb.r * 0.62), g = Math.round(rgb.g * 0.62), b = Math.round(rgb.b * 0.62);
     const hx = (n) => n.toString(16).padStart(2, "0");
     return "#" + hx(r) + hx(g) + hx(b);
   }
@@ -2861,11 +2939,26 @@ const UI = {
   // status, whatever the caller's data means) -- this only owns the shared
   // layout/scaling, used by Reports' net worth trend, Card statements'
   // per-card statement trend, and Cash Flow's operating trend.
+  // Gradient + top-edge glow -- approved from the Next Wave preview (the
+  // trend charts were the closest real match to that preview's "glowing
+  // line" idea; this app has no actual line/SVG chart anywhere, every
+  // chart is one of these bar components, see catBar() below for the
+  // other one). color-mix() works the same whether colorFn returns a CSS
+  // var reference (var(--c-pos), as every current caller does) or a
+  // literal hex, so this needed no change to how any caller picks colors
+  // -- just how the bar itself renders once picked. The glow isn't
+  // gated to dark mode: it's a directional light-spill shadow reading as
+  // "embossed," the same "shadow exists everywhere, neon halo is dark-
+  // only" split the Holo Shine card bevel already draws.
   barChart(items, colorFn) {
     const max = Math.max(1, ...items.map((i) => Math.abs(i.value)));
-    return '<div class="chart-cols">' + items.map((i) =>
-      '<div class="chart-col"><div class="chart-bar" style="height:' + Math.max(4, Math.abs(i.value) / max * 100) + '%;background:' + colorFn(i) + '"></div><div class="chart-label">' + esc(i.label) + "</div></div>"
-    ).join("") + "</div>";
+    return '<div class="chart-cols">' + items.map((i) => {
+      const c = colorFn(i);
+      return '<div class="chart-col"><div class="chart-bar" style="height:' + Math.max(4, Math.abs(i.value) / max * 100) + '%;' +
+        "background:linear-gradient(180deg,color-mix(in srgb," + c + " 70%,white 30%)," + c + ");" +
+        "box-shadow:0 -6px 14px -4px color-mix(in srgb," + c + " 55%,transparent)" +
+        '"></div><div class="chart-label">' + esc(i.label) + "</div></div>";
+    }).join("") + "</div>";
   },
 
   // Category bar row -- shared by Dashboard ("This month") and Reports
@@ -2925,15 +3018,23 @@ const UI = {
     // into `body` alongside a fmt() call must be escaped here at
     // construction time — the body is rendered raw below, not re-escaped,
     // or the <bdi> markup would show up as literal text instead of money.
+    // Each alert now carries a sev ("neg" | "warn" | "info") the card below
+    // renders as a border/glow tier -- approved from the Next Wave preview,
+    // fixing the same "everything reads as the same red" gap the .cc-stmt
+    // badge already avoided (gold/red split there predates this). neg =
+    // already late/over; warn = a heads-up before it's late/over; info =
+    // not an urgency signal at all (a notable balance, not a deadline).
+    // Falls back to "info" (see .alert-card's base rule) if a future push
+    // site forgets to set one, rather than defaulting to alarming red.
     const alerts = [];
     D.plans.filter(p => p.overdue > 0).forEach(p => alerts.push({
       title: app.L(p.direction === "in" ? "Overdue collection · " : "Overdue payment · ") + app.personName(p.personId),
       body: p.overdue + app.L(" installment(s) past due — ") + app.fmt(p.overdueAmt) + app.L(" on ") + esc(p.title),
-      cta: t.installments + " →", go: "installments"
+      cta: t.installments + " →", go: "installments", sev: "neg"
     }));
     Object.entries(D.recv).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]).slice(0, 2).forEach(([k, v]) => alerts.push({
       title: app.L("Largest open receivable"), body: esc(app.personName(k)) + app.L(" owes ") + app.fmt(v) + app.L(" outside any plan."),
-      cta: t.collect + " →", act: "UI.openModal('receivable_payment',{personId:'" + k + "'})"
+      cta: t.collect + " →", act: "UI.openModal('receivable_payment',{personId:'" + k + "'})", sev: "info"
     }));
     // Plain loans past their due date — this is what makes the due date
     // typed in at "+ Debt"/"+ Receivable" actually surface somewhere,
@@ -2941,14 +3042,14 @@ const UI = {
     app.allLoanRows("payable").filter(r => r.status === "overdue").sort((a, b) => b.rem - a.rem).slice(0, 2).forEach(r => alerts.push({
       title: app.L("Overdue payment · ") + app.personName(r.personId),
       body: app.fmt(r.rem) + app.L(" was due ") + r.due,
-      cta: t.pay + " →", act: "UI.openModal('debt_payment',{personId:'" + r.personId + "'})"
+      cta: t.pay + " →", act: "UI.openModal('debt_payment',{personId:'" + r.personId + "'})", sev: "neg"
     }));
     app.allLoanRows("receivable").filter(r => r.status === "overdue").sort((a, b) => b.rem - a.rem).slice(0, 2).forEach(r => alerts.push({
       title: app.L("Overdue collection · ") + app.personName(r.personId),
       body: app.fmt(r.rem) + app.L(" was due ") + r.due,
-      cta: t.collect + " →", act: "UI.openModal('receivable_payment',{personId:'" + r.personId + "'})"
+      cta: t.collect + " →", act: "UI.openModal('receivable_payment',{personId:'" + r.personId + "'})", sev: "neg"
     }));
-    if (D.cards < 0) alerts.push({ title: app.L("Credit card balance"), body: app.fmt(Math.abs(D.cards)) + app.L(" outstanding — counted as a liability, not as available money."), cta: t.accounts + " →", go: "accounts" });
+    if (D.cards < 0) alerts.push({ title: app.L("Credit card balance"), body: app.fmt(Math.abs(D.cards)) + app.L(" outstanding — counted as a liability, not as available money."), cta: t.accounts + " →", go: "accounts", sev: "info" });
     // Card statements: overdue first, then a heads-up for anything due
     // within a week -- same "before it's actually late" nudge the budget
     // alert just below already uses.
@@ -2956,12 +3057,12 @@ const UI = {
     D.cardStatements.filter(s => s.overdue).sort((a, b) => b.remaining - a.remaining).slice(0, 2).forEach(s => alerts.push({
       title: app.L("Overdue statement · ") + app.accName(s.accountId),
       body: app.fmt(s.remaining) + app.L(" was due ") + s.due,
-      cta: t.pay + " →", act: "UI.openModal('statement_payment',{statementId:'" + s.id + "'})"
+      cta: t.pay + " →", act: "UI.openModal('statement_payment',{statementId:'" + s.id + "'})", sev: "neg"
     }));
     D.cardStatements.filter(s => s.status !== "paid" && !s.overdue && s.due <= stmtSoon).sort((a, b) => a.due < b.due ? -1 : 1).slice(0, 2).forEach(s => alerts.push({
       title: app.L("Statement due soon · ") + app.accName(s.accountId),
       body: app.fmt(s.remaining) + " · " + app.L("Due ") + s.due,
-      cta: t.pay + " →", act: "UI.openModal('statement_payment',{statementId:'" + s.id + "'})"
+      cta: t.pay + " →", act: "UI.openModal('statement_payment',{statementId:'" + s.id + "'})", sev: "warn"
     }));
     // Savings goals whose target date has already passed without reaching
     // the target -- same "before it's actually late" spirit as the
@@ -2970,10 +3071,12 @@ const UI = {
     D.savingsGoals.filter(g => g.overdue).forEach(g => alerts.push({
       title: app.L("Savings goal behind — ") + g.name,
       body: app.fmt(g.remaining) + app.L(" still needed — target date ") + g.due + app.L(" has passed."),
-      cta: t.goals + " →", go: "goals"
+      cta: t.goals + " →", go: "goals", sev: "neg"
     }));
     // Budgets set in Settings, 90%+ spent this month — a nudge before it's
-    // actually over, not just an after-the-fact tally.
+    // actually over, not just an after-the-fact tally. Already over = neg
+    // (it's a real problem now); still under but close = warn (the nudge
+    // before it becomes one).
     const monthSpend = app.monthCategorySpend(), budgets = d.budgets || {};
     Object.keys(budgets).filter(cat => (monthSpend[cat] || 0) >= budgets[cat] * 0.9).sort((a, b) => (monthSpend[b] / budgets[b]) - (monthSpend[a] / budgets[a])).slice(0, 2).forEach(cat => {
       const spent = monthSpend[cat] || 0, over = spent > budgets[cat];
@@ -2983,7 +3086,7 @@ const UI = {
         // here at construction instead (matching fmt()'s <bdi> HTML).
         title: app.L(over ? "Over budget — " : "Near budget — ") + cat,
         body: app.fmt(spent) + app.L(" of ") + app.fmt(budgets[cat]) + app.L(" spent this month."),
-        cta: t.transactions + " →", act: "UI.setPage('transactions');UI.setFilter('q','" + esc(cat).replace(/'/g, "\\'") + "')"
+        cta: t.transactions + " →", act: "UI.setPage('transactions');UI.setFilter('q','" + esc(cat).replace(/'/g, "\\'") + "')", sev: over ? "neg" : "warn"
       });
     });
     // Categories running well above their own recent average — a
@@ -2991,13 +3094,13 @@ const UI = {
     app.unusualSpending(monthSpend).slice(0, 2).forEach(u => alerts.push({
       title: app.L("Unusual spending — ") + u.category,
       body: app.fmt(u.current) + app.L(" this month so far — about ") + Math.round(u.pct * 100) + app.L("% above your recent average of ") + app.fmt(u.avg) + ".",
-      cta: t.transactions + " →", act: "UI.setPage('transactions');UI.setFilter('q','" + esc(u.category).replace(/'/g, "\\'") + "')"
+      cta: t.transactions + " →", act: "UI.setPage('transactions');UI.setFilter('q','" + esc(u.category).replace(/'/g, "\\'") + "')", sev: "info"
     }));
 
     const needsAttention = '<section class="dash-section">' +
       '<h2 class="section-title">' + esc(t.needsAttention) + "</h2>" +
       (alerts.length ? '<div class="alert-list">' + alerts.map(a =>
-        '<div class="alert-card"><div class="alert-title">' + esc(a.title) + '</div><div class="alert-body">' + a.body + '</div>' +
+        '<div class="alert-card sev-' + (a.sev || "info") + '"><div class="alert-title">' + esc(a.title) + '</div><div class="alert-body">' + a.body + '</div>' +
         '<button class="alert-cta" onclick="' + (a.act || ("UI.setPage('" + a.go + "')")) + '">' + esc(a.cta) + "</button></div>"
       ).join("") + "</div>" : '<p class="muted">' + esc(app.L("Nothing needs attention right now.", "مفيش حاجة محتاجة انتباه دلوقتي.")) + "</p>") +
     "</section>";
@@ -3155,11 +3258,13 @@ const UI = {
   cardTextColor(a) {
     if (a.textColor === "white") return "#fff";
     if (a.textColor === "dark") return "#1c1b18";
+    // Shared byte-parsing with Engine.darkenHex (see its comment) -- an
+    // unparsable hex here just falls back to "treat as light" (255) so an
+    // unexpected value still resolves to a safe dark-text default.
     const yiq = (hex) => {
-      const h = (hex || "").replace("#", "");
-      if (h.length !== 6) return 255;
-      const r = parseInt(h.slice(0, 2), 16), g = parseInt(h.slice(2, 4), 16), b = parseInt(h.slice(4, 6), 16);
-      return 0.299 * r + 0.587 * g + 0.114 * b;
+      const rgb = this.app.hexToRgb(hex);
+      if (!rgb) return 255;
+      return 0.299 * rgb.r + 0.587 * rgb.g + 0.114 * rgb.b;
     };
     let lum = yiq(a.color || "#7d7979");
     if (a.pattern && a.pattern !== "diag1" && a.color2) {
