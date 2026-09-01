@@ -112,7 +112,7 @@
      filter --glow-1 is, so they get their own tokens rather than reusing
      it, but the "no glow on white glass" rule is identical. */
   --c-warn:#a15c00;
-  --glow-neg:none; --glow-neg-strong:none; --glow-warn:none;
+  --glow-neg:none; --glow-neg-strong:none; --glow-warn:none; --glow-pos:none;
   /* Categorical palette for category bars (Dashboard/Reports) and budget
      rows -- 8 fixed slots, assigned by CATEGORY_COLOR_ORDER (engine.js),
      never by amount/rank. UNCHANGED from before the Neon Aurora glass pass,
@@ -173,6 +173,7 @@
     --glow-neg:0 0 0 1px rgba(255,127,161,.35),0 4px 16px -6px rgba(255,127,161,.5);
     --glow-neg-strong:0 0 0 1px rgba(255,127,161,.6),0 6px 22px -4px rgba(255,127,161,.75);
     --glow-warn:0 0 0 1px rgba(255,200,107,.3),0 4px 16px -6px rgba(255,200,107,.45);
+    --glow-pos:0 0 0 1px rgba(78,233,194,.32),0 4px 16px -6px rgba(78,233,194,.45);
     /* Same 8 hues, UNCHANGED from the pre-glass palette -- re-validated
        (dataviz-skill validator) rather than assumed, against this surface's
        real composite (--c-surface-3 over the aurora --c-bg, ~#1f1a30):
@@ -212,6 +213,7 @@
   --glow-neg:0 0 0 1px rgba(255,127,161,.35),0 4px 16px -6px rgba(255,127,161,.5);
   --glow-neg-strong:0 0 0 1px rgba(255,127,161,.6),0 6px 22px -4px rgba(255,127,161,.75);
   --glow-warn:0 0 0 1px rgba(255,200,107,.3),0 4px 16px -6px rgba(255,200,107,.45);
+  --glow-pos:0 0 0 1px rgba(78,233,194,.32),0 4px 16px -6px rgba(78,233,194,.45);
   --shadow: 0 1px 2px rgba(0,0,0,.5), 0 22px 46px -20px rgba(139,92,246,.4);
   --glow-1:drop-shadow(0 0 8px currentColor);
 }
@@ -300,6 +302,13 @@ h1,h2,h3{font-family:var(--font-head);font-weight:600;margin:0;text-wrap:balance
 .seg{display:flex;border:1px solid var(--c-line);border-radius:999px;padding:2px;background:var(--c-surface-2)}
 .seg-opt{position:relative;padding:5px 14px;border-radius:999px;font-size:13.5px;cursor:pointer;display:flex;align-items:center;min-height:44px;min-width:44px;justify-content:center}
 .seg-opt input{position:absolute;opacity:0}
+/* Same bevel language as .btn-primary's Deep Press, lighter touch -- just
+   the inset highlight/shade, no drop shadow or gradient -- since these are
+   small, sometimes-repeated controls (a period toggle, a filter pill), not
+   the one big CTA, same "smaller control gets the lighter version" split
+   the chart bars draw between .chart-bar and .bar-fill. */
+.seg-opt:has(input:checked), .pill.on{
+  box-shadow:0 1px 0 rgba(255,255,255,.4) inset,0 -4px 8px -3px rgba(0,0,0,.35) inset}
 .seg-opt:has(input:checked){background:var(--c-accent-fill);color:#fff}
 
 .btn{border:1px solid var(--c-line);border-radius:999px;padding:8px 15px;background:var(--c-surface-2);
@@ -329,6 +338,15 @@ h1,h2,h3{font-family:var(--font-head);font-weight:600;margin:0;text-wrap:balance
 .btn-row.wrap{flex-wrap:wrap}
 .link-btn{background:none;border:0;color:var(--c-accent-700);cursor:pointer;padding:12px 0;font-size:14.5px;min-height:44px;display:inline-flex;align-items:center}
 .link-btn:disabled{color:var(--c-text-faint);cursor:default}
+/* Every Delete action in this app goes through the browser's own native
+   confirm() -- that dialog is chrome the OS renders, entirely outside this
+   page's DOM/CSS, so it can't be given a "danger" look no matter what's
+   tried here. This styles the trigger instead: a Delete link-btn reads red
+   at rest and gets a warning glow on hover/focus, so the "this is
+   destructive" cue lands before the (unstyleable) confirm prompt even
+   opens, rather than only after. */
+.link-btn.danger{color:var(--c-neg)}
+.link-btn.danger:hover, .link-btn.danger:focus-visible{box-shadow:var(--glow-neg);border-radius:6px}
 
 /* ---- metrics row (single instance, header context) ---- */
 .metrics-row{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px;padding:10px 16px;background:var(--c-surface-2);border-bottom:1px solid var(--c-line)}
@@ -453,6 +471,7 @@ h1,h2,h3{font-family:var(--font-head);font-weight:600;margin:0;text-wrap:balance
 .hero-sub-row{display:flex;gap:22px;margin-top:14px;padding-top:12px;border-top:1px solid color-mix(in srgb, currentColor 20%, transparent);flex-wrap:wrap}
 .hero-sub-label{font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;opacity:.65}
 .hero-sub-value{font-family:var(--font-head);font-size:21px;margin-top:2px;font-variant-numeric:tabular-nums}
+.sparkline{vertical-align:middle;margin-inline-start:6px;opacity:.85}
 
 /* ---- alerts (needs attention) ---- */
 .alert-list{display:flex;flex-direction:column;gap:8px}
@@ -559,7 +578,18 @@ button.bar-row{width:100%;border:0;background:none;padding:6px 0;min-height:44px
 .sched-list{display:flex;flex-direction:column;gap:4px;margin-top:8px;padding-top:8px;border-top:1px solid var(--c-line)}
 .sched-row{display:flex;justify-content:space-between;font-size:13.5px;padding:4px 0;gap:8px}
 .sched-row span{white-space:nowrap}
+/* Same severity language as the Needs Attention alerts, at a lighter
+   touch (a colored left border + the existing box-shadow glow tokens,
+   no backdrop-filter) since a schedule can run to a dozen-plus rows --
+   box-shadow is cheap, blur isn't, same reasoning the shared blur list
+   elsewhere already applies. Paid gets the border only, no glow/pulse --
+   that's "done, good," not something that needs to keep drawing the eye
+   the way an actually-late row does. */
+.sched-row.status-overdue{border-inline-start:3px solid var(--c-neg);padding-inline-start:8px;
+  box-shadow:var(--glow-neg);animation:pulseGlowNeg 2.6s ease-in-out infinite}
 .sched-row.status-overdue .sched-status{color:var(--c-neg)}
+@media (prefers-reduced-motion: reduce){ .sched-row.status-overdue{animation:none} }
+.sched-row.status-paid{border-inline-start:3px solid var(--c-pos);padding-inline-start:8px}
 .sched-row.status-paid .sched-status{color:var(--c-pos)}
 .sched-row.mine{font-weight:600}
 
@@ -594,9 +624,19 @@ button.bar-row{width:100%;border:0;background:none;padding:6px 0;min-height:44px
 .primary-nav{position:fixed;inset-inline:0;bottom:0;z-index:40;display:flex;background:var(--c-surface);
   border-top:1px solid var(--c-line);box-shadow:0 -4px 16px rgba(0,0,0,.06);padding:4px 4px calc(4px + env(safe-area-inset-bottom))}
 .navbtn{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;background:none;border:0;
-  padding:7px 2px;border-radius:10px;color:var(--c-text-soft);min-height:52px;cursor:pointer}
+  padding:7px 2px;border-radius:10px;color:var(--c-text-soft);min-height:52px;cursor:pointer;position:relative}
 .navbtn span{font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+/* Approved from the Next Wave preview -- a soft halo behind the active
+   tab, so switching tabs reads as more than a text-color change without
+   needing to track and animate a sliding indicator's pixel position
+   across a variable-width, RTL-flippable flex row (real fragility for a
+   cosmetic win). ::before sits behind the icon/label (z-index:-1 inside
+   .navbtn's own stacking context from position:relative above), low
+   enough opacity to read as a soft chip highlight rather than neon, so
+   unlike --glow-1/--glow-neg/--glow-warn this one isn't dark-gated. */
 .navbtn.on{color:var(--c-accent-fill)}
+.navbtn.on::before{content:"";position:absolute;inset:2px 6px;border-radius:12px;z-index:-1;
+  background:radial-gradient(65% 90% at 50% 28%, color-mix(in srgb,var(--c-accent-fill) 20%,transparent), transparent 75%)}
 
 /* Vivid icons -- each section keeps its own fixed hue (drawn from the same
    aurora family as the rest of the glass system), instead of every icon
@@ -679,6 +719,10 @@ button.bar-row{width:100%;border:0;background:none;padding:6px 0;min-height:44px
   .navbtn{flex:none;flex-direction:row;justify-content:flex-start;padding:9px 12px;gap:10px;min-height:44px}
   .navbtn span{font-size:14px}
   .navbtn.on{background:var(--c-accent-fill);color:#fff}
+  /* The mobile bar's radial halo (::before, above) is redundant once .on
+     already fills solid here -- turn it off rather than leave dead paint
+     work behind an opaque background. */
+  .navbtn.on::before{background:none}
   /* Real bug caught in review: .nav-ico-* sets color directly on the icon's
      own <span>, which is MORE specific than inherited color -- so on this
      solid active-tab fill, the icon kept its own fixed hue instead of
@@ -733,11 +777,35 @@ button.bar-row{width:100%;border:0;background:none;padding:6px 0;min-height:44px
 .swatch-row{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px}
 .swatch-btn{width:26px;height:26px;border-radius:7px;border:1px solid rgba(0,0,0,.12);cursor:pointer;padding:0;flex:none}
 .swatch-btn:hover{transform:scale(1.08)}
+/* Vivid category picker -- a --pill-c custom property per button (each
+   category's own categoryColor(), a CSS var reference like var(--cat-3))
+   drives both the tinted background and the small color dot, same
+   color-mix() trick the trend charts use so this needed no new per-hue
+   tokens. Horizontal scroll, not wrap -- a user's own category list is
+   unbounded (Settings lets them add more), unlike the fixed 24-swatch
+   palette above. */
+.cat-pill-row{display:flex;gap:6px;overflow-x:auto;padding-bottom:6px;margin-bottom:4px;-webkit-overflow-scrolling:touch}
+.cat-pill{flex:none;display:inline-flex;align-items:center;gap:6px;cursor:pointer;white-space:nowrap;
+  border-radius:999px;padding:7px 13px;font-size:13px;min-height:36px;color:var(--c-text);
+  border:1.5px solid color-mix(in srgb,var(--pill-c) 50%,transparent);
+  background:color-mix(in srgb,var(--pill-c) 16%,transparent)}
+.cat-pill::before{content:"";display:inline-block;width:8px;height:8px;border-radius:999px;background:var(--pill-c);flex:none}
 .dialog-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:16px}
 @media (max-width:480px){ .field-grid{grid-template-columns:1fr} }
 
-.flash{position:fixed;bottom:64px;inset-inline:0;text-align:center;font-size:13px;color:var(--c-text-faint);
+/* Approved from the Next Wave preview -- was plain fading text; #savedFlash
+   (the outer div JS toggles opacity on, unchanged) now just centers a real
+   glass pill instead of being the visible thing itself, with a check icon
+   and the same success-glow token .cc-stmt/.alert-card's family already
+   established (empty in light -- a plain surface/border pill still reads
+   fine there without the glow). */
+.flash{position:fixed;bottom:64px;inset-inline:0;text-align:center;
   opacity:0;transition:opacity .3s ease;pointer-events:none;z-index:20}
+.flash-pill{display:inline-flex;align-items:center;gap:7px;background:var(--c-surface);border:1px solid var(--c-line);
+  border-radius:999px;padding:9px 16px 9px 12px;font-size:13px;color:var(--c-text);
+  backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+  box-shadow:0 1px 0 rgba(255,255,255,.25) inset, var(--glow-pos)}
+.flash-pill svg{color:var(--c-pos);flex:none}
 @media (min-width:900px) and (pointer:fine){ .flash{bottom:14px} }
 
 @media (prefers-reduced-motion:no-preference){
@@ -2604,6 +2672,13 @@ const UI = {
     const el = document.getElementById("f_color2");
     if (el) el.value = this.app.darkenHex(hex);
   },
+  // A category pill click -- same direct-set, no-render() reasoning as
+  // setColorField, so it can't wipe out unsaved text elsewhere in the
+  // modal (an amount already typed in, a description mid-edit).
+  setCategoryField(name) {
+    const el = document.getElementById("f_category");
+    if (el) el.value = name;
+  },
   // Reorder accounts -- swap one step up/down within their own visual
   // section (see Engine.moveAccount).
   moveAccountC(id, dir) { this.app.moveAccount(id, dir); this.render(); },
@@ -2812,7 +2887,7 @@ const UI = {
       "</div>" +
       this.renderMoreSheet(t) +
       this.renderModal(t) +
-      '<div id="savedFlash" class="flash" role="status" aria-live="polite">' + esc(S.saved) + "</div>";
+      '<div id="savedFlash" class="flash" role="status" aria-live="polite"><span class="flash-pill">' + svgIcon("M20 6 9 17l-5-5", 15) + esc(S.saved) + "</span></div>";
 
     if (savedId && !skipFocusRestore) {
       const el = document.getElementById(savedId);
@@ -2933,6 +3008,21 @@ const UI = {
     return app.L("in " + days + "d", "خلال " + days + " يوم");
   },
 
+  // Tiny inline trend line -- approved from the Next Wave preview, next to
+  // Dashboard's Net worth hero-sub-value. `points` is oldest-first; a flat
+  // series (every point equal, or fewer than 2 points) draws nothing
+  // rather than a meaningless flat/zero-width line. Glow is a plain SVG
+  // drop-shadow filter, not gated to dark mode -- same reasoning
+  // barChart()'s glow already applies (a light-spill shadow, not neon).
+  sparkline(points, color) {
+    if (points.length < 2 || Math.max(...points) === Math.min(...points)) return "";
+    const w = 56, h = 18, max = Math.max(...points), min = Math.min(...points), range = max - min;
+    const step = w / (points.length - 1);
+    const d = points.map((v, i) => (i === 0 ? "M" : "L") + (i * step).toFixed(1) + "," + (h - (v - min) / range * h).toFixed(1)).join(" ");
+    return '<svg class="sparkline" width="' + w + '" height="' + h + '" viewBox="0 0 ' + w + ' ' + h + '" preserveAspectRatio="none" aria-hidden="true">' +
+      '<path d="' + d + '" fill="none" stroke="' + color + '" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="filter:drop-shadow(0 0 2px ' + color + ')"/></svg>';
+  },
+
   // Shared bar-chart builder -- the .chart-cols/.chart-col/.chart-bar/
   // .chart-label markup, each bar scaled against the tallest in `items`.
   // `colorFn(item)` picks each bar's own color (up/down tone, paid/overdue
@@ -2990,6 +3080,15 @@ const UI = {
     // .cc-stmt badge against its own always-dark background.
     const spendToday = app.spendableToday(D);
     const spendTodayBanner = '<div class="spend-today' + (spendToday < 0 ? " tight" : "") + '"><span class="spend-today-label">' + esc(app.L("You can spend today", "تقدر تصرف النهاردة")) + '</span><span class="spend-today-value">' + app.fmt(spendToday) + "</span></div>";
+    // Net worth sparkline -- same app.derive(cutoff) technique Reports'
+    // 6-month trend already uses, just 5 points at a weekly cadence
+    // instead of monthly (Dashboard renders far more often than Reports,
+    // so this stays a noticeably smaller pass: 5 derive() calls, each one
+    // one linear scan of the transaction list, negligible next to
+    // everything else this render already computes from D). Draws nothing
+    // (see sparkline()) if net worth hasn't moved across the window.
+    const nwSpark = [4, 3, 2, 1, 0].map(w => app.derive(app.iso(app.addDays(new Date(), -7 * w))).netWorth);
+    const netWorthSparkline = this.sparkline(nwSpark, "var(--c-accent)");
     const hero =
       '<div class="hero-card">' +
         '<div class="hero-label">' + esc(t.availableBalance) + "</div>" +
@@ -3004,7 +3103,7 @@ const UI = {
           // included below) already rely on the "−" sign alone for that,
           // not color, so this one does too.
           '<div><div class="hero-sub-label">' + esc(app.L("Safe to spend (7d)", "الآمن للصرف (٧ أيام)")) + '</div><div class="hero-sub-value">' + app.fmt(safeToSpend) + "</div></div>" +
-          '<div><div class="hero-sub-label">' + esc(t.netWorth) + '</div><div class="hero-sub-value">' + app.fmt(D.netWorth) + "</div></div>" +
+          '<div><div class="hero-sub-label">' + esc(t.netWorth) + '</div><div class="hero-sub-value">' + app.fmt(D.netWorth) + netWorthSparkline + "</div></div>" +
           '<div><div class="hero-sub-label">' + esc(t.receivables) + '</div><div class="hero-sub-value tone-pos">' + app.fmt(D.recvTotal) + "</div></div>" +
           '<div><div class="hero-sub-label">' + esc(t.payables) + '</div><div class="hero-sub-value tone-neg">' + app.fmt(D.payTotal) + "</div></div>" +
         "</div>" +
@@ -3358,7 +3457,7 @@ const UI = {
         moveBtns(a.id, i, arr) +
         (isDebt ? '<button class="link-btn small" onclick="UI.openModal(\'card_statement\',{accountId:\'' + a.id + '\'})">' + esc(t.aStatement) + "</button>" : "") +
         '<button class="link-btn small" onclick="UI.openModal(\'account_edit\',' + editArgsFor(a) + ')">' + esc(app.L("Edit")) + "</button>" +
-        (canDelete ? '<button class="link-btn small" onclick="UI.deleteAccountC(\'' + a.id + '\')">' + esc(app.L("Delete")) + "</button>" : "") +
+        (canDelete ? '<button class="link-btn small danger" onclick="UI.deleteAccountC(\'' + a.id + '\')">' + esc(app.L("Delete")) + "</button>" : "") +
         "</div></div>";
     }).join("");
 
@@ -3374,7 +3473,7 @@ const UI = {
         '<div class="btn-row wrap">' +
         moveBtns(a.id, i, arr) +
         '<button class="link-btn small" onclick="UI.openModal(\'account_edit\',' + editArgsFor(a) + ')">' + esc(app.L("Edit")) + "</button>" +
-        (canDelete ? '<button class="link-btn small" onclick="UI.deleteAccountC(\'' + a.id + '\')">' + esc(app.L("Delete")) + "</button>" : "") +
+        (canDelete ? '<button class="link-btn small danger" onclick="UI.deleteAccountC(\'' + a.id + '\')">' + esc(app.L("Delete")) + "</button>" : "") +
         "</div></div>";
     }).join("");
     return this.tabHeader(t.accounts, accs.length + app.L(" accounts · transfers never hit income or expense", " حساب · التحويلات لا تُحسب إيراداً ولا مصروفاً"),
@@ -3432,7 +3531,7 @@ const UI = {
       '<button class="link-btn small" onclick="UI.reverseTx(\'' + r.id + '\')" ' + (r.void ? "disabled" : "") + ">" + esc(r.void ? app.L("reversed") : app.L("reverse")) + "</button>" +
       (app.txEditable(r) ?
         '<button class="link-btn small" onclick="UI.openTxEdit(\'' + r.id + '\')">' + esc(app.L("Edit")) + "</button>" +
-        '<button class="link-btn small" onclick="UI.deleteTxC(\'' + r.id + '\')">' + esc(app.L("Delete")) + "</button>" +
+        '<button class="link-btn small danger" onclick="UI.deleteTxC(\'' + r.id + '\')">' + esc(app.L("Delete")) + "</button>" +
         '<button class="link-btn small" onclick="UI.duplicateTxC(\'' + r.id + '\')">' + esc(app.L("Duplicate", "كررها")) + "</button>"
         : "") +
       "</div>";
@@ -3469,8 +3568,13 @@ const UI = {
         "</tr>"
       ).join("") + "</tbody></table></div>";
 
+    // A categorized row gets the same colored left accent the "avg spend by
+    // category" summary card already uses elsewhere (categoryColor) --
+    // uncategorized rows (transfers, statement payments, plain loans...)
+    // stay plain rather than all getting a "neutral" bar that would imply
+    // they're categorized-as-nothing instead of just not applicable.
     const cards = '<div class="card-list mobile-only">' + items.map(({ r, isIn, amtTxt, acc, tone }) =>
-      '<div class="card-row' + (r.void ? " voided" : "") + '">' +
+      '<div class="card-row' + (r.void ? " voided" : "") + '"' + (r.category ? ' style="border-inline-start:4px solid ' + app.categoryColor(r.category, r.type) + '"' : "") + '>' +
         '<div class="card-row-top"><div><div class="card-row-title">' + esc(r.desc || "—") + '</div><div class="card-row-sub">' + r.date + " · " + esc(typeLabels[r.type] || r.type) + "</div></div>" +
         '<div class="card-row-amt ' + tone + '">' + amtTxt + "</div></div>" +
         '<div class="card-row-meta">' +
@@ -3545,7 +3649,7 @@ const UI = {
       '<button class="btn btn-secondary small" onclick="UI.openModal(\'receivable\',{personId:\'' + p.id + '\'})">' + esc(t.aReceivable) + "</button>" +
       '<button class="btn btn-secondary small" onclick="UI.openModal(\'payable\',{personId:\'' + p.id + '\'})">' + esc(t.aDebt) + "</button>" +
       '<button class="link-btn small" onclick="UI.openModal(\'person_edit\',' + editArgs(p) + ')">' + esc(app.L("Edit")) + "</button>" +
-      (canDelete ? '<button class="link-btn small" onclick="UI.deletePersonC(\'' + p.id + '\')">' + esc(app.L("Delete")) + "</button>" : "");
+      (canDelete ? '<button class="link-btn small danger" onclick="UI.deletePersonC(\'' + p.id + '\')">' + esc(app.L("Delete")) + "</button>" : "");
 
     const table = '<div class="table-wrap desktop-only"><table class="table"><thead><tr>' +
       "<th>" + esc(t.name) + "</th><th>" + esc(t.phone) + "</th><th class=\"num\">" + esc(t.owesMe) + "</th><th class=\"num\">" + esc(t.iOwe) + "</th><th class=\"num\">" + esc(t.net) + "</th><th></th>" +
@@ -3586,10 +3690,20 @@ const UI = {
     const canDelete = !app.personHasRecords(p.id);
     const editArgs = JSON.stringify({ id: p.id, name: p.name, phone: p.phone || "", relation: p.relation || "other", color: this.personColor(p), notes: p.notes || "" }).replace(/"/g, "&quot;");
 
-    const summary = '<div class="tile-grid three">' +
-      '<div class="pos-tile"><div class="pos-label">' + esc(t.owesMe) + '</div><div class="pos-value tone-pos">' + app.fmt(r) + "</div></div>" +
-      '<div class="pos-tile"><div class="pos-label">' + esc(t.iOwe) + '</div><div class="pos-value tone-neg">' + app.fmt(y) + "</div></div>" +
-      '<div class="pos-tile"><div class="pos-label">' + esc(t.net) + '</div><div class="pos-value ' + (net >= 0 ? "tone-pos" : "tone-neg") + '">' + app.fmt(net) + "</div></div>" +
+    // .hero-card.alt -- same page-level "headline number" treatment
+    // Forecast/Cash Flow already give their own single most important
+    // figure (not the fixed-dark .hero-card, that's reserved for the one
+    // app-wide money hero on Dashboard). Net becomes the headline since
+    // it's the one number that answers "where do things stand with this
+    // person" at a glance; Owes me/I owe move into the sub-row underneath,
+    // same layout Dashboard's own hero-sub-row already uses.
+    const summary = '<div class="hero-card alt">' +
+      '<div class="hero-label">' + esc(t.net) + '</div>' +
+      '<div class="hero-value ' + (net >= 0 ? "tone-pos" : "tone-neg") + '">' + app.fmt(net) + "</div>" +
+      '<div class="hero-sub-row">' +
+        '<div><div class="hero-sub-label">' + esc(t.owesMe) + '</div><div class="hero-sub-value tone-pos">' + app.fmt(r) + "</div></div>" +
+        '<div><div class="hero-sub-label">' + esc(t.iOwe) + '</div><div class="hero-sub-value tone-neg">' + app.fmt(y) + "</div></div>" +
+      "</div>" +
     "</div>";
 
     // Every open plain loan/amanah row this person is party to, either
@@ -3652,7 +3766,7 @@ const UI = {
       '<button class="btn btn-secondary small" onclick="UI.openModal(\'receivable\',{personId:\'' + p.id + '\'})">' + esc(t.aReceivable) + "</button>" +
       '<button class="btn btn-secondary small" onclick="UI.openModal(\'payable\',{personId:\'' + p.id + '\'})">' + esc(t.aDebt) + "</button>" +
       '<button class="link-btn small" onclick="UI.openModal(\'person_edit\',' + editArgs + ')">' + esc(app.L("Edit")) + "</button>" +
-      (canDelete ? '<button class="link-btn small" onclick="UI.deletePersonC(\'' + p.id + '\')">' + esc(app.L("Delete")) + "</button>" : "") +
+      (canDelete ? '<button class="link-btn small danger" onclick="UI.deletePersonC(\'' + p.id + '\')">' + esc(app.L("Delete")) + "</button>" : "") +
     "</div>";
 
     const backBtn = '<button class="link-btn small" onclick="UI.setPage(\'people\')">← ' + esc(t.people) + "</button>";
@@ -3707,7 +3821,7 @@ const UI = {
         (open ? '<div class="sched-list">' + rowsHtml + "</div>" : "") +
         '<div class="btn-row wrap">' +
         '<button class="btn btn-secondary small" onclick="UI.openModal(\'installment_payment\',{planId:\'' + p.id + '\'})">' + esc(t.recordPayment) + "</button>" +
-        (app.planCanDelete(p.id) ? '<button class="link-btn small" onclick="UI.deletePlanC(\'' + p.id + '\')">' + esc(app.L("Delete plan")) + "</button>" : "") +
+        (app.planCanDelete(p.id) ? '<button class="link-btn small danger" onclick="UI.deletePlanC(\'' + p.id + '\')">' + esc(app.L("Delete plan")) + "</button>" : "") +
         "</div>" +
       "</div>";
     }).join("");
@@ -3765,7 +3879,7 @@ const UI = {
         '<div class="btn-row wrap">' +
         (s.remaining > 0.001 ? '<button class="btn btn-secondary small" onclick="UI.openModal(\'statement_payment\',{statementId:\'' + s.id + '\'})">' + esc(t.pay) + "</button>" : "") +
         '<button class="link-btn small" onclick="UI.openModal(\'card_statement_edit\',' + editArgs(s) + ')">' + esc(app.L("Edit")) + "</button>" +
-        (canDelete ? '<button class="link-btn small" onclick="UI.deleteCardStatementC(\'' + s.id + '\')">' + esc(app.L("Delete")) + "</button>" : "") +
+        (canDelete ? '<button class="link-btn small danger" onclick="UI.deleteCardStatementC(\'' + s.id + '\')">' + esc(app.L("Delete")) + "</button>" : "") +
         "</div></div>";
     }).join("");
 
@@ -3796,7 +3910,7 @@ const UI = {
         "</div>" +
         '<div class="btn-row wrap">' +
         '<button class="link-btn small" onclick="UI.openModal(\'goal_edit\',' + editArgs + ')">' + esc(app.L("Edit")) + "</button>" +
-        '<button class="link-btn small" onclick="UI.deleteSavingsGoalC(\'' + g.id + '\')">' + esc(app.L("Delete")) + "</button>" +
+        '<button class="link-btn small danger" onclick="UI.deleteSavingsGoalC(\'' + g.id + '\')">' + esc(app.L("Delete")) + "</button>" +
         "</div></div>";
     }).join("");
     return this.tabHeader(t.goals, goals.length + app.L(" goal(s) · progress follows the linked account's own balance since the goal was set", " هدف · التقدم بيتابع رصيد الحساب المرتبط من وقت ما اتحدد الهدف"),
@@ -3821,7 +3935,7 @@ const UI = {
         (open ? '<div class="sched-list">' + rowsHtml + "</div>" : "") +
         '<div class="btn-row wrap"><button class="btn btn-secondary small" onclick="UI.openModal(\'group_payment\',{groupId:\'' + g.id + '\'})">' + esc(t.gContribute) + '</button><button class="btn btn-secondary small" onclick="UI.openModal(\'group_payout\',{groupId:\'' + g.id + '\'})">' + esc(t.gCollect) + "</button>" +
         '<button class="link-btn small" onclick="UI.openModal(\'group_edit\',' + editArgs + ')">' + esc(app.L("Edit")) + "</button>" +
-        (canDelete ? '<button class="link-btn small" onclick="UI.deleteGroupC(\'' + g.id + '\')">' + esc(app.L("Delete group")) + "</button>" : "") +
+        (canDelete ? '<button class="link-btn small danger" onclick="UI.deleteGroupC(\'' + g.id + '\')">' + esc(app.L("Delete group")) + "</button>" : "") +
         "</div>" +
       "</div>";
     }).join("");
@@ -3912,7 +4026,7 @@ const UI = {
         '<div class="btn-row wrap">' +
         '<button class="btn btn-secondary small" onclick="UI.openModal(\'invest_update\',{investmentId:\'' + v.id + '\'})">' + esc(t.updateValue) + "</button>" +
         '<button class="link-btn small" onclick="UI.openModal(\'investment_edit\',' + editArgs + ')">' + esc(app.L("Edit")) + "</button>" +
-        (canDelete ? '<button class="link-btn small" onclick="UI.deleteInvestmentC(\'' + v.id + '\')">' + esc(app.L("Delete")) + "</button>" : "") +
+        (canDelete ? '<button class="link-btn small danger" onclick="UI.deleteInvestmentC(\'' + v.id + '\')">' + esc(app.L("Delete")) + "</button>" : "") +
         "</div></div>";
     }).join("");
     return this.tabHeader(t.investments, D.invValue.toFixed ? (app.fmt(D.invValue) + " · " + esc(t.pnl) + " " + app.fmtS(D.invValue - D.invCost)) : "", [[t.aInvest, "UI.openModal('investment')"]]) + '<div class="card-list">' + cards + "</div>";
@@ -4055,7 +4169,7 @@ const UI = {
     const custom = d.customCategories || { income: [], expense: [] };
     const catChips = (kind, list) => list.length ?
       '<div class="btn-row wrap">' + list.map(c =>
-        '<span class="pill">' + esc(c) + ' <button class="link-btn small" onclick="UI.deleteCategoryC(\'' + kind + '\',\'' + esc(c).replace(/'/g, "\\'") + '\')" aria-label="' + esc(app.L("Remove ") + c) + '">×</button></span>'
+        '<span class="pill">' + esc(c) + ' <button class="link-btn small danger" onclick="UI.deleteCategoryC(\'' + kind + '\',\'' + esc(c).replace(/'/g, "\\'") + '\')" aria-label="' + esc(app.L("Remove ") + c) + '">×</button></span>'
       ).join("") + "</div>" :
       '<p class="muted small">' + esc(app.L("No custom categories yet.", "مفيش فئات مخصصة لسه.")) + "</p>";
     const categoriesSection = '<section class="dash-section"><h2 class="section-title">' + esc(app.L("Categories")) + '</h2><p class="muted small">' + esc(app.L("Add your own income and expense categories — they show up in every entry form alongside the built-in ones.", "ضيف فئات دخل ومصروف خاصة بيك — هتظهر في كل نموذج إدخال جمب الفئات الجاهزة.")) + '</p>' +
@@ -4240,7 +4354,23 @@ const UI = {
     const field = (f) => {
       const val = form[f.k] !== undefined ? form[f.k] : "";
       let input;
-      if (f.type === "select") {
+      if (f.k === "category" && (S.modal === "income" || S.modal === "expense")) {
+        // Vivid pills in front of the plain category <select> -- same
+        // "visual buttons drive the real control" shape as the color
+        // swatches below, using each category's own categoryColor() so the
+        // pills match the exact colors the category bars/charts already
+        // use. Scoped to income/expense only (not the shared "recurring"
+        // form, whose category list mixes both kinds -- categoryColor()
+        // needs to know which one a name belongs to, and a single mixed
+        // list can't say that unambiguously) -- that form keeps the plain
+        // select. The select stays fully wired underneath (autocomplete
+        // from the description field, typing, keyboard nav) -- a pill
+        // click just sets its value directly, same no-render() reasoning
+        // as UI.setColorField.
+        const kind = S.modal === "income" ? "income" : "expense";
+        const pills = f.options.map(o => '<button type="button" class="cat-pill" style="--pill-c:' + app.categoryColor(o.v, kind) + '" onclick="UI.setCategoryField(\'' + esc(o.v).replace(/'/g, "\\'") + '\')">' + esc(o.l) + "</button>").join("");
+        input = '<div class="cat-pill-row">' + pills + '</div><select class="input" id="f_' + f.k + '" name="' + f.k + '">' + f.options.map(o => '<option value="' + esc(o.v) + '"' + (String(val) === String(o.v) ? " selected" : "") + ">" + esc(o.l) + "</option>").join("") + "</select>";
+      } else if (f.type === "select") {
         // Person forms only: picking a Relation also resets Color to that
         // type's default (see UI.setPersonRelation) -- nothing else uses a
         // select's onchange to touch another field.
