@@ -47,28 +47,71 @@
 </script>
 
 <style>:root{
-  --c-bg:#f3f2f2; --c-surface:#ffffff; --c-surface-2:#f8f4f4; --c-surface-3:#eae7e7;
+  /* Light theme gets the same glass *family* (translucent surfaces, soft
+     blur -- see the shared backdrop-filter rules below) calibrated down
+     from Neon Aurora's dark-only glow: a faint aurora wash instead of
+     saturated orbs, near-white glass instead of near-black, no glow filter
+     (glass on white doesn't read as "neon," just hazy -- --glow-1 is empty
+     here on purpose, see the nav-icon rules). --c-accent-fill keeps its
+     original validated teal rather than picking up dark mode's new violet
+     -- the two no longer have to match (see the note lower down, where
+     this value is set, for why); each was checked against white button
+     text independently. */
+  --c-bg:
+    radial-gradient(560px 420px at 4% -10%, rgba(139,92,246,.05), transparent 60%),
+    radial-gradient(520px 400px at 100% 12%, rgba(34,211,238,.05), transparent 55%),
+    #f3f2f2;
+  --c-surface:rgba(255,255,255,.72); --c-surface-2:rgba(248,244,244,.72); --c-surface-3:rgba(234,231,231,.72);
+  --glow-1:none;
   /* P1 fix: was #7d7979, which measures 3.55–3.94:1 on white/bg — fails
      WCAG AA (4.5:1) for the small caption/label text it's used on
      everywhere ("AVAILABLE", "I OWE", dates). #5a5656 keeps the same warm
      neutral hue but clears AA with margin (7.2:1 on white, 6.5:1 on bg). */
   --c-text:#201e1d; --c-text-soft:#605d5d; --c-text-faint:#5a5656;
   --c-line:color-mix(in srgb, #201e1d 14%, transparent);
-  --c-accent:#0088b0; --c-accent-700:#006786; --c-accent-800:#004961; --c-accent-900:#0a303e;
+  --c-accent:#0088b0; --c-accent-700:#006786; --c-accent-800:#004961;
+  /* Fixed the same in every theme, on purpose -- see .hero-card below: it's
+     always a dark glass panel with light text regardless of the page's own
+     theme, same reasoning as the credit-card tile's own fixed-dark
+     treatment. Was a solid navy; now translucent so the aurora wash shows
+     through it in dark mode -- but only just: real bug caught in review at
+     a lower alpha (.55), this composited over light mode's near-white
+     --c-bg to a medium grey instead of staying dark, breaking the light-
+     cream hero text's contrast. .92 keeps just enough translucency for the
+     glass blur to register while staying dark under any --c-bg. */
+  --c-accent-900:rgba(18,12,36,.92);
   /* P1 fix: solid-fill interactive elements (primary button, active nav,
      selected pill) use this instead of --c-accent directly — white text on
      #0088b0 measures 4.08:1 and fails AA for normal-size text; on #006786
-     it's 6.4:1. Fixed across both themes since it's dark enough to hold up
-     on either background. */
+     it's 6.4:1. Was fixed across both themes (same value, dark enough to
+     hold up on either background) until the Neon Aurora pass gave dark its
+     own violet #7c3aed here instead (white text on it is ~5.9:1, still
+     clears AA) -- light keeps this original teal, unchanged and still
+     independently valid on its own. See the note where dark redefines it
+     for why the two are no longer required to match. */
   --c-accent-fill:#006786;
-  --c-accent2:#d6006c; --c-accent2-700:#aa0b56; --c-accent2-100:#fff1f4;
-  --c-pos:#006786; --c-pos-bg:#e9f8ff; --c-neg:#aa0b56; --c-neg-bg:#fff1f4;
+  /* --c-accent2-100/--c-neg-bg: were an opaque #fff1f4 (identical value,
+     both this pale pink). Now translucent -- same visible tint composited
+     over --c-bg, but real bug caught in review: .due-banner and .pos-tile
+     (both use one of these as their own background, not --c-surface) sat
+     in the shared backdrop-filter list below while opaque, so their blur
+     had nothing translucent to blur -- pure wasted compositing, the exact
+     per-element cost that list otherwise takes care to avoid. Translucent
+     now, the blur actually does something, in light mode same as dark. */
+  --c-accent2:#d6006c; --c-accent2-700:#aa0b56; --c-accent2-100:rgba(170,11,86,.07);
+  --c-pos:#006786; --c-pos-bg:#e9f8ff; --c-neg:#aa0b56; --c-neg-bg:rgba(170,11,86,.07);
   /* Categorical palette for category bars (Dashboard/Reports) and budget
      rows -- 8 fixed slots, assigned by CATEGORY_COLOR_ORDER (engine.js),
-     never by amount/rank. Validated (dataviz-skill validator) against this
-     app's actual light surface (#ffffff): worst adjacent CVD ΔE 9.1, worst
-     adjacent normal-vision ΔE 19.6 -- both clear the floor. Re-run the
-     validator before changing any of these 8 hex values or their order. */
+     never by amount/rank. UNCHANGED from before the Neon Aurora glass pass,
+     and re-validated (dataviz-skill validator) against what these bars
+     actually render over now -- --c-surface-3 (translucent, the glass
+     pass) composited over --c-bg's own faint aurora tint, ~#ede9ea, not
+     flat #ffffff: still all pass -- lightness band, chroma floor, worst
+     adjacent CVD ΔE 9.1, worst adjacent normal-vision ΔE 19.6, same
+     numbers as the original #ffffff validation (the light aurora wash is
+     faint enough, 0.05 alpha, not to move them). Re-run the validator
+     against the current --c-surface-3 composite before changing any of
+     these 8 hex values or their order. */
   --cat-1:#2a78d6; --cat-2:#eb6834; --cat-3:#1baf7a; --cat-4:#eda100;
   --cat-5:#e87ba4; --cat-6:#008300; --cat-7:#4a3aa7; --cat-8:#e34948;
   --cat-neutral:#8f97a6;
@@ -85,41 +128,83 @@
   --font-body:'Inter', 'Noto Sans Arabic', system-ui, sans-serif;
   --radius:10px; --shadow: 0 1px 2px rgba(32,30,29,.06), 0 6px 20px -10px rgba(32,30,29,.22);
 }
+/* ---- Neon Aurora (dark theme) ------------------------------------------
+   Approved from the dashboard-style preview (Frosted Glass / Dimensional
+   Steel / Neon Aurora) -- Neon Aurora picked, applied system-wide: every
+   surface that already reads off --c-surface/--c-surface-2/--c-surface-3
+   becomes translucent glass (see the new backdrop-filter rules below,
+   applied once to the shared classes rather than per page), --c-bg carries
+   the ambient violet/cyan/pink aurora wash every glass panel blurs, and
+   --shadow gets a violet glow to match. --c-accent-900 (the hero card's
+   old *solid* fill) is retired in favor of glass everywhere -- see
+   .hero-card below, now translucent over this same aurora instead of a
+   flat navy block. --glow-* are new: per-surface drop-shadow glow amounts,
+   used by the vivid nav icons (.nav-ico, further down) -- the one place
+   that reads it today; a future glowing accent badge can reuse the same
+   token rather than inventing its own dark-only drop-shadow. */
 @media (prefers-color-scheme: dark){
   :root:not([data-theme="light"]){
-    --c-bg:#17191a; --c-surface:#202324; --c-surface-2:#262a2b; --c-surface-3:#2e3233;
-    --c-text:#efeeec; --c-text-soft:#b7b3b0; --c-text-faint:#9a9694;
-    --c-line:color-mix(in srgb, #efeeec 16%, transparent);
-    --c-accent:#39b6db; --c-accent-700:#7fd0ea; --c-accent-800:#a8def0; --c-accent-900:#0a303e;
-    --c-accent-fill:#006786;
-    --c-accent2:#ff6fa8; --c-accent2-700:#ff9ac1; --c-accent2-100:#3a1523;
-    --c-pos:#5fd0ee; --c-pos-bg:#12303a; --c-neg:#ff9ac1; --c-neg-bg:#3a1523;
-    /* Same 8 hues, stepped for the dark surface (#202324) -- validated
-       separately: worst adjacent CVD ΔE 8.4, worst adjacent normal-vision
-       ΔE 19.3. */
+    --c-bg:
+      radial-gradient(640px 480px at 6% -8%, rgba(139,92,246,.20), transparent 60%),
+      radial-gradient(600px 460px at 104% 14%, rgba(34,211,238,.16), transparent 55%),
+      radial-gradient(560px 480px at 12% 104%, rgba(244,114,182,.13), transparent 58%),
+      #06060a;
+    --c-surface:rgba(24,23,38,.6); --c-surface-2:rgba(32,31,50,.55); --c-surface-3:rgba(41,40,62,.55);
+    --c-text:#f3f1fb; --c-text-soft:#bab6d6; --c-text-faint:#8f8bb0;
+    --c-line:rgba(165,180,255,.22);
+    --c-accent:#67e8f9; --c-accent-700:#a5f3fc; --c-accent-800:#cffafe; --c-accent-900:rgba(18,12,36,.92);
+    --c-accent-fill:#7c3aed;
+    --c-accent2:#f472b6; --c-accent2-700:#f9a8d4; --c-accent2-100:rgba(244,114,182,.16);
+    --c-pos:#4ee9c2; --c-pos-bg:rgba(78,233,194,.14); --c-neg:#ff7fa1; --c-neg-bg:rgba(255,127,161,.14);
+    /* Same 8 hues, UNCHANGED from the pre-glass palette -- re-validated
+       (dataviz-skill validator) rather than assumed, against this surface's
+       real composite (--c-surface-3 over the aurora --c-bg, ~#1f1a30):
+       lightness band, chroma floor and contrast all still pass, worst
+       adjacent CVD ΔE 8.4, worst adjacent normal-vision ΔE 19.3 -- all
+       clear the same floor as the original #202324 validation. (A first
+       attempt at "brighter, more neon" replacements failed the dark
+       lightness band outright -- OKLCH L 0.69-0.77 against a 0.48-0.67
+       ceiling -- so the original values turned out to already be correct
+       for this surface too, not just close enough.) Re-run the validator
+       against the current --c-surface-3 composite before changing any of
+       these 8 values or their order. */
     --cat-1:#3987e5; --cat-2:#d95926; --cat-3:#199e70; --cat-4:#c98500;
     --cat-5:#d55181; --cat-6:#008300; --cat-7:#9085e9; --cat-8:#e66767;
     --cat-neutral:#7c8494;
-    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 6px 20px -10px rgba(0,0,0,.6);
+    --shadow: 0 1px 2px rgba(0,0,0,.5), 0 22px 46px -20px rgba(139,92,246,.4);
+    --glow-1:drop-shadow(0 0 8px currentColor);
   }
 }
 :root[data-theme="dark"]{
-  --c-bg:#17191a; --c-surface:#202324; --c-surface-2:#262a2b; --c-surface-3:#2e3233;
-  --c-text:#efeeec; --c-text-soft:#b7b3b0; --c-text-faint:#9a9694;
-  --c-line:color-mix(in srgb, #efeeec 16%, transparent);
-  --c-accent:#39b6db; --c-accent-700:#7fd0ea; --c-accent-800:#a8def0; --c-accent-900:#0a303e;
+  --c-bg:
+    radial-gradient(640px 480px at 6% -8%, rgba(139,92,246,.20), transparent 60%),
+    radial-gradient(600px 460px at 104% 14%, rgba(34,211,238,.16), transparent 55%),
+    radial-gradient(560px 480px at 12% 104%, rgba(244,114,182,.13), transparent 58%),
+    #06060a;
+  --c-surface:rgba(24,23,38,.6); --c-surface-2:rgba(32,31,50,.55); --c-surface-3:rgba(41,40,62,.55);
+  --c-text:#f3f1fb; --c-text-soft:#bab6d6; --c-text-faint:#8f8bb0;
+  --c-line:rgba(165,180,255,.22);
+  --c-accent:#67e8f9; --c-accent-700:#a5f3fc; --c-accent-800:#cffafe; --c-accent-900:rgba(18,12,36,.92);
   --cat-1:#3987e5; --cat-2:#d95926; --cat-3:#199e70; --cat-4:#c98500;
   --cat-5:#d55181; --cat-6:#008300; --cat-7:#9085e9; --cat-8:#e66767;
   --cat-neutral:#7c8494;
-  --c-accent-fill:#006786;
-  --c-accent2:#ff6fa8; --c-accent2-700:#ff9ac1; --c-accent2-100:#3a1523;
-  --c-pos:#5fd0ee; --c-pos-bg:#12303a; --c-neg:#ff9ac1; --c-neg-bg:#3a1523;
-  --shadow: 0 1px 2px rgba(0,0,0,.4), 0 6px 20px -10px rgba(0,0,0,.6);
+  --c-accent-fill:#7c3aed;
+  --c-accent2:#f472b6; --c-accent2-700:#f9a8d4; --c-accent2-100:rgba(244,114,182,.16);
+  --c-pos:#4ee9c2; --c-pos-bg:rgba(78,233,194,.14); --c-neg:#ff7fa1; --c-neg-bg:rgba(255,127,161,.14);
+  --shadow: 0 1px 2px rgba(0,0,0,.5), 0 22px 46px -20px rgba(139,92,246,.4);
+  --glow-1:drop-shadow(0 0 8px currentColor);
 }
 
 *{box-sizing:border-box}
 body{margin:0;background:var(--c-bg);color:var(--c-text);font-family:var(--font-body)}
-#root{font-family:var(--font-body);color:var(--c-text);background:var(--c-bg);min-height:100vh}
+/* #root sits directly inside body and covers it edge to edge (min-height:
+   100vh) -- while --c-bg was a flat color, painting it again here was
+   effectively free; now that it's a 2-3 layer radial-gradient stack (the
+   Neon Aurora aurora wash), that's real duplicated gradient compute for a
+   layer nothing ever shows through to see. body's own paint stays (an iOS
+   overscroll-bounce can reveal it past #root's edge), just not repeated
+   here. */
+#root{font-family:var(--font-body);color:var(--c-text);min-height:100vh}
 .shell{display:flex;flex-direction:column;min-height:100vh;padding-bottom:70px}
 .main-col{flex:1;min-width:0}
 button,input,select{font-family:inherit;font-size:inherit;color:inherit}
@@ -132,9 +217,57 @@ h1,h2,h3{font-family:var(--font-head);font-weight:600;margin:0;text-wrap:balance
 .muted-amt{color:var(--c-text-faint)}
 :focus-visible{outline:2px solid var(--c-accent);outline-offset:2px}
 
+/* ---- glass ---------------------------------------------------------------
+   One shared blur rule for every panel-sized surface built on --c-surface/
+   --c-surface-2/--c-surface-3 (all translucent now, in both themes -- see
+   the token blocks up top) -- this is what actually turns "translucent"
+   into "glass": blurring whatever sits behind each panel (the aurora wash
+   in dark mode, the page underneath in light) instead of just showing a
+   flat tint. One rule, not repeated per class, so a future surface-using
+   class joins the same treatment by joining this selector list.
+   Two kinds of surface are deliberately left out of it, not by oversight:
+   1) Anything that can render in real quantity -- .pill/.tag/tag-chips,
+      .card-row (Transactions renders up to txVisible, 25, growing every
+      "Load more" click and never shrinking back down -- a long session's
+      list can genuinely reach the hundreds), and .btn/.btn-secondary
+      (small, and frequently several per screen in a btn-row). Backdrop-
+      filter on that many elements is real compositing cost for no visible
+      gain over the translucent tint they already get from --c-surface-2
+      alone.
+   2) Anything that only ever renders INSIDE a surface this list already
+      blurs -- .input inside .dialog, .sheet-item inside .sheet, .metric-
+      tile inside .metrics-row, .seg inside .topbar (which blurs itself
+      directly, just below). Real bug caught in review: an earlier pass
+      blurred both the container and its own children, so the child's
+      backdrop-filter was re-blurring an already-blurred surface -- a
+      second compositing layer with no additional visible effect, pure
+      GPU cost. The outer surface's blur already covers everything drawn
+      on top of it.
+   .primary-nav and .metrics-row get a lighter blur(8px) below, not this
+   rule's 16px -- both are sticky/fixed full-width bars that repaint on
+   every scroll tick (flagged in review as the two most likely to cost
+   real scroll-jank on lower-end mobile at the heavier radius), same
+   intensity .topbar already uses for the identical reason. */
+.pos-tile, .stat-box, .dialog, .sheet,
+.lock-card, .alert-card,
+.due-banner{
+  backdrop-filter:blur(16px) saturate(140%);
+  -webkit-backdrop-filter:blur(16px) saturate(140%);
+}
+.primary-nav, .metrics-row{
+  backdrop-filter:blur(8px) saturate(140%);
+  -webkit-backdrop-filter:blur(8px) saturate(140%);
+}
+
 /* ---- topbar ---- */
+/* Was color-mix(in srgb, var(--c-bg) 90%, transparent) -- valid only while
+   --c-bg was a plain color. --c-bg is now a background-image list (the
+   aurora gradients), which color-mix() can't take a <color> from, so this
+   uses --c-surface directly instead -- already the right translucent glass
+   tint, and consistent with every other blurred panel. */
 .topbar{display:flex;align-items:center;gap:14px;padding:12px 16px;border-bottom:1px solid var(--c-line);
-  position:sticky;top:0;z-index:30;background:color-mix(in srgb, var(--c-bg) 90%, transparent);backdrop-filter:blur(8px);
+  position:sticky;top:0;z-index:30;background:var(--c-surface);backdrop-filter:blur(8px);
+  -webkit-backdrop-filter:blur(8px);
   flex-wrap:wrap}
 .brand{display:flex;align-items:center;gap:9px}
 .brand-mark{width:30px;height:30px;border-radius:999px;background:var(--c-accent-fill);color:#fff;
@@ -188,13 +321,21 @@ h1,h2,h3{font-family:var(--font-head);font-weight:600;margin:0;text-wrap:balance
 .due-banner{background:var(--c-neg-bg);border:1px solid var(--c-line);border-radius:10px;padding:14px 16px;margin-bottom:18px}
 
 /* ---- hero ---- */
-.hero-card{background:var(--c-accent-900);color:#f5efe8;border-radius:var(--radius);padding:22px 22px 20px;box-shadow:var(--shadow)}
+/* Always a dark glass panel with light text, whatever theme the rest of the
+   page is in (--c-accent-900 is the same fixed translucent value in every
+   theme block -- see its definition up top) -- same "fixed regardless of
+   theme" reasoning the credit-card tile already used, just glass now
+   instead of a flat navy fill, so the page's own aurora wash shows through
+   it blurred. */
+.hero-card{background:var(--c-accent-900);color:#f5efe8;border-radius:var(--radius);padding:22px 22px 20px;
+  box-shadow:var(--shadow);border:1px solid rgba(255,255,255,.14);
+  backdrop-filter:blur(22px) saturate(150%);-webkit-backdrop-filter:blur(22px) saturate(150%)}
 /* "You can spend today" -- its own tinted banner inside the hero card, same
    technique as the credit-card tile's .cc-stmt badge: fixed colors, not the
    theme's --c-pos/--c-neg, so it reads reliably against this card's always-
-   dark #0a303e background (--c-accent-900 is the same value in both light
-   and dark mode). Mint while there's room; a warning amber once today's own
-   obligations would already eat into what's on hand (spendToday < 0). */
+   dark background (--c-accent-900 is the same value in every theme block).
+   Mint while there's room; a warning amber once today's own obligations
+   would already eat into what's on hand (spendToday < 0). */
 .spend-today{margin-top:14px;padding:10px 14px;border-radius:10px;display:flex;justify-content:space-between;align-items:center;gap:10px;
   background:rgba(112,224,180,.16);border:1px solid rgba(112,224,180,.4)}
 .spend-today.tight{background:rgba(255,166,110,.2);border-color:rgba(255,166,110,.5)}
@@ -372,6 +513,81 @@ button.bar-row{width:100%;border:0;background:none;padding:6px 0;min-height:44px
   padding:7px 2px;border-radius:10px;color:var(--c-text-soft);min-height:52px;cursor:pointer}
 .navbtn span{font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
 .navbtn.on{color:var(--c-accent-fill)}
+
+/* Vivid icons -- each section keeps its own fixed hue (drawn from the same
+   aurora family as the rest of the glass system), instead of every icon
+   sharing one flat currentColor, so the nav reads as vivid rather than a
+   monochrome strip. .nav-ico wraps svgIcon()'s own <svg fill="none"
+   stroke="currentColor">, so setting color here is enough -- no icon
+   markup to touch, and it applies identically in the mobile bottom bar,
+   the desktop sidebar and the More sheet grid since all three reuse the
+   same wrapper. Each icon keeps its own color even on the active tab (the
+   button/label around it still gets the usual on-state treatment) -- a
+   colorless active icon would read as "this tab lost its color," not
+   "selected."
+   Two hue sets, not one -- these are the base (light-theme) values: darker,
+   more saturated versions so they clear the ~3:1 graphical-object contrast
+   floor against the light glass nav bar (~#f8f7f7 composited). Real bug
+   caught in review: the first pass used one pale-neon set for both themes
+   -- correct against the dark aurora background they were tuned for, but
+   several (.nav-ico-goals' mint, .nav-ico-settings' pale slate) measured
+   under 1.5:1 against a light surface, effectively invisible. Dark theme
+   overrides every one of these below to the brighter, glow-friendly neon
+   version -- same two-block pattern (@media + [data-theme]) every other
+   themed token in this file already uses. Glow itself stays dark-only
+   (--glow-1 is empty in light) so these read as neon at night and as
+   plain saturated color by day, not a smudged shadow on a white surface. */
+.nav-ico{display:inline-flex;filter:var(--glow-1)}
+.nav-ico-dashboard{color:#0e7490}
+.nav-ico-accounts{color:#6d28d9}
+.nav-ico-transactions{color:#b45309}
+.nav-ico-people{color:#be185d}
+.nav-ico-installments{color:#0f766e}
+.nav-ico-statements{color:#a16207}
+.nav-ico-goals{color:#15803d}
+.nav-ico-groups{color:#4338ca}
+.nav-ico-ledgers{color:#be123c}
+.nav-ico-investments{color:#0369a1}
+.nav-ico-recurring{color:#c2410c}
+.nav-ico-forecast{color:#a21caf}
+.nav-ico-reports{color:#1d4ed8}
+.nav-ico-cashflow{color:#047857}
+.nav-ico-settings{color:#475569}
+.nav-ico-more{color:#6d28d9}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]) .nav-ico-dashboard{color:#67e8f9}
+  :root:not([data-theme="light"]) .nav-ico-accounts{color:#a78bfa}
+  :root:not([data-theme="light"]) .nav-ico-transactions{color:#fbbf24}
+  :root:not([data-theme="light"]) .nav-ico-people{color:#f472b6}
+  :root:not([data-theme="light"]) .nav-ico-installments{color:#2dd4bf}
+  :root:not([data-theme="light"]) .nav-ico-statements{color:#eab308}
+  :root:not([data-theme="light"]) .nav-ico-goals{color:#86efac}
+  :root:not([data-theme="light"]) .nav-ico-groups{color:#818cf8}
+  :root:not([data-theme="light"]) .nav-ico-ledgers{color:#fb7185}
+  :root:not([data-theme="light"]) .nav-ico-investments{color:#38bdf8}
+  :root:not([data-theme="light"]) .nav-ico-recurring{color:#fb923c}
+  :root:not([data-theme="light"]) .nav-ico-forecast{color:#e879f9}
+  :root:not([data-theme="light"]) .nav-ico-reports{color:#60a5fa}
+  :root:not([data-theme="light"]) .nav-ico-cashflow{color:#34d399}
+  :root:not([data-theme="light"]) .nav-ico-settings{color:#cbd5e1}
+  :root:not([data-theme="light"]) .nav-ico-more{color:#c4b5fd}
+}
+:root[data-theme="dark"] .nav-ico-dashboard{color:#67e8f9}
+:root[data-theme="dark"] .nav-ico-accounts{color:#a78bfa}
+:root[data-theme="dark"] .nav-ico-transactions{color:#fbbf24}
+:root[data-theme="dark"] .nav-ico-people{color:#f472b6}
+:root[data-theme="dark"] .nav-ico-installments{color:#2dd4bf}
+:root[data-theme="dark"] .nav-ico-statements{color:#eab308}
+:root[data-theme="dark"] .nav-ico-goals{color:#86efac}
+:root[data-theme="dark"] .nav-ico-groups{color:#818cf8}
+:root[data-theme="dark"] .nav-ico-ledgers{color:#fb7185}
+:root[data-theme="dark"] .nav-ico-investments{color:#38bdf8}
+:root[data-theme="dark"] .nav-ico-recurring{color:#fb923c}
+:root[data-theme="dark"] .nav-ico-forecast{color:#e879f9}
+:root[data-theme="dark"] .nav-ico-reports{color:#60a5fa}
+:root[data-theme="dark"] .nav-ico-cashflow{color:#34d399}
+:root[data-theme="dark"] .nav-ico-settings{color:#cbd5e1}
+:root[data-theme="dark"] .nav-ico-more{color:#c4b5fd}
 @media (min-width:900px) and (pointer:fine){
   .shell{flex-direction:row;padding-bottom:0}
   .primary-nav{position:sticky;top:0;inset-inline:auto;bottom:auto;flex-direction:column;width:196px;flex:none;height:100vh;
@@ -379,6 +595,19 @@ button.bar-row{width:100%;border:0;background:none;padding:6px 0;min-height:44px
   .navbtn{flex:none;flex-direction:row;justify-content:flex-start;padding:9px 12px;gap:10px;min-height:44px}
   .navbtn span{font-size:14px}
   .navbtn.on{background:var(--c-accent-fill);color:#fff}
+  /* Real bug caught in review: .nav-ico-* sets color directly on the icon's
+     own <span>, which is MORE specific than inherited color -- so on this
+     solid active-tab fill, the icon kept its own fixed hue instead of
+     picking up the white .navbtn.on{color:#fff} above, going near-
+     invisible against a background chosen to contrast with white text, not
+     with that icon's own color. .navbtn.on .nav-ico (3 classes) outranks
+     any single .nav-ico-* class (1 class) regardless of source order, so
+     this reliably wins. Selected-and-vivid isn't a real option here (the
+     mobile bottom bar and the More sheet already carry "vivid" -- this is
+     the one place a plain, unmistakable "selected" state matters more).
+     Glow is switched off too, for the same reason: a bright icon on a
+     bright fill doesn't need it and it just muddies the edge. */
+  .navbtn.on .nav-ico{color:#fff;filter:none}
   .main-col .topbar,.main-col .metrics-row{position:sticky;top:0;z-index:30}
   .main-col .metrics-row{top:57px}
   .page{padding-bottom:40px}
@@ -387,6 +616,7 @@ button.bar-row{width:100%;border:0;background:none;padding:6px 0;min-height:44px
 /* ---- More sheet ---- */
 .sheet-backdrop{position:fixed;inset:0;background:rgba(20,18,17,.4);z-index:45}
 .sheet{position:fixed;inset-inline:0;bottom:0;z-index:46;background:var(--c-surface);border-radius:16px 16px 0 0;
+  border:1px solid var(--c-line);border-bottom:0;
   padding:10px 18px calc(18px + env(safe-area-inset-bottom));box-shadow:0 -8px 30px rgba(0,0,0,.2);max-height:70vh;overflow:auto}
 .sheet-handle{width:36px;height:4px;border-radius:999px;background:var(--c-line);margin:0 auto 12px}
 .sheet-title{font-family:var(--font-head);font-size:16.5px;margin-bottom:12px}
@@ -401,6 +631,7 @@ button.bar-row{width:100%;border:0;background:none;padding:6px 0;min-height:44px
 
 /* ---- modal ---- */
 .dialog{position:fixed;inset-inline:12px;top:50%;transform:translateY(-50%);z-index:51;background:var(--c-surface);
+  border:1px solid var(--c-line);
   border-radius:14px;padding:20px;max-width:480px;margin-inline:auto;max-height:88vh;overflow:auto;box-shadow:var(--shadow)}
 .dialog-title{font-family:var(--font-head);font-size:21px;margin-bottom:12px}
 .dialog-err{background:var(--c-neg-bg);color:var(--c-neg);padding:9px 12px;border-radius:8px;font-size:14.5px;margin-bottom:10px}
@@ -2414,11 +2645,11 @@ const UI = {
     const items = this.app.PRIMARY.map(id => {
       const path = this.app.NAV.find(n => n[0] === id)[1];
       const on = effectivePage === id;
-      return '<button class="navbtn' + (on ? " on" : "") + '" aria-current="' + (on ? "page" : "false") + '" onclick="UI.setPage(\'' + id + '\')">' + svgIcon(path, 20) + '<span>' + esc(t[id]) + "</span></button>";
+      return '<button class="navbtn' + (on ? " on" : "") + '" aria-current="' + (on ? "page" : "false") + '" onclick="UI.setPage(\'' + id + '\')"><span class="nav-ico nav-ico-' + id + '">' + svgIcon(path, 20) + '</span><span>' + esc(t[id]) + "</span></button>";
     }).join("");
     const moreOn = !this.app.PRIMARY.includes(effectivePage);
     return '<nav class="primary-nav" aria-label="' + esc(t.primaryNav) + '">' + items +
-      '<button class="navbtn' + (moreOn ? " on" : "") + '" aria-current="' + (moreOn ? "page" : "false") + '" aria-expanded="' + (S.moreOpen ? "true" : "false") + '" onclick="UI.toggleMore()">' + svgIcon("M5 12h.01M12 12h.01M19 12h.01", 20) + '<span>' + esc(t.more) + "</span></button>" +
+      '<button class="navbtn' + (moreOn ? " on" : "") + '" aria-current="' + (moreOn ? "page" : "false") + '" aria-expanded="' + (S.moreOpen ? "true" : "false") + '" onclick="UI.toggleMore()"><span class="nav-ico nav-ico-more">' + svgIcon("M5 12h.01M12 12h.01M19 12h.01", 20) + '</span><span>' + esc(t.more) + "</span></button>" +
     "</nav>";
   },
   renderMoreSheet(t) {
@@ -2430,7 +2661,7 @@ const UI = {
         '<div class="sheet-handle"></div>' +
         '<div class="sheet-title">' + esc(t.more) + "</div>" +
         '<div class="sheet-grid">' + rest.map(([id, path]) =>
-          '<button class="sheet-item' + (S.page === id ? " on" : "") + '" aria-current="' + (S.page === id ? "page" : "false") + '" onclick="UI.setPage(\'' + id + '\')">' + svgIcon(path, 22) + '<span>' + esc(t[id]) + "</span></button>"
+          '<button class="sheet-item' + (S.page === id ? " on" : "") + '" aria-current="' + (S.page === id ? "page" : "false") + '" onclick="UI.setPage(\'' + id + '\')"><span class="nav-ico nav-ico-' + id + '">' + svgIcon(path, 22) + '</span><span>' + esc(t[id]) + "</span></button>"
         ).join("") + "</div>" +
       "</div>";
   },
