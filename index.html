@@ -2871,10 +2871,15 @@ const UI = {
   },
   // A category pill click -- same direct-set, no-render() reasoning as
   // setColorField, so it can't wipe out unsaved text elsewhere in the
-  // modal (an amount already typed in, a description mid-edit).
+  // modal (an amount already typed in, a description mid-edit). Latches
+  // _categoryTouched, same as picking straight from the <select> does via
+  // its own onchange -- a pill is just another way of making the same
+  // deliberate choice, and suggestCategoryFromDesc must stop overwriting
+  // it either way.
   setCategoryField(name) {
     const el = document.getElementById("f_category");
     if (el) el.value = name;
+    this._categoryTouched = true;
   },
   // Card flip -- direct DOM class toggle, no render(): a flip is a
   // transient view of the same tile, not a data change, so it doesn't
@@ -2980,6 +2985,17 @@ const UI = {
     // seeded this open (including forms with no color2 field at all,
     // where _color2Seeded is undefined and this is simply inert).
     this._color2Touched = !this.app.state.form._color2Seeded;
+    // Same reasoning for the description -> category autocomplete (see
+    // suggestCategoryFromDesc): a category the form already opened with
+    // (an edit's saved value, a Duplicate's copy of the original, a
+    // Dashboard "Quick add" chip's remembered category) is a deliberate
+    // value, not the blank guess autocomplete exists to fill in -- so it
+    // starts "touched" and stays untouched by the user's own further
+    // edits to Description. Keyed on pre.category itself (not e.g.
+    // pre.id) so it covers all of those pre-fill sources at once, not
+    // just editing. A brand new blank entry has no pre.category, so
+    // autocomplete still does its job as the description is first typed.
+    this._categoryTouched = !!(pre && pre.category);
     this.render();
   },
   closeModal() { this.app.state.modal = null; this.app.state.err = ""; this.render(); },
@@ -3042,6 +3058,17 @@ const UI = {
   removeWhatIf(id) { this.app.removeWhatIf(id); this.render(); },
   clearWhatIfC() { this.app.state.whatIf = []; this.render(); },
   suggestCategoryFromDesc(desc) {
+    // Real bug, reported by a user: this used to fire on every keystroke
+    // in Description regardless of whether Category already held a real
+    // choice -- the user's own deliberate pick (or an edit's already-saved
+    // category, see openModal) could silently flip to whatever this
+    // guessed next, with no warning, just by continuing to type or tweak
+    // the description afterward. _categoryTouched (set the moment the
+    // category <select> itself changes, or immediately on opening an edit
+    // -- see openModal/the select's onchange) means autocomplete only
+    // ever fills in a category nobody has chosen yet, exactly like
+    // _color2Touched already does for the color2 field.
+    if (this._categoryTouched) return;
     const app = this.app, kind = app.state.modal;
     const cat = app.suggestCategory(desc, kind);
     if (!cat) return;
@@ -4896,7 +4923,11 @@ const UI = {
         // as UI.setColorField.
         const kind = S.modal === "income" ? "income" : "expense";
         const pills = f.options.map(o => '<button type="button" class="cat-pill" style="--pill-c:' + app.categoryColor(o.v, kind) + '" onclick="UI.setCategoryField(\'' + esc(o.v).replace(/'/g, "\\'") + '\')">' + esc(o.l) + "</button>").join("");
-        input = '<div class="cat-pill-row">' + pills + '</div><select class="input" id="f_' + f.k + '" name="' + f.k + '">' + f.options.map(o => '<option value="' + esc(o.v) + '"' + (String(val) === String(o.v) ? " selected" : "") + ">" + esc(o.l) + "</option>").join("") + "</select>";
+        // onchange="UI._categoryTouched=true" -- the user directly picking
+        // one (dropdown or keyboard, not the pills, which set this
+        // themselves in setCategoryField) is exactly the deliberate choice
+        // suggestCategoryFromDesc must stop overwriting from here on.
+        input = '<div class="cat-pill-row">' + pills + '</div><select class="input" id="f_' + f.k + '" name="' + f.k + '" onchange="UI._categoryTouched=true">' + f.options.map(o => '<option value="' + esc(o.v) + '"' + (String(val) === String(o.v) ? " selected" : "") + ">" + esc(o.l) + "</option>").join("") + "</select>";
       } else if (f.type === "select") {
         // Person forms only: picking a Relation also resets Color to that
         // type's default (see UI.setPersonRelation) -- nothing else uses a
@@ -4922,7 +4953,10 @@ const UI = {
         // user types, suggest whatever category their past entries with a
         // similar description used most. It only ever sets the <select>'s
         // value directly (see suggestCategoryFromDesc) — never touches
-        // app.state, so it can't fight the user's own pick on submit.
+        // app.state directly, but it's the same DOM element submit() reads
+        // via FormData, so it stops the instant _categoryTouched is set
+        // (a real pick, or an edit's already-saved category) rather than
+        // fighting it on every later keystroke.
         const auto = (f.k === "desc" && ["income", "expense"].includes(S.modal)) ? ' oninput="UI.suggestCategoryFromDesc(this.value)"' : "";
         input = '<input class="input" id="f_' + f.k + '" name="' + f.k + '" type="' + f.type + '" value="' + esc(val) + '"' + auto + '>';
       }
