@@ -12,25 +12,19 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,600;8..60,700&family=Inter:wght@400;500;600;700&family=Noto+Sans+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet">
 
-<!-- Home-screen install. This replaces the original export's broken PWA
-     attempt (manifest.json/sw.js/icons that 404'd and a service-worker
-     registration that failed outright on file://). <meta name="theme-color" content="#0a303e">
-<meta name="mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="Personal CFO">
-<link rel="icon" type="image/png" sizes="32x32" href="icon-32.png">
-<link rel="apple-touch-icon" sizes="180x180" href="icon-180.png">
-<link rel="manifest" href="manifest.json"> is filled
-     in per build target: on GitHub Pages, real fetchable files (manifest,
-     icons, sw.js) — Chrome's WebAPK-minting install path fetches those
-     itself and won't trust data: URIs, which is why a data: URI manifest
-     alone still shows the "shortcut, browser badge" outcome instead of a
-     real installed app. Inside the claude.ai Artifact preview, none of this
-     can work regardless of format — that page runs in a sandboxed iframe,
-     and the browser only ever reads install metadata from the top-level
-     claude.ai page, never a nested iframe's. -->
-<meta name="theme-color" content="#0a303e">
+<!-- Home-screen install: real, fetchable manifest.json/icons/sw.js, since
+     GitHub Pages serves actual files (Chrome's WebAPK-minting install path
+     fetches those itself and won't trust a data: URI manifest -- that's
+     the artifact target's approach instead, see personal_cfo_app_final.html,
+     because none of this can work inside the sandboxed claude.ai Artifact
+     iframe regardless of format: the browser only ever reads install
+     metadata from the top-level page, never a nested iframe's).
+     theme-color/manifest.json's background_color+theme_color were still
+     #0a303e, the pre-Neon-Aurora navy -- stale since that reskin shipped,
+     so the OS-generated splash screen (built from exactly those colors
+     plus the icon) didn't match the app it was about to open into. Now
+     #06060a, the current dark theme's actual base color. -->
+<meta name="theme-color" content="#06060a">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -533,6 +527,8 @@ button.bar-row{width:100%;border:0;background:none;padding:6px 0;min-height:44px
 .overall-budget-row{display:flex;justify-content:space-between;font-size:13.5px;margin-bottom:8px;font-variant-numeric:tabular-nums}
 .overall-budget.near{border-color:var(--c-warn);box-shadow:var(--glow-warn)}
 .overall-budget.over{border-color:var(--c-neg);box-shadow:var(--glow-neg)}
+.overall-budget-proj{margin-top:8px;font-size:12.5px;color:var(--c-text-faint)}
+.overall-budget-proj.warn{color:var(--c-warn)}
 
 /* ---- events ---- */
 .event-list{display:flex;flex-direction:column;gap:2px}
@@ -548,6 +544,17 @@ button.bar-row{width:100%;border:0;background:none;padding:6px 0;min-height:44px
 .filter-row{display:grid;grid-template-columns:1.4fr 1fr 1fr 1fr;gap:8px;margin-bottom:14px}
 @media (max-width:640px){ .filter-row{grid-template-columns:1fr 1fr} }
 .input{border:1px solid var(--c-line);border-radius:8px;padding:9px 11px;background:var(--c-surface);min-height:44px;width:100%}
+/* Every .input (text/number/date/select) relied on the browser's own
+   default focus ring -- functional, but the one interactive state in the
+   whole system with no piece of this design language on it at all. Not
+   gated to dark: a focus ring is an accessibility signal, not a
+   decorative glow, so it stays identically legible in both themes,
+   same distinction --shadow (universal) vs --glow-* (dark-only) already
+   draws elsewhere. :focus-visible so a plain mouse click into a field
+   doesn't ring it any more insistently than the browser default already
+   would -- keyboard/programmatic focus is what this is really for. */
+.input:focus-visible{outline:none;border-color:var(--c-accent-fill);
+  box-shadow:0 0 0 3px color-mix(in srgb,var(--c-accent-fill) 22%,transparent)}
 
 /* ---- tables (desktop) / cards (mobile) — fix #2 ---- */
 .desktop-only{display:block}
@@ -557,6 +564,16 @@ button.bar-row{width:100%;border:0;background:none;padding:6px 0;min-height:44px
   .mobile-only{display:block}
 }
 .table-wrap{overflow-x:auto;border:1px solid var(--c-line);border-radius:var(--radius)}
+/* Every scrollable container (the desktop table, the category pill row,
+   dialogs and the More sheet once their content outgrows max-height)
+   still drew the OS's own default scrollbar -- the one piece of chrome
+   left that never picked up --c-line. Thin and line-colored in both
+   engines; a scrollbar is UI chrome, not a glow candidate, so this is
+   unconditional like the focus ring above, not gated to dark. */
+.table-wrap, .cat-pill-row, .dialog, .sheet{scrollbar-width:thin;scrollbar-color:var(--c-line) transparent}
+.table-wrap::-webkit-scrollbar, .cat-pill-row::-webkit-scrollbar, .dialog::-webkit-scrollbar, .sheet::-webkit-scrollbar{width:8px;height:8px}
+.table-wrap::-webkit-scrollbar-track, .cat-pill-row::-webkit-scrollbar-track, .dialog::-webkit-scrollbar-track, .sheet::-webkit-scrollbar-track{background:transparent}
+.table-wrap::-webkit-scrollbar-thumb, .cat-pill-row::-webkit-scrollbar-thumb, .dialog::-webkit-scrollbar-thumb, .sheet::-webkit-scrollbar-thumb{background:var(--c-line);border-radius:999px}
 .table{width:100%;border-collapse:collapse;font-size:14.5px}
 .table th{text-align:start;font-size:12px;letter-spacing:.05em;text-transform:uppercase;color:var(--c-text-faint);padding:10px 12px;border-bottom:1px solid var(--c-line);white-space:nowrap}
 .table td{padding:9px 12px;border-bottom:1px solid var(--c-line);white-space:nowrap}
@@ -823,13 +840,26 @@ button.bar-row{width:100%;border:0;background:none;padding:6px 0;min-height:44px
    and the same success-glow token .cc-stmt/.alert-card's family already
    established (empty in light -- a plain surface/border pill still reads
    fine there without the glow). */
-.flash{position:fixed;bottom:64px;inset-inline:0;text-align:center;
-  opacity:0;transition:opacity .3s ease;pointer-events:none;z-index:20}
+/* #flashStack (the real element this mounts to, a sibling of #root -- see
+   its own comment there) is now just a positioning column, always
+   "visible": each .flash-pill inside it owns its own show/hide instead of
+   the whole container fading as a single unit, so several queued in a
+   row (UI.flash()) actually stack -- newest appended last, at the
+   anchored bottom edge, earlier ones pushed upward as it grows. */
+.flash{position:fixed;bottom:64px;inset-inline:0;z-index:20;pointer-events:none;
+  display:flex;flex-direction:column;align-items:center;gap:8px}
 .flash-pill{display:inline-flex;align-items:center;gap:7px;background:var(--c-surface);border:1px solid var(--c-line);
   border-radius:999px;padding:9px 16px 9px 12px;font-size:13px;color:var(--c-text);
   backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
-  box-shadow:0 1px 0 rgba(255,255,255,.25) inset, var(--glow-pos)}
+  box-shadow:0 1px 0 rgba(255,255,255,.25) inset, var(--glow-pos);
+  opacity:1;transform:translateY(0) scale(1);transition:opacity .25s ease,transform .25s ease}
+.flash-pill-enter{opacity:0;transform:translateY(8px) scale(.92)}
+.flash-pill-exit{opacity:0;transform:translateY(-6px) scale(.96)}
 .flash-pill svg{color:var(--c-pos);flex:none}
+@media (prefers-reduced-motion:reduce){
+  .flash-pill{transition:opacity .15s ease}
+  .flash-pill-enter, .flash-pill-exit{transform:none}
+}
 @media (min-width:900px) and (pointer:fine){ .flash{bottom:14px} }
 
 @media (prefers-reduced-motion:no-preference){
@@ -839,6 +869,14 @@ button.bar-row{width:100%;border:0;background:none;padding:6px 0;min-height:44px
 </style>
 
 <div id="root"><p style="padding:40px;text-align:center;color:#7d7979">Loading…</p></div>
+<!-- Deliberately a sibling of #root, not inside it: UI.render() replaces
+     #root's whole innerHTML on every call, so a flash pill living inside
+     that tree would be wiped by the next render before its own 1.8s was
+     up -- which is the common case, since the one call site
+     (submitModal()) always renders right before flashing. Living here
+     instead, UI.flash() appends/removes pills straight into this element,
+     untouched by render(), so several queued in a row actually stack. -->
+<div id="flashStack" class="flash"></div>
 
 <script>// Personal CFO — core ledger engine, ported faithfully from the original app's
 // decoded source (seed/derive/planState/groupState/forecast/FORMS/submit).
@@ -2745,12 +2783,29 @@ const UI = {
     this.render();
     if (ok) this.flash();
   },
+  // #flashStack lives outside #root in the static page shell (see
+  // index.html/personal_cfo_app_final.html), not inside anything render()
+  // ever regenerates -- render() replaces #root's whole innerHTML on every
+  // call, so a flash pill living inside that tree would vanish the instant
+  // any other action re-rendered before its own 1.8s was up, which is the
+  // common case (submitModal() itself calls render() right before this).
+  // Each pill manages its own lifecycle via its own setTimeout, so several
+  // queued in a row (a quick run of edits/deletes) stack and fade
+  // independently instead of one replacing the last.
   flash() {
-    const el = document.getElementById("savedFlash");
-    if (!el) return;
-    el.style.opacity = "1";
-    clearTimeout(this._flashT);
-    this._flashT = setTimeout(() => { el.style.opacity = "0"; }, 1800);
+    const stack = document.getElementById("flashStack");
+    if (!stack) return;
+    const pill = document.createElement("div");
+    pill.className = "flash-pill flash-pill-enter";
+    pill.setAttribute("role", "status");
+    pill.setAttribute("aria-live", "polite");
+    pill.innerHTML = svgIcon("M20 6 9 17l-5-5", 15) + esc(this.app.state.saved);
+    stack.appendChild(pill);
+    requestAnimationFrame(() => pill.classList.remove("flash-pill-enter"));
+    setTimeout(() => {
+      pill.classList.add("flash-pill-exit");
+      setTimeout(() => pill.remove(), 250);
+    }, 1800);
   },
   loadMoreTx() { this.app.state.txVisible += 25; this.render(true); },
   setFilter(k, v) { this.app.state.filt[k] = v; this.app.state.txVisible = 25; this.render(true); },
@@ -2935,8 +2990,10 @@ const UI = {
         "</div>" +
       "</div>" +
       this.renderMoreSheet(t) +
-      this.renderModal(t) +
-      '<div id="savedFlash" class="flash" role="status" aria-live="polite"><span class="flash-pill">' + svgIcon("M20 6 9 17l-5-5", 15) + esc(S.saved) + "</span></div>";
+      this.renderModal(t);
+      // #flashStack is NOT rendered here on purpose -- see UI.flash()'s
+      // comment: it lives outside #root in the static page shell so it
+      // survives every render() call instead of being wiped by it.
 
     if (savedId && !skipFocusRestore) {
       const el = document.getElementById(savedId);
@@ -3128,6 +3185,18 @@ const UI = {
     const overallBudget = d.overallBudget || 0;
     const overallOver = overallBudget > 0 && monthExpense > overallBudget;
     const overallNear = overallBudget > 0 && !overallOver && monthExpense >= overallBudget * 0.9;
+    // End-of-month projection -- straight-line from the daily average so
+    // far (monthExpense / days elapsed * days in the month). String-sliced
+    // out of the ISO date rather than a Date object, same convention
+    // monthStart above already uses. Skipped before day 3: one early large
+    // purchase can make a 1- or 2-day average wildly overstate the month,
+    // and skipped once already over -- the "over" alert already says the
+    // thing that matters more than a projection would.
+    const dayNum = Number(monthToday.slice(8, 10));
+    const daysInMonth = new Date(Number(monthToday.slice(0, 4)), Number(monthToday.slice(5, 7)), 0).getDate();
+    const projectedMonthEnd = dayNum > 0 ? monthExpense / dayNum * daysInMonth : 0;
+    const showProjection = overallBudget > 0 && !overallOver && dayNum >= 3;
+    const projectionOver = showProjection && projectedMonthEnd > overallBudget;
     // "What do I have" (available) vs. "what can I actually spend" (safe to
     // spend, minus the coming week's obligations) — the second number is
     // the one that actually answers "can I afford this today" without
@@ -3374,6 +3443,14 @@ const UI = {
     const overallBudgetBar = overallBudget > 0 ? '<div class="overall-budget' + (overallOver ? " over" : overallNear ? " near" : "") + '">' +
       '<div class="overall-budget-row"><span>' + esc(app.L("All expenses this month", "كل المصروفات الشهر ده")) + '</span><span>' + app.fmt(monthExpense) + " / " + app.fmt(overallBudget) + "</span></div>" +
       '<div class="bar-track"><div class="bar-fill' + (overallOver ? " neg-fill" : overallNear ? " warn-fill" : "") + '" style="width:' + Math.min(100, monthExpense / overallBudget * 100) + '%"></div></div>' +
+      // No esc() around this whole line -- app.L()'s own text and
+      // app.fmt()'s <bdi>-wrapped HTML mix directly, same convention the
+      // Needs Attention alert bodies already use (esc() is for real
+      // user-provided strings, e.g. a category name, not developer-
+      // authored label text or fmt()'s own markup).
+      (showProjection ? '<div class="overall-budget-proj' + (projectionOver ? " warn" : "") + '">' + (projectionOver ?
+        app.L("At this pace, you'll reach ", "بمعدلك الحالي، هتوصل لـ ") + app.fmt(projectedMonthEnd) + app.L(" by month end — over budget.", " بنهاية الشهر — فوق الميزانية.") :
+        app.L("At this pace, you'll end the month around ", "بمعدلك الحالي، هتقفل الشهر حوالي ") + app.fmt(projectedMonthEnd) + ".") + "</div>" : "") +
     "</div>" : "";
     const thisMonth = '<section class="dash-section">' +
       '<h2 class="section-title">' + esc(t.thisMonth) + "</h2>" +
