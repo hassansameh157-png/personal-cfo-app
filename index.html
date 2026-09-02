@@ -412,17 +412,48 @@ h1,h2,h3{font-family:var(--font-head);font-weight:600;margin:0;text-wrap:balance
    strip. color is no longer hardcoded #fff -- UI.cardTextColor(a) sets it
    per account (inline style, same place background is set), so .cc-name/
    .link-btn below inherit it instead of forcing white regardless. */
-.credit-card-tile{border-radius:16px;padding:18px 18px 14px;position:relative;overflow:hidden;
+/* Flip (approved from the "same approach" list): .credit-card-tile is now
+   just the perspective container/grid item -- it carries no background,
+   border or shadow of its own any more, all of that moved to .cc-face
+   (both front and back need their own independent copy, since either can
+   be the one actually facing the viewer). .cc-flip is the element that
+   actually rotates; .cc-face-front stays in normal flow (position:
+   relative) so its natural content height sizes the whole tile, same as
+   before this existed -- .cc-face-back is position:absolute;inset:0 over
+   it, sized by the front's box rather than its own (shorter) content, so
+   flipping never changes the tile's height mid-animation. */
+.credit-card-tile{perspective:1400px}
+.cc-flip{position:relative;transform-style:preserve-3d;transition:transform .6s cubic-bezier(.4,.2,.2,1)}
+.cc-flip.flipped{transform:rotateY(180deg)}
+@media (prefers-reduced-motion: reduce){ .cc-flip{transition:none} }
+/* position:relative -- without an explicit position, the front face (only
+   .cc-face-back sets one, to position:absolute) is static, so its own
+   ::after (the holo-sweep sheen, position:absolute) skips straight past
+   it to .cc-flip as its containing block instead -- which has no
+   border-radius/overflow of its own, letting the sheen's sharp corners
+   paint outside the card's actual rounded corners. This makes ::after
+   contained and clipped by the face's own rounded box on both faces
+   (.cc-face-back's own position:absolute below still wins for it, same
+   specificity but declared later in the cascade). */
+.cc-face{position:relative;border-radius:16px;padding:18px 18px 14px;overflow:hidden;backface-visibility:hidden;-webkit-backface-visibility:hidden;
   border:1.5px solid rgba(255,255,255,.28);
   box-shadow:
     0 1.5px 0 rgba(255,255,255,.4) inset,
     0 -10px 18px -6px rgba(0,0,0,.5) inset,
     0 16px 34px -14px rgba(0,0,0,.6)}
-.credit-card-tile::after{content:"";position:absolute;inset:0;pointer-events:none;
+.cc-face-back{position:absolute;inset:0;transform:rotateY(180deg);display:flex;flex-direction:column}
+.cc-face::after{content:"";position:absolute;inset:0;pointer-events:none;
   background:linear-gradient(100deg, transparent 30%, rgba(255,255,255,.35) 46%, rgba(180,220,255,.25) 50%, rgba(255,200,240,.22) 54%, transparent 68%);
   mix-blend-mode:overlay;animation:holoSweep 5s ease-in-out infinite}
 @keyframes holoSweep{ 0%,100%{transform:translateX(-18%)} 50%{transform:translateX(18%)} }
-@media (prefers-reduced-motion: reduce){ .credit-card-tile::after{animation:none} }
+@media (prefers-reduced-motion: reduce){ .cc-face::after{animation:none} }
+.cc-flip-btn{background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.3);border-radius:999px;
+  width:28px;height:28px;display:grid;place-items:center;color:inherit;cursor:pointer;flex:none}
+.cc-back-title{font-family:var(--font-head);font-size:14.5px}
+.cc-back-list{display:flex;flex-direction:column;gap:8px;flex:1;overflow-y:auto;margin-top:10px}
+.cc-back-row{display:flex;justify-content:space-between;gap:8px;font-size:13px}
+.cc-back-row-sub{opacity:.75;font-size:11.5px;margin-top:1px}
+.cc-back-empty{font-size:13px;opacity:.75}
 .cc-top{display:flex;align-items:center;justify-content:space-between;gap:8px}
 .cc-bank{font-size:12.5px;letter-spacing:.06em;text-transform:uppercase;opacity:.85}
 .cc-chip{width:30px;height:22px;border-radius:5px;background:linear-gradient(155deg,#fff4d6,#d9b658 45%,#8f6f2e);
@@ -487,6 +518,15 @@ h1,h2,h3{font-family:var(--font-head);font-weight:600;margin:0;text-wrap:balance
 .hero-sub-label{font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;opacity:.65}
 .hero-sub-value{font-family:var(--font-head);font-size:21px;margin-top:2px;font-variant-numeric:tabular-nums}
 .sparkline{vertical-align:middle;margin-inline-start:6px;opacity:.85}
+/* Wraps the sparkline so it's tappable to expand the full trend below --
+   reset to plain inline content, no button chrome, since it must sit
+   inline with the net worth figure exactly like the bare <svg> used to. */
+.spark-trigger{background:none;border:0;padding:0;margin:0;font:inherit;color:inherit;cursor:pointer;vertical-align:middle}
+/* Collapsed by default -- UI.toggleNwTrend() adds/removes .show. Pre-rendered
+   every Dashboard render (see renderDashboard()), so this is pure CSS, no
+   JS-driven height measurement needed. */
+.nw-trend-expand{display:none}
+.nw-trend-expand.show{display:block}
 
 /* ---- alerts (needs attention) ---- */
 .alert-list{display:flex;flex-direction:column;gap:8px}
@@ -672,8 +712,23 @@ button.bar-row{width:100%;border:0;background:none;padding:6px 0;min-height:44px
 
 .chart-cols{display:flex;align-items:flex-end;gap:10px;height:120px;padding:0 4px 4px}
 .chart-col{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%}
-.chart-bar{width:70%;border-radius:6px 6px 0 0;min-height:4px}
+.chart-bar{width:70%;border-radius:6px 6px 0 0;min-height:4px;cursor:pointer}
+/* role="button" on a plain div (see barChart()) needs its own visible
+   focus state -- same treatment as .input:focus-visible above. */
+.chart-bar:focus-visible{outline:2px solid var(--c-accent-fill);outline-offset:2px}
 .chart-label{font-size:12px;color:var(--c-text-faint);margin-top:6px}
+
+/* #chartTooltip is a fixed-position sibling of #root (see the HTML comment
+   at its mount point) so UI.showChartTooltip() can place it over any chart
+   without a render() ever touching it. Positioned via inline left/top set
+   in JS; z-index sits above .dialog (51) since a chart can theoretically
+   render inside a sheet/dialog context too. */
+.chart-tooltip{position:fixed;z-index:55;pointer-events:none;opacity:0;transform:translateY(4px) scale(.94);
+  transition:opacity .18s ease,transform .18s ease;background:#1a1714;color:#fff;
+  font-size:12.5px;font-weight:600;padding:6px 10px;border-radius:8px;white-space:nowrap;
+  box-shadow:0 6px 16px -4px rgba(0,0,0,.4);border:1px solid rgba(255,255,255,.12)}
+.chart-tooltip.show{opacity:1;transform:translateY(0) scale(1)}
+@media (prefers-reduced-motion:reduce){.chart-tooltip{transition:opacity .01s linear}}
 
 .rules-list{display:flex;flex-direction:column;gap:10px}
 .rule-row{padding:10px 0;border-bottom:1px solid var(--c-line)}
@@ -911,6 +966,11 @@ button.bar-row{width:100%;border:0;background:none;padding:6px 0;min-height:44px
      untouched by render(), so several queued in a row actually stack. -->
 <div id="flashStack" class="flash"></div>
 
+<!-- Same reasoning as #flashStack above: a sibling of #root so
+     UI.showChartTooltip() can position/show it without it being wiped by an
+     unrelated render(). -->
+<div id="chartTooltip" class="chart-tooltip"></div>
+
 <script>// Personal CFO — core ledger engine, ported faithfully from the original app's
 // decoded source (seed/derive/planState/groupState/forecast/FORMS/submit).
 // Logic is preserved as-is; only the class wrapper and I/O layer are new.
@@ -1107,6 +1167,16 @@ class Engine {
     const t = this.T[this.state.lang];
     const s = this.numStr(Math.round(Math.abs(v)).toLocaleString("en-US"));
     return this.bidiWrap(this.moneyStr(v < 0 ? "−" : "+", s, t));
+  }
+  // Same formatting as fmt() -- currency unit, sign, Arabic-numeral toggle,
+  // Hide Amounts -- minus the <bdi> HTML wrap, for the few spots that need
+  // a plain string rather than markup (a chart tooltip's textContent, an
+  // onclick argument that can't carry HTML).
+  fmtPlain(v) {
+    if (this.state.privacy) return "••••";
+    const t = this.T[this.state.lang];
+    const s = this.numStr(Math.round(Math.abs(v)).toLocaleString("en-US"));
+    return this.moneyStr(v < 0 ? "−" : "", s, t);
   }
   L(en, ar) { if (this.state.lang !== "ar") return en; return ar || this.ARW[en] || en; }
   dshort(d) { const x = new Date(d); return x.toLocaleDateString("en-GB", { day: "2-digit", month: "short" }); }
@@ -2806,6 +2876,99 @@ const UI = {
     const el = document.getElementById("f_category");
     if (el) el.value = name;
   },
+  // Card flip -- direct DOM class toggle, no render(): a flip is a
+  // transient view of the same tile, not a data change, so it doesn't
+  // need to survive (or trigger) a re-render, same reasoning
+  // setColorField/syncColor2Default already establish for this kind of
+  // state elsewhere. #ccflip-<id> is unique to this specific tile.
+  flipCardC(id) {
+    const el = document.getElementById("ccflip-" + id);
+    if (!el) return;
+    // Recorded BEFORE toggling inert below: making the just-clicked
+    // button's face inert force-blurs it straight to <body>, so this has
+    // to be captured while it's still the real activeElement.
+    const cameFromFlipBtn = el.contains(document.activeElement) && document.activeElement.classList.contains("cc-flip-btn");
+    const flipped = el.classList.toggle("flipped");
+    // Keep the face that's rotated out of view out of the tab order/a11y
+    // tree too, not just visually hidden -- see the `inert` comment on
+    // .cc-face-back's markup.
+    const front = el.querySelector(".cc-face-front"), back = el.querySelector(".cc-face-back");
+    if (front) front.toggleAttribute("inert", flipped);
+    if (back) back.toggleAttribute("inert", !flipped);
+    // Recent activity is built the first time a tile actually flips open,
+    // not for every account on every render() -- see ccBackRowsHtml().
+    if (flipped && back) {
+      const list = back.querySelector(".cc-back-list");
+      if (list && !list.innerHTML) list.innerHTML = this.ccBackRowsHtml(el.dataset.accId);
+    }
+    // Move focus on to the newly visible face's own flip button, so a
+    // keyboard user's next Tab continues from there instead of from the
+    // top of the page (where the forced blur above would otherwise leave
+    // it). Gated on the flip button actually having had focus, not just
+    // unconditional, so this can never steal focus from something
+    // unrelated elsewhere on the page.
+    if (cameFromFlipBtn) {
+      const newFace = flipped ? back : front;
+      const newBtn = newFace && newFace.querySelector(".cc-flip-btn");
+      if (newBtn) newBtn.focus();
+    }
+  },
+  // Chart bar tap -> a small floating tooltip. #chartTooltip lives outside
+  // #root (same reasoning as #flashStack) so positioning it doesn't get
+  // wiped by an unrelated render(); it's just simplest to reuse that
+  // established pattern here too, even though a bar tap itself never
+  // triggers a render(). Auto-hides itself; a second tap elsewhere (or a
+  // real render(), e.g. switching tabs) also clears it via chartTooltipHideT.
+  showChartTooltip(evt, text) {
+    const el = document.getElementById("chartTooltip");
+    if (!el) return;
+    const bar = evt.currentTarget;
+    const r = bar.getBoundingClientRect();
+    el.textContent = text;
+    el.classList.add("show");
+    // Position centered above the tapped bar, clamped to the viewport so it
+    // never clips off-screen for bars near the left/right edge. Also clamped
+    // to never rise above the chart's own container (.chart-cols) -- a tall
+    // bar's top can sit just a few px below the section heading above the
+    // chart, which would otherwise put the tooltip right over that text;
+    // pinning it to the container top instead means it overlaps at most the
+    // chart's own bars, never unrelated content above the chart.
+    el.style.left = "0px";
+    el.style.top = "0px";
+    const tw = el.offsetWidth, th = el.offsetHeight;
+    let left = r.left + r.width / 2 - tw / 2;
+    left = Math.max(8, Math.min(left, window.innerWidth - tw - 8));
+    const container = bar.closest(".chart-cols");
+    const containerTop = container ? container.getBoundingClientRect().top : r.top;
+    const top = Math.max(8, containerTop + 2, r.top - th - 10);
+    el.style.left = left + "px";
+    el.style.top = top + "px";
+    if (this._chartTooltipHideT) clearTimeout(this._chartTooltipHideT);
+    this._chartTooltipHideT = setTimeout(() => el.classList.remove("show"), 2500);
+    evt.stopPropagation();
+  },
+  // Net worth sparkline tap -> expand/collapse the full 6-month trend chart
+  // inline. renderDashboard() leaves #nwTrendExpand empty; the 6-derive()
+  // trend series (nwTrendMonths(), shared with Reports) is only actually
+  // built the first time this expands, and injected straight in via
+  // innerHTML -- no render() call, same direct-DOM reasoning as
+  // flipCardC, just building real markup instead of toggling a class on
+  // markup that was already there. Collapsing is a plain classList
+  // toggle; a render() in between (e.g. a save while the panel is open)
+  // resets #nwTrendExpand to empty/collapsed, so a re-expand after that
+  // rebuilds it fresh rather than trusting stale cached HTML.
+  toggleNwTrend(evt) {
+    if (evt) evt.stopPropagation();
+    const el = document.getElementById("nwTrendExpand");
+    if (!el) return;
+    if (!el.classList.contains("show") && !el.innerHTML) {
+      const app = this.app, t = app.T[app.state.lang];
+      el.innerHTML = '<h2 class="section-title">' + esc(t.netWorthTrend) + "</h2>" +
+        this.barChart(this.nwTrendMonths(), (i) => i.value >= 0 ? "var(--c-pos)" : "var(--c-neg)");
+    }
+    const nowShown = el.classList.toggle("show");
+    if (evt && evt.currentTarget) evt.currentTarget.setAttribute("aria-expanded", nowShown ? "true" : "false");
+  },
   // Reorder accounts -- swap one step up/down within their own visual
   // section (see Engine.moveAccount).
   moveAccountC(id, dir) { this.app.moveAccount(id, dir); this.render(); },
@@ -3001,6 +3164,15 @@ const UI = {
     const savedSel = (savedId && active.selectionStart != null) ? [active.selectionStart, active.selectionEnd] : null;
 
     const root = document.getElementById("root");
+    // A chart tap positions #chartTooltip against the bar's coordinates at
+    // that instant; any render() past that point (a save, a tab switch, a
+    // filter change) can move or remove that bar entirely, so the tooltip
+    // must not survive it -- unlike #flashStack, which deliberately lives
+    // outside render()'s reach so ITS content survives. Cancel the pending
+    // auto-hide too so it can't later fire against a reused id.
+    const tipEl = document.getElementById("chartTooltip");
+    if (tipEl) tipEl.classList.remove("show");
+    if (this._chartTooltipHideT) { clearTimeout(this._chartTooltipHideT); this._chartTooltipHideT = null; }
     const S = this.app.state, t = this.app.T[S.lang];
     const dir = S.lang === "ar" ? "rtl" : "ltr";
     document.documentElement.setAttribute("dir", dir);
@@ -3179,6 +3351,20 @@ const UI = {
     return app.L("in " + days + "d", "خلال " + days + " يوم");
   },
 
+  // Six-month net worth series, one derive(cutoff) per month-end -- shared
+  // by Reports' own trend chart and Dashboard's expandable one (see
+  // UI.toggleNwTrend()) so the two can never quietly compute this
+  // differently from each other.
+  nwTrendMonths() {
+    const app = this.app;
+    const months = [];
+    for (let i = 5; i >= 0; i--) {
+      const end = app.addMonths(new Date(), -i); end.setDate(28);
+      months.push({ label: end.toLocaleDateString(app.state.lang === "ar" ? "ar-EG" : "en-GB", { month: "short" }), value: app.derive(app.iso(end)).netWorth });
+    }
+    return months;
+  },
+
   // Tiny inline trend line -- approved from the Next Wave preview, next to
   // Dashboard's Net worth hero-sub-value. `points` is oldest-first; a flat
   // series (every point equal, or fewer than 2 points) draws nothing
@@ -3211,11 +3397,39 @@ const UI = {
   // gated to dark mode: it's a directional light-spill shadow reading as
   // "embossed," the same "shadow exists everywhere, neon halo is dark-
   // only" split the Holo Shine card bevel already draws.
+  // Touch/click tooltip -- approved from the "same approach" list. Every
+  // bar's exact value used to be visible only as its height, nothing
+  // written down anywhere (unlike catBar()'s horizontal rows, which
+  // already print the number as text right next to the bar -- no
+  // tooltip needed there, it'd just repeat what's already on screen).
+  // app.fmtPlain() -- the currency unit and Arabic-numeral toggle every
+  // other amount in the app gets, minus fmt()'s <bdi> HTML wrap (this
+  // needs a plain string, for the tooltip's textContent and to pass
+  // through an onclick argument) -- and it already routes through
+  // state.privacy itself, same as fmt()/fmtS(), so Hide Amounts hides a
+  // tooltip exactly like it hides every other number, not a way around it.
   barChart(items, colorFn) {
+    const app = this.app;
     const max = Math.max(1, ...items.map((i) => Math.abs(i.value)));
     return '<div class="chart-cols">' + items.map((i) => {
       const c = colorFn(i);
-      return '<div class="chart-col"><div class="chart-bar" style="height:' + Math.max(4, Math.abs(i.value) / max * 100) + '%;' +
+      const tip = esc(i.label) + ": " + esc(app.fmtPlain(i.value));
+      // Backslashes must be escaped BEFORE quotes, not just quotes alone --
+      // a label containing a literal backslash right before a quote (e.g. a
+      // card statement's free-text period field) would otherwise let the
+      // escaped-quote sequence itself get swallowed by the injected
+      // backslash, closing the onclick string early. i.label reaches this
+      // codebase's usual esc()'d-then-quote-escaped pattern used all over
+      // ui.js for onclick args, none of which escape backslashes either --
+      // but this is the one call site fed by genuinely free text (a
+      // statement's period), not a fixed category/tag/person name, so it
+      // gets the real fix rather than repeating the shared gap.
+      const tipJs = tip.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+      // role/tabindex/onkeydown -- a plain onclick div is mouse/touch-only;
+      // this makes the tooltip (the bar's one and only way to expose its
+      // exact value as text) reachable by keyboard too. tip is already
+      // esc()'d, safe to reuse verbatim as the aria-label.
+      return '<div class="chart-col"><div class="chart-bar" role="button" tabindex="0" aria-label="' + tip + '" onclick="UI.showChartTooltip(event,\'' + tipJs + '\')" onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();UI.showChartTooltip(event,\'' + tipJs + '\')}" style="height:' + Math.max(4, Math.abs(i.value) / max * 100) + '%;' +
         "background:linear-gradient(180deg,color-mix(in srgb," + c + " 70%,white 30%)," + c + ");" +
         "box-shadow:0 -6px 14px -4px color-mix(in srgb," + c + " 55%,transparent)" +
         '"></div><div class="chart-label">' + esc(i.label) + "</div></div>";
@@ -3282,7 +3496,27 @@ const UI = {
     // everything else this render already computes from D). Draws nothing
     // (see sparkline()) if net worth hasn't moved across the window.
     const nwSpark = [4, 3, 2, 1, 0].map(w => app.derive(app.iso(app.addDays(new Date(), -7 * w))).netWorth);
-    const netWorthSparkline = this.sparkline(nwSpark, "var(--c-accent)");
+    // Tappable -- expands into the same real monthly trend Reports shows
+    // (nwTrendMonths(), shared with renderReports() so the two can't drift
+    // apart). The 6 extra derive() calls that trend needs are NOT run here
+    // up front -- unlike the 5-point weekly sparkline above (cheap, always
+    // shown), this is a whole second monthly series only some users will
+    // ever open, so UI.toggleNwTrend() computes and injects it lazily on
+    // first expand instead, via direct DOM (innerHTML on this one
+    // container, no render()) -- same no-render() reasoning as flipCardC,
+    // just building real markup instead of toggling a class.
+    // No button at all when there's nothing to show -- sparkline() itself
+    // already skips drawing a flat/too-short series rather than a
+    // meaningless zero-width line; a tappable control with no visible
+    // content would still sit in the tab order with nothing to see or
+    // announce, so the trigger follows the same all-or-nothing rule.
+    const sparkSvg = this.sparkline(nwSpark, "var(--c-accent)");
+    // aria-expanded="false" -- always false here since renderDashboard()
+    // always starts the panel collapsed (see toggleNwTrend()'s own
+    // comment on why a render() resets it); same open/close-toggle
+    // convention as UI.toggleMore()'s nav button.
+    const netWorthSparkline = sparkSvg ? '<button type="button" class="spark-trigger" aria-expanded="false" aria-label="' + esc(app.L("Show net worth trend", "اعرض تطور صافي الثروة")) + '" onclick="UI.toggleNwTrend(event)">' + sparkSvg + "</button>" : "";
+    const nwTrendExpand = '<section class="dash-section nw-trend-expand" id="nwTrendExpand"></section>';
     const hero =
       '<div class="hero-card">' +
         '<div class="hero-label">' + esc(t.availableBalance) + "</div>" +
@@ -3531,7 +3765,7 @@ const UI = {
       }).join("") + "</div>" : "") +
     "</section>";
 
-    return hero + needsAttention + quickAdd + goalsTeaser + whereMoney + next30 + thisWeek + thisMonth;
+    return hero + nwTrendExpand + needsAttention + quickAdd + goalsTeaser + whereMoney + next30 + thisWeek + thisMonth;
   },
 
   // ---- Accounts -------------------------------------------------------------
@@ -3670,16 +3904,49 @@ const UI = {
       // red for overdue -- both read against any base card color, not
       // just this account's own.
       const stmtLine = nearestStmt ? '<div class="cc-stmt' + (nearestStmt.overdue ? " overdue" : "") + '"><span class="cc-label">' + esc(app.L("Statement due", "كشف الحساب")) + '</span><span class="cc-stmt-amt">' + app.fmt(nearestStmt.remaining) + " · " + esc(this.daysUntilText(nearestStmt.due)) + "</span></div>" : "";
-      return '<div class="credit-card-tile' + (isDebt ? "" : " balance-tile") + '" style="background:' + this.cardBackground(a) + ';color:' + this.cardTextColor(a) + '">' +
-        '<div class="cc-top"><span class="cc-bank">' + esc(a.bank || typeLabel[a.type]) + '</span><span class="' + (isDebt ? "cc-chip" : "cc-mark") + '"></span></div>' +
-        '<button class="link-btn cc-name" onclick="UI.viewAccountTx(\'' + a.id + '\')">' + esc(a.name) + "</button>" +
-        face + stmtLine +
-        '<div class="btn-row wrap" style="margin-top:12px">' +
-        moveBtns(a.id, i, arr) +
-        (isDebt ? '<button class="link-btn small" onclick="UI.openModal(\'card_statement\',{accountId:\'' + a.id + '\'})">' + esc(t.aStatement) + "</button>" : "") +
-        '<button class="link-btn small" onclick="UI.openModal(\'account_edit\',' + editArgsFor(a) + ')">' + esc(app.L("Edit")) + "</button>" +
-        (canDelete ? '<button class="link-btn small danger" onclick="UI.deleteAccountC(\'' + a.id + '\')">' + esc(app.L("Delete")) + "</button>" : "") +
-        "</div></div>";
+      // Flip -- tap the ⟳ corner button (not the card body itself, so it
+      // can't collide with the existing tap-name-to-view-transactions
+      // behavior) to see the last 3 transactions touching this account
+      // without leaving the page. UI.flipCardC() toggles a class directly
+      // on this specific tile's #ccflip-<id> via its own id, no render()
+      // involved -- same reasoning setColorField/syncColor2Default etc.
+      // already establish for state that doesn't need to survive a
+      // re-render (a flip is a transient view, not data).
+      const faceStyle = 'style="background:' + this.cardBackground(a) + ';color:' + this.cardTextColor(a) + '"';
+      // Same button reused on both faces, but the announced action is the
+      // opposite of the flip it's actually on: on the front it shows
+      // recent activity, on the back it goes back to the card face.
+      const flipBtn = (back) => '<button class="cc-flip-btn" aria-label="' + esc(back ? app.L("Back to card", "ارجع للكارت") : app.L("Show recent activity", "اعرض آخر النشاط")) + '" onclick="UI.flipCardC(\'' + a.id + '\')">⟳</button>';
+      // "Recent activity" is NOT computed here -- a D.live.filter() per
+      // account, on every single render() (any save, tab switch, or edit),
+      // whether or not a card is ever flipped, was real wasted O(accounts
+      // x transactions) work. UI.flipCardC() builds and injects
+      // .cc-back-list's content the first time a given tile actually
+      // flips, same lazy-on-first-expand pattern as the Dashboard's
+      // nwTrendExpand.
+      return '<div class="credit-card-tile' + (isDebt ? "" : " balance-tile") + '"><div class="cc-flip" id="ccflip-' + a.id + '" data-acc-id="' + esc(a.id) + '">' +
+        '<div class="cc-face cc-face-front" ' + faceStyle + '>' +
+          '<div class="cc-top"><span class="cc-bank">' + esc(a.bank || typeLabel[a.type]) + '</span><span style="display:flex;align-items:center;gap:6px"><span class="' + (isDebt ? "cc-chip" : "cc-mark") + '"></span>' + flipBtn(false) + "</span></div>" +
+          '<button class="link-btn cc-name" onclick="UI.viewAccountTx(\'' + a.id + '\')">' + esc(a.name) + "</button>" +
+          face + stmtLine +
+          '<div class="btn-row wrap" style="margin-top:12px">' +
+          moveBtns(a.id, i, arr) +
+          (isDebt ? '<button class="link-btn small" onclick="UI.openModal(\'card_statement\',{accountId:\'' + a.id + '\'})">' + esc(t.aStatement) + "</button>" : "") +
+          '<button class="link-btn small" onclick="UI.openModal(\'account_edit\',' + editArgsFor(a) + ')">' + esc(app.L("Edit")) + "</button>" +
+          (canDelete ? '<button class="link-btn small danger" onclick="UI.deleteAccountC(\'' + a.id + '\')">' + esc(app.L("Delete")) + "</button>" : "") +
+          "</div>" +
+        "</div>" +
+        // inert: backface-visibility:hidden only hides the back face
+        // visually -- its buttons stay in the tab order and the a11y tree
+        // otherwise, so a keyboard/screen-reader user could land on
+        // "Back to card" while the front is what's actually shown. Starts
+        // inert since a tile always renders unflipped; UI.flipCardC()
+        // toggles this on both faces to match .flipped.
+        '<div class="cc-face cc-face-back" inert ' + faceStyle + '>' +
+          '<div class="cc-top"><span class="cc-back-title">' + esc(app.L("Recent activity", "آخر نشاط")) + "</span>" + flipBtn(true) + "</div>" +
+          '<div class="cc-back-list"></div>' +
+        "</div>" +
+      "</div></div>";
     }).join("");
 
     const rows = rowAccs.map((a, i, arr) => {
@@ -3732,6 +3999,29 @@ const UI = {
     const acc = isTransferLike ? app.accName(r.fromId) + " → " + app.accName(r.toId) : (r.accountId ? app.accName(r.accountId) : "—");
     const tone = r.void ? "muted-amt" : (signed > 0 ? "tone-pos" : signed < 0 ? "tone-neg" : "");
     return { isIn, isTransferLike, signed, amtTxt, acc, tone };
+  },
+  // Credit-card tile flip's "Recent activity" -- called lazily by
+  // UI.flipCardC() the first time a given tile actually flips open, not
+  // for every account tile on every render(). Fresh derive() each call
+  // (cheap, one linear scan) so it's never stale against edits made since
+  // the tile last rendered.
+  ccBackRowsHtml(accountId) {
+    const app = this.app, D = app.derive();
+    // D.live is sorted oldest-first (see Engine.derive), so a plain
+    // slice(0,3) would show the account's earliest transactions ever --
+    // slice(-3).reverse() takes the last 3 in date order instead, newest
+    // first, which is what "Recent activity" actually means.
+    // D.live itself already excludes void:true rows entirely (see
+    // Engine.derive) -- unlike Transactions' own table, which reads the
+    // raw d.tx and needs its own strikethrough treatment for a voided row
+    // still in the list, a voided transaction can never reach this list in
+    // the first place, so there's nothing here to style for it.
+    const recent = D.live.filter(x => x.accountId === accountId || x.fromId === accountId || x.toId === accountId).slice(-3).reverse();
+    if (!recent.length) return '<div class="cc-back-empty">' + esc(app.L("No recent activity.", "مفيش نشاط حديث.")) + "</div>";
+    return recent.map(r => {
+      const { amtTxt, tone } = this.txSign(r);
+      return '<div class="cc-back-row"><div><div>' + esc(r.desc || this.txTypeLabels()[r.type] || r.type) + '</div><div class="cc-back-row-sub">' + r.date + "</div></div><div class=\"" + tone + "\">" + amtTxt + "</div></div>";
+    }).join("");
   },
   // Income/expense only carry tags (see FORMS()) — every other type's
   // `tags` is simply absent, so this renders nothing for them. Shared by
@@ -4324,14 +4614,7 @@ const UI = {
   // ---- Reports (uses derive(asOf) to build a real 6-month trend) --------
   renderReports(D, t) {
     const app = this.app;
-    const months = [];
-    for (let i = 5; i >= 0; i--) {
-      const end = app.addMonths(new Date(), -i); end.setDate(28);
-      const cutoff = app.iso(end);
-      const Dm = app.derive(cutoff);
-      months.push({ label: end.toLocaleDateString(app.state.lang === "ar" ? "ar-EG" : "en-GB", { month: "short" }), netWorth: Dm.netWorth });
-    }
-    const nwChart = this.barChart(months.map(m => ({ label: m.label, value: m.netWorth })), (i) => i.value >= 0 ? "var(--c-pos)" : "var(--c-neg)");
+    const nwChart = this.barChart(this.nwTrendMonths(), (i) => i.value >= 0 ? "var(--c-pos)" : "var(--c-neg)");
 
     const catMap = {}; D.live.filter(x => x.type === "expense").forEach(x => catMap[x.category || "Other"] = (catMap[x.category || "Other"] || 0) + x.amount);
     const catArr = Object.entries(catMap).sort((a, b) => b[1] - a[1]).slice(0, 8);
