@@ -227,6 +227,16 @@ body{margin:0;background:var(--c-bg);color:var(--c-text);font-family:var(--font-
 button,input,select{font-family:inherit;font-size:inherit;color:inherit}
 h1,h2,h3{font-family:var(--font-head);font-weight:600;margin:0;text-wrap:balance}
 .muted{color:var(--c-text-soft)}
+/* Approved from the Shape Showcase preview -- was a single <p class=muted>
+   line, same weight whether it meant "nothing to worry about" or "you
+   haven't set this up yet" (see UI.emptyState). Dashed border reads as
+   "optional/not-yet-filled" rather than a real content card, same
+   language the card customizer's own optional fields already lean on. */
+.empty-state{text-align:center;padding:26px 20px;border-radius:14px;border:1.5px dashed var(--c-line);background:var(--c-surface)}
+.empty-glyph{width:40px;height:40px;margin:0 auto 10px;border-radius:11px;display:grid;place-items:center;
+  background:color-mix(in srgb,var(--c-accent-fill) 16%,transparent);color:var(--c-accent-fill)}
+.empty-title{font-family:var(--font-head);font-size:15px;margin-bottom:3px}
+.empty-body{font-size:13px;color:var(--c-text-soft)}
 .small{font-size:14px}
 .tone-pos{color:var(--c-pos)}
 .tone-neg{color:var(--c-neg)}
@@ -455,7 +465,18 @@ h1,h2,h3{font-family:var(--font-head);font-weight:600;margin:0;text-wrap:balance
 /* ---- app lock screen ---- */
 .lock-screen{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;background:var(--c-bg)}
 .lock-card{width:100%;max-width:320px;text-align:center;background:var(--c-surface);border:1px solid var(--c-line);border-radius:var(--radius);box-shadow:var(--shadow);padding:32px 24px}
-.lock-mark{font-family:var(--font-head);font-size:30px;color:var(--c-accent);margin-bottom:6px}
+/* Was just colored text -- everything else on this screen already picked
+   up the system automatically (.lock-card was already in the shared
+   backdrop-filter list from the original Neon Aurora pass, so the aurora
+   wash already shows through it; .btn-primary already has Deep Press;
+   .lock-input already gets the new focus ring, same as any other
+   .input). A real badge now, same shape/bevel language as .brand-mark
+   (the small topbar version of this) scaled up, not just recolored text. */
+.lock-mark{width:56px;height:56px;margin:0 auto 14px;border-radius:16px;display:grid;place-items:center;
+  font-family:var(--font-head);font-size:24px;color:#fff;
+  background:linear-gradient(180deg,color-mix(in srgb,var(--c-accent-fill) 88%,white 12%),var(--c-accent-fill));
+  box-shadow:0 1px 0 rgba(255,255,255,.4) inset,0 -6px 12px -4px rgba(0,0,0,.4) inset,
+    0 10px 22px -12px color-mix(in srgb,var(--c-accent-fill) 60%,transparent)}
 .lock-title{font-family:var(--font-head);font-size:22px;margin:0 0 2px}
 .lock-input{text-align:center;font-size:24px;letter-spacing:10px;margin-top:14px}
 .hero-card.alt{background:var(--c-surface);color:var(--c-text);border:1px solid var(--c-line)}
@@ -599,7 +620,19 @@ button.bar-row{width:100%;border:0;background:none;padding:6px 0;min-height:44px
    a physical card). .person-id wraps the avatar + name/sub as a single
    flex unit so it still lands as .card-row-top's first (flex:1) child. */
 .person-id{display:flex;align-items:center;gap:10px;min-width:0}
-.person-avatar{width:36px;height:36px;border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:15px}
+/* Same bevel language as the card tiles' Holo Shine, lighter touch (no
+   backdrop-filter/animated sheen -- a People list can run to dozens of
+   rows, same "small/repeated element gets the light version" split
+   .bar-fill draws against .chart-bar). color:#fff dropped in favor of
+   inherit -- personAvatar() now always sets a real per-person inline
+   color (cardTextColor()), which wins over either value regardless
+   (inline beats an external rule with no !important either way), but
+   inherit here is honest about the fact that this class no longer picks
+   the color at all, instead of leaving a value that reads as live but
+   is actually always overridden. */
+.person-avatar{width:36px;height:36px;border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;color:inherit;font-weight:700;font-size:15px;
+  border:1px solid rgba(255,255,255,.28);
+  box-shadow:0 1px 0 rgba(255,255,255,.4) inset,0 -4px 8px -3px rgba(0,0,0,.4) inset}
 .person-avatar.sm{width:26px;height:26px;font-size:12px}
 .person-avatar.lg{width:52px;height:52px;font-size:22px}
 .person-tag{display:inline-flex;align-items:center;gap:3px}
@@ -2010,14 +2043,18 @@ class Engine {
       // if you want" pattern as the account color field. Selecting a
       // relation resets Color to that type's default (UI.setPersonRelation);
       // the hint says so rather than leaving it a silent surprise.
+      // cardStyleFields() (color2/pattern/textColor) is the exact same
+      // customizer the account cards already have -- a person's avatar
+      // renders through UI.cardBackground()/cardTextColor() too now (see
+      // personAvatar()), so it can look as distinct as an account card.
       person: { title: t.aPerson, fields: [D("name", t.name, "text"), D("phone", t.phone, "text"),
         D("relation", this.L("Relation", "العلاقة"), "select", { options: this.relationTypes().map(r => ({ v: r.v, l: r.icon + " " + r.l })) }),
-        D("color", this.L("Color", "اللون"), "color", { hint: this.L("This person's avatar color — picking a Relation resets it to that type's default; recolor after if you'd like.", "لون أفاتار الشخص ده — اختيار العلاقة بيرجّعه للون الافتراضي بتاعها؛ غيّره تاني بعد كده لو حابب.") }),
-        D("notes", "Notes", "text", { wide: true })] },
+        D("color", this.L("Color", "اللون"), "color", { hint: this.L("This person's avatar color — picking a Relation resets it to that type's default; recolor after if you'd like.", "لون أفاتار الشخص ده — اختيار العلاقة بيرجّعه للون الافتراضي بتاعها؛ غيّره تاني بعد كده لو حابب.") })]
+        .concat(cardStyleFields()).concat([D("notes", "Notes", "text", { wide: true })]) },
       person_edit: { title: this.L("Edit person"), fields: [D("name", t.name, "text"), D("phone", t.phone, "text"),
         D("relation", this.L("Relation", "العلاقة"), "select", { options: this.relationTypes().map(r => ({ v: r.v, l: r.icon + " " + r.l })) }),
-        D("color", this.L("Color", "اللون"), "color", { hint: this.L("This person's avatar color — picking a Relation resets it to that type's default; recolor after if you'd like.", "لون أفاتار الشخص ده — اختيار العلاقة بيرجّعه للون الافتراضي بتاعها؛ غيّره تاني بعد كده لو حابب.") }),
-        D("notes", "Notes", "text", { wide: true })] },
+        D("color", this.L("Color", "اللون"), "color", { hint: this.L("This person's avatar color — picking a Relation resets it to that type's default; recolor after if you'd like.", "لون أفاتار الشخص ده — اختيار العلاقة بيرجّعه للون الافتراضي بتاعها؛ غيّره تاني بعد كده لو حابب.") })]
+        .concat(cardStyleFields()).concat([D("notes", "Notes", "text", { wide: true })]) },
       // "Electronic card" (ecard) — a prepaid/gift-card-style balance, e.g.
       // an Amazon or store gift card: holds a real balance like cash or a
       // wallet (no limit/debt concept), just rendered as its own card tile.
@@ -2277,13 +2314,14 @@ class Engine {
     } else if (k === "person") {
       if (!need(f.name, "Name is required.")) return false;
       const rel = f.relation || "other";
-      data.people.push({ id: this.uid("p"), name: f.name, phone: f.phone || "", notes: f.notes || "", relation: rel, color: f.color || this.relationTypes().find(r => r.v === rel).color });
+      data.people.push({ id: this.uid("p"), name: f.name, phone: f.phone || "", notes: f.notes || "", relation: rel, color: f.color || this.relationTypes().find(r => r.v === rel).color, color2: resolveColor2(), pattern: f.pattern || "diag1", textColor: f.textColor || "auto" });
       note = "Added person " + f.name;
     } else if (k === "person_edit") {
       if (!need(f.name, "Name is required.")) return false;
       const p = data.people.find(x => x.id === f.id);
       if (!need(p, "Pick a person.")) return false;
       p.name = f.name; p.phone = f.phone || ""; p.notes = f.notes || ""; p.relation = f.relation || p.relation || "other"; p.color = f.color || p.color;
+      p.color2 = resolveColor2(); p.pattern = f.pattern || "diag1"; p.textColor = f.textColor || "auto";
       note = "Updated person " + f.name;
     } else if (k === "account") {
       if (!need(f.name, "Name is required.")) return false;
@@ -2652,6 +2690,15 @@ function svgIcon(d, size) {
 // hue family the rest of the Neon Aurora system already uses. Purely a
 // shortcut in front of the plain native color input, which stays and
 // still works exactly as before for any color outside this list.
+// Three reused empty-state icon shapes (see UI.emptyState) -- not a
+// bespoke icon per call site, so a future new empty state just picks
+// whichever of these three actually describes it instead of inventing a
+// fourth. CHECK: a genuinely good state, nothing to act on. PLUS: "add
+// one to get started". SEARCH: "your filter/search matched nothing".
+const ICON_CHECK = "M20 6 9 17l-5-5";
+const ICON_PLUS = "M12 5v14M5 12h14";
+const ICON_SEARCH = "M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14zM21 21l-4.3-4.3";
+
 const COLOR_PALETTE = [
   "#0088b0", "#1d4ed8", "#2563eb", "#0ea5e9", "#0d9488", "#10b981", "#16a34a", "#65a30d",
   "#7c3aed", "#8b5cf6", "#a855f7", "#6d28d9", "#db2777", "#ec4899", "#be185d", "#e11d48",
@@ -3083,6 +3130,24 @@ const UI = {
     }
   },
 
+  // Shared empty-state card -- approved from the Shape Showcase preview.
+  // A plain "<p class=muted>" reads the same weight whether it means
+  // "nothing to worry about" (Needs Attention) or "you haven't set this
+  // up yet" (no custom categories); this gives each its own icon and a
+  // second line saying what to do next (or that there's nothing to do).
+  // `icon` is one of the three reused shapes below, not a bespoke one per
+  // call site -- CHECK for a genuinely good state (nothing to act on,
+  // everything settled), PLUS for "add one to get started", SEARCH for
+  // "your filter/search matched nothing". Kept to the sections that are
+  // really their own empty moment, not every plain muted-text hint in
+  // the app (an explanatory note isn't an empty state).
+  emptyState(icon, title, body) {
+    return '<div class="empty-state"><div class="empty-glyph">' + svgIcon(icon, 20) + '</div>' +
+      '<div class="empty-title">' + esc(title) + "</div>" +
+      (body ? '<div class="empty-body">' + esc(body) + "</div>" : "") +
+    "</div>";
+  },
+
   // Soft, hashed tint for free-form tags -- unlike categories, tags aren't
   // a fixed list, so they don't get a "slot" from the validated palette
   // (app.categoryColor); a low-saturation tint derived from the tag's own
@@ -3340,7 +3405,7 @@ const UI = {
       (alerts.length ? '<div class="alert-list">' + alerts.map(a =>
         '<div class="alert-card sev-' + (a.sev || "info") + '"><div class="alert-title">' + esc(a.title) + '</div><div class="alert-body">' + a.body + '</div>' +
         '<button class="alert-cta" onclick="' + (a.act || ("UI.setPage('" + a.go + "')")) + '">' + esc(a.cta) + "</button></div>"
-      ).join("") + "</div>" : '<p class="muted">' + esc(app.L("Nothing needs attention right now.", "مفيش حاجة محتاجة انتباه دلوقتي.")) + "</p>") +
+      ).join("") + "</div>" : this.emptyState(ICON_CHECK, app.L("All clear", "كله تمام"), app.L("Nothing needs your attention right now.", "مفيش حاجة محتاجة انتباهك دلوقتي."))) +
     "</section>";
 
     // Repeat a common expense with one tap, pre-filled with its last
@@ -3758,7 +3823,7 @@ const UI = {
 
     return this.tabHeader(t.transactions, total + app.L(" records match your filters", " حركة مطابقة للفلاتر"),
       [[t.aIncome, "UI.openModal('income')"], [t.aTransfer, "UI.openModal('transfer')"]]) +
-      filters + (total ? table + cards + loadMore : '<p class="muted">' + esc(t.noMatches) + "</p>");
+      filters + (total ? table + cards + loadMore : this.emptyState(ICON_SEARCH, t.noMatches, app.L("Try a different search or clear a filter above.", "جرب بحث تاني أو امسح فلتر من فوق.")));
   },
 
   // ---- People ----------------------------------------------------------------
@@ -3768,9 +3833,17 @@ const UI = {
   // until they open Edit and pick one.
   personRelation(p) { return this.app.relationTypes().find(r => r.v === (p.relation || "other")) || this.app.relationTypes()[this.app.relationTypes().length - 1]; },
   personColor(p) { return p.color || this.personRelation(p).color; },
+  // Same customizer the account cards already have -- cardBackground()/
+  // cardTextColor() only ever read .color/.color2/.pattern/.textColor
+  // generically, nothing account-specific, so they work unchanged on a
+  // person too. personColor(p)'s own relation-default fallback still
+  // applies for the primary color specifically (a person with no color2/
+  // pattern set yet still renders exactly as before -- a plain circle in
+  // their relation's color).
   personAvatar(p, size) {
     const initial = (p.name || "?").trim().charAt(0).toUpperCase() || "?";
-    return '<span class="person-avatar' + (size ? " " + size : "") + '" style="background:' + this.personColor(p) + '">' + esc(initial) + "</span>";
+    const norm = Object.assign({}, p, { color: this.personColor(p) });
+    return '<span class="person-avatar' + (size ? " " + size : "") + '" style="background:' + this.cardBackground(norm) + ';color:' + this.cardTextColor(norm) + '">' + esc(initial) + "</span>";
   },
   personTag(p) {
     const rt = this.personRelation(p);
@@ -3786,7 +3859,7 @@ const UI = {
       return { p, r, y, net: r - y, canDelete };
     }).sort((a, b) => Math.abs(b.net) - Math.abs(a.net));
 
-    const editArgs = (p) => JSON.stringify({ id: p.id, name: p.name, phone: p.phone || "", relation: p.relation || "other", color: this.personColor(p), notes: p.notes || "" }).replace(/"/g, "&quot;");
+    const editArgs = (p) => JSON.stringify({ id: p.id, name: p.name, phone: p.phone || "", relation: p.relation || "other", color: this.personColor(p), color2: p.color2 || "", pattern: p.pattern || "diag1", textColor: p.textColor || "auto", notes: p.notes || "" }).replace(/"/g, "&quot;");
     // "Add a balance for this person" — this is just the existing
     // receivable/payable form pre-filled with who it's for, reachable
     // directly from the person instead of only from Receivables & Payables.
@@ -3844,7 +3917,7 @@ const UI = {
     const y = Math.max(0, D.pay[p.id] || 0) + planOut.reduce((s, x) => s + x.remaining, 0);
     const net = r - y;
     const canDelete = !app.personHasRecords(p.id);
-    const editArgs = JSON.stringify({ id: p.id, name: p.name, phone: p.phone || "", relation: p.relation || "other", color: this.personColor(p), notes: p.notes || "" }).replace(/"/g, "&quot;");
+    const editArgs = JSON.stringify({ id: p.id, name: p.name, phone: p.phone || "", relation: p.relation || "other", color: this.personColor(p), color2: p.color2 || "", pattern: p.pattern || "diag1", textColor: p.textColor || "auto", notes: p.notes || "" }).replace(/"/g, "&quot;");
 
     // .hero-card.alt -- same page-level "headline number" treatment
     // Forecast/Cash Flow already give their own single most important
@@ -3939,7 +4012,7 @@ const UI = {
       planSection(planIn, app.L("Installment plans owed to me", "أقساط ليّا")) +
       planSection(planOut, app.L("Installment plans I owe", "أقساط عليّا")) +
       historySection +
-      (!r && !y && !planIn.length && !planOut.length && !historyTx.length ? '<p class="muted" style="margin-top:16px">' + esc(app.L("Nothing on record for this person yet.", "لسه مفيش أي حاجة مسجلة لهذا الشخص.")) + "</p>" : "");
+      (!r && !y && !planIn.length && !planOut.length && !historyTx.length ? '<div style="margin-top:16px">' + this.emptyState(ICON_PLUS, app.L("Nothing recorded yet", "لسه مفيش حاجة متسجلة"), app.L("A loan, an installment plan or a transaction with this person will show up here.", "أي دين أو خطة تقسيط أو حركة مع الشخص ده هتظهر هنا.")) + "</div>" : "");
   },
 
   // ---- Installments (P1 KPI quirk intentionally preserved) -----------------
@@ -4041,7 +4114,7 @@ const UI = {
 
     return this.tabHeader(t.statements, D.cardStatements.length + app.L(" statements · amounts are typed in by hand each month, from the real bank statement", " كشف · المبالغ بتتكتب بإيدك كل شهر، من كشف حساب البنك الحقيقي"),
       [[t.aStatement, "UI.openModal('card_statement')"]]) + kpiRow + trendSection +
-      (list.length ? '<div class="card-list" style="margin-top:14px">' + cards + "</div>" : '<p class="muted" style="margin-top:14px">' + esc(app.L("No statements yet.", "لسه مفيش كشوف حساب.")) + "</p>");
+      (list.length ? '<div class="card-list" style="margin-top:14px">' + cards + "</div>" : '<div style="margin-top:14px">' + this.emptyState(ICON_PLUS, app.L("No statements yet", "لسه مفيش كشوف حساب"), app.L("A statement appears once one is generated for a card account.", "الكشف بيظهر لما يتولد كشف لحساب كارت.")) + "</div>");
   },
 
   // ---- Savings goals -------------------------------------------------------
@@ -4071,7 +4144,7 @@ const UI = {
     }).join("");
     return this.tabHeader(t.goals, goals.length + app.L(" goal(s) · progress follows the linked account's own balance since the goal was set", " هدف · التقدم بيتابع رصيد الحساب المرتبط من وقت ما اتحدد الهدف"),
       [[t.aGoal, "UI.openModal('goal')"]]) +
-      (goals.length ? '<div class="card-list" style="margin-top:14px">' + cards + "</div>" : '<p class="muted" style="margin-top:14px">' + esc(app.L("No savings goals yet.", "لسه مفيش أهداف ادخار.")) + "</p>");
+      (goals.length ? '<div class="card-list" style="margin-top:14px">' + cards + "</div>" : '<div style="margin-top:14px">' + this.emptyState(ICON_PLUS, app.L("No savings goals yet", "لسه مفيش أهداف ادخار"), app.L("Add one above to start tracking progress toward it.", "ضيف هدف من فوق تبدأ تتابع تقدمك فيه.")) + "</div>");
   },
 
   // ---- Savings groups (gam3eya) -----------------------------------------
@@ -4129,7 +4202,7 @@ const UI = {
     };
     const list = (arr, key, tone, kind) => '<div class="card-list">' + (arr.length ? arr.map(x =>
       '<div class="card-row"><div class="card-row-top"><div class="card-row-title">' + esc(x.p.name) + '</div><div class="card-row-amt tone-' + tone + '">' + app.fmt(x[key]) + "</div></div>" + dueMeta(x.p.id, kind) + "</div>"
-    ).join("") : '<p class="muted">' + esc(app.L("Fully settled")) + "</p>") + "</div>";
+    ).join("") : this.emptyState(ICON_CHECK, app.L("Fully settled", "متسدد بالكامل"))) + "</div>";
     const payoffToggle = iOwe.length > 1 ? '<div class="pill-row" style="margin-top:8px">' +
       '<button class="pill' + (payoffOrder === "largest" ? " on" : "") + '" onclick="UI.setPayoffOrder(\'largest\')">' + esc(app.L("Largest first", "الأكبر الأول")) + "</button>" +
       '<button class="pill' + (payoffOrder === "smallest" ? " on" : "") + '" onclick="UI.setPayoffOrder(\'smallest\')">' + esc(app.L("Smallest first", "الأصغر الأول")) + "</button>" +
@@ -4327,7 +4400,9 @@ const UI = {
       '<div class="btn-row wrap">' + list.map(c =>
         '<span class="pill">' + esc(c) + ' <button class="link-btn small danger" onclick="UI.deleteCategoryC(\'' + kind + '\',\'' + esc(c).replace(/'/g, "\\'") + '\')" aria-label="' + esc(app.L("Remove ") + c) + '">×</button></span>'
       ).join("") + "</div>" :
-      '<p class="muted small">' + esc(app.L("No custom categories yet.", "مفيش فئات مخصصة لسه.")) + "</p>";
+      // No body text -- the section intro right above already explains
+      // what to do, so a second line here would just repeat it.
+      this.emptyState(ICON_PLUS, app.L("No custom categories yet", "مفيش فئات مخصصة لسه"));
     const categoriesSection = '<section class="dash-section"><h2 class="section-title">' + esc(app.L("Categories")) + '</h2><p class="muted small">' + esc(app.L("Add your own income and expense categories — they show up in every entry form alongside the built-in ones.", "ضيف فئات دخل ومصروف خاصة بيك — هتظهر في كل نموذج إدخال جمب الفئات الجاهزة.")) + '</p>' +
       '<div class="field-grid">' +
         '<label class="field"><span class="field-label">' + esc(app.L("Add expense category")) + '</span><div class="btn-row"><input class="input" id="newExpenseCat" type="text" placeholder="' + esc(app.L("e.g. Gym")) + '"><button class="btn btn-secondary" onclick="UI.addCategoryC(\'expense\')">' + esc(app.L("Add")) + "</button></div></label>" +
@@ -4346,7 +4421,7 @@ const UI = {
     const budgetRows = Object.keys(budgets).length ? '<div class="card-list">' + Object.entries(budgets).sort((a, b) => b[1] - a[1]).map(([cat, amt]) =>
       '<div class="card-row" style="border-inline-start:4px solid ' + app.categoryColor(cat, "expense") + '"><div class="card-row-top"><div class="card-row-title">' + esc(cat) + '</div><div class="card-row-amt">' + app.fmt(amt) + "/" + esc(app.L("mo", "شهر")) + "</div></div>" +
       '<button class="link-btn small" onclick="UI.clearBudgetC(\'' + cat.replace(/'/g, "\\'") + '\')">' + esc(app.L("Remove")) + "</button></div>"
-    ).join("") + "</div>" : '<p class="muted small">' + esc(app.L("No budgets set yet.", "لسه مفيش ميزانيات متحددة.")) + "</p>";
+    ).join("") + "</div>" : this.emptyState(ICON_PLUS, app.L("No budgets set yet", "لسه مفيش ميزانيات متحددة"));
     const budgetsSection = '<section class="dash-section"><h2 class="section-title">' + esc(app.L("Budgets")) + '</h2><p class="muted small">' + esc(app.L("Set a monthly limit per expense category — the Dashboard flags it once you're near or over.", "حدد سقف شهري لكل فئة مصروف — الداشبورد هينبهك لما تقرب أو تتخطاه.")) + '</p>' +
       '<div class="field-grid">' +
         '<label class="field"><span class="field-label">' + esc(t.category) + '</span><select class="input" id="budgetCat">' + catOptions.map(o => '<option value="' + esc(o.v) + '">' + esc(o.l) + "</option>").join("") + "</select></label>" +
