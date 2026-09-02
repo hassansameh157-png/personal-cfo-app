@@ -602,8 +602,11 @@ button.bar-row{width:100%;border:0;background:none;padding:6px 0;min-height:44px
 .event-amt{font-variant-numeric:tabular-nums;font-weight:600;font-size:14px;white-space:nowrap}
 
 /* ---- filters ---- */
-.filter-row{display:grid;grid-template-columns:1.4fr 1fr 1fr 1fr;gap:8px;margin-bottom:14px}
-@media (max-width:640px){ .filter-row{grid-template-columns:1fr 1fr} }
+.filter-row{display:grid;grid-template-columns:1.4fr 1fr 1fr 1fr 1fr;gap:8px;margin-bottom:14px}
+/* 5 filters (search, type, account, preset, category) on a 2-col mobile
+   grid leaves a lone last item -- give it the full row instead of
+   stranding it in the first (narrower) column. */
+@media (max-width:640px){ .filter-row{grid-template-columns:1fr 1fr} .filter-row>:last-child{grid-column:1/-1} }
 .input{border:1px solid var(--c-line);border-radius:8px;padding:9px 11px;background:var(--c-surface);min-height:44px;width:100%}
 /* Every .input (text/number/date/select) relied on the browser's own
    default focus ring -- functional, but the one interactive state in the
@@ -979,7 +982,7 @@ class Engine {
   constructor(props) {
     this.props = props || { defaultHorizon: "30", receivablesAreAssets: true, privacyDefault: false };
     this.state = { page: "dashboard", lang: "en", modal: null, form: {}, err: "", privacy: false,
-      horizon: 30, filt: { q: "", type: "all", account: "all", preset: "all" }, openPlan: null, saved: "",
+      horizon: 30, filt: { q: "", type: "all", account: "all", preset: "all", category: "all" }, openPlan: null, saved: "",
       data: null, txVisible: 25, moreOpen: false, arabicNumerals: false, personDetailId: null, whatIf: [], payoffOrder: "largest",
       locked: false, lockErr: "", pinMsg: "", payoffCalc: { personId: "all", amount: "" } };
   }
@@ -2819,10 +2822,20 @@ const UI = {
   // could set by hand from the dropdown there, just one tap instead of two.
   viewAccountTx(id) { this.app.state.filt.account = id; this.setPage("transactions"); },
   // Same idea for a category/source bar (Dashboard's This month, Reports'
-  // by-category and by-source breakdowns) — search already matches
-  // category as one of the fields it checks (see renderTransactions), so
-  // this reuses that instead of adding a dedicated category filter.
-  viewCategoryTx(name) { this.app.state.filt.q = name; this.setPage("transactions"); },
+  // by-category and by-source breakdowns) -- a real, dedicated exact-match
+  // filter (see renderTransactions/Engine's filt.category), NOT the
+  // free-text search. That used to be reused here, which was a genuine
+  // bug a user reported: "Food" is both a category name and ordinary
+  // English text people type into descriptions ("Work food -Talabat"),
+  // so a re-categorized transaction whose description still happened to
+  // mention "food" kept showing up under Food regardless of its real,
+  // already-changed category field.
+  viewCategoryTx(name) { this.app.state.filt.category = name; this.setPage("transactions"); },
+  // A tag isn't a category field value -- unlike viewCategoryTx above,
+  // this one genuinely belongs in the free-text search (a tag chip click
+  // is "search for this word", not "filter to this exact category"),
+  // same as searching for it by hand would do.
+  viewTagTx(name) { this.app.state.filt.q = name; this.setPage("transactions"); },
   toggleMore() { this.app.state.moreOpen = !this.app.state.moreOpen; this.render(); },
   setLang(l) { this.app.state.lang = l; this.render(); },
   togglePrivacy() { this.app.state.privacy = !this.app.state.privacy; this.render(); },
@@ -3640,7 +3653,7 @@ const UI = {
         // here at construction instead (matching fmt()'s <bdi> HTML).
         title: app.L(over ? "Over budget — " : "Near budget — ") + cat,
         body: app.fmt(spent) + app.L(" of ") + app.fmt(budgets[cat]) + app.L(" spent this month."),
-        cta: t.transactions + " →", act: "UI.setPage('transactions');UI.setFilter('q','" + esc(cat).replace(/'/g, "\\'") + "')", sev: over ? "neg" : "warn"
+        cta: t.transactions + " →", act: "UI.setPage('transactions');UI.setFilter('category','" + esc(cat).replace(/'/g, "\\'") + "')", sev: over ? "neg" : "warn"
       });
     });
     // Overall monthly budget (Settings) -- same 90%-before-it's-over nudge
@@ -3658,7 +3671,7 @@ const UI = {
     app.unusualSpending(monthSpend).slice(0, 2).forEach(u => alerts.push({
       title: app.L("Unusual spending — ") + u.category,
       body: app.fmt(u.current) + app.L(" this month so far — about ") + Math.round(u.pct * 100) + app.L("% above your recent average of ") + app.fmt(u.avg) + ".",
-      cta: t.transactions + " →", act: "UI.setPage('transactions');UI.setFilter('q','" + esc(u.category).replace(/'/g, "\\'") + "')", sev: "info"
+      cta: t.transactions + " →", act: "UI.setPage('transactions');UI.setFilter('category','" + esc(u.category).replace(/'/g, "\\'") + "')", sev: "info"
     }));
 
     const needsAttention = '<section class="dash-section">' +
@@ -4055,7 +4068,7 @@ const UI = {
   // Transactions and Person Detail's History.
   txTagChips(r) {
     return (r.tags && r.tags.length) ? '<div class="pill-row" style="margin:4px 0 0">' + r.tags.map((tag) =>
-      '<button class="pill tag-chip" style="' + this.tagStyle(tag) + '" onclick="UI.viewCategoryTx(\'' + esc(tag).replace(/'/g, "\\'") + '\')">#' + esc(tag) + "</button>"
+      '<button class="pill tag-chip" style="' + this.tagStyle(tag) + '" onclick="UI.viewTagTx(\'' + esc(tag).replace(/'/g, "\\'") + '\')">#' + esc(tag) + "</button>"
     ).join("") + "</div>" : "";
   },
   // Reverse stays available on every non-void row, for a formal audit-trail
@@ -4085,6 +4098,30 @@ const UI = {
     if (F.type !== "all") rows = rows.filter(r => r.type === F.type);
     if (F.account !== "all") rows = rows.filter(r => r.accountId === F.account || r.fromId === F.account || r.toId === F.account);
     if (F.preset !== "all") { const from = app.iso(app.addDays(new Date(), -presetStart[F.preset])); rows = rows.filter(r => r.date >= from); }
+    // Exact match, NOT folded into the free-text search below -- a real
+    // bug, reported by a user: "Food" is both a category name AND
+    // ordinary English text people type into descriptions ("Work food -
+    // Talabat"), so the old text search used for "view this category's
+    // transactions" (see UI.viewCategoryTx) matched any row whose
+    // description merely CONTAINED the word, whatever its real category
+    // field said -- a transaction re-categorized away from Food kept
+    // showing up under Food regardless, looking like it was filed under
+    // both at once.
+    // "Other" is special: every category aggregation this app already has
+    // (monthCategorySpend, unusualSpending, Reports' catMap/srcMap) buckets
+    // a transaction with NO category set at all under "Other" too (via
+    // `category || "Other"`), not just one literally categorized "Other" --
+    // so its bar's total includes both, and this filter has to match both
+    // to actually show what that bar counted, not silently drop the
+    // uncategorized half. Scoped to the same types those aggregations
+    // actually sum (expense, or income/refund/investment_return) -- every
+    // OTHER type (transfer, receivable/payable, investment_buy, a gam3ya
+    // installment, a reversal marker...) never carries a category at all
+    // either, but was never counted into that bar's total, so a bare
+    // `!r.category` on its own would sweep in unrelated transactions the
+    // "Other" bar never claimed to represent.
+    const catBucketTypes = ["income", "expense", "refund", "investment_return"];
+    if (F.category !== "all") rows = rows.filter(r => F.category === "Other" ? (catBucketTypes.includes(r.type) && !r.category) : r.category === F.category);
     if (F.q.trim()) { const q = F.q.toLowerCase(); rows = rows.filter(r => [r.desc, r.category, typeLabels[r.type], app.personName(r.personId), app.accName(r.accountId), app.accName(r.fromId), app.accName(r.toId), (r.tags || []).join(" ")].join(" ").toLowerCase().includes(q)); }
     const total = rows.length;
     const visible = rows.slice(0, S.txVisible);
@@ -4130,12 +4167,28 @@ const UI = {
     const accOptions = ["all"].concat(d.accounts.map(a => a.id)).map(id => '<option value="' + id + '"' + (F.account === id ? " selected" : "") + ">" + (id === "all" ? esc(app.L("All accounts")) : esc(app.accName(id))) + "</option>").join("");
     const presetOptions = [["all", app.L("All time")], ["today", app.L("Today")], ["week", app.L("Last 7 days")], ["month", app.L("Last 30 days")], ["quarter", app.L("Last 90 days")], ["year", app.L("Last 12 months")]]
       .map(([k, l]) => '<option value="' + k + '"' + (F.preset === k ? " selected" : "") + ">" + esc(l) + "</option>").join("");
+    // Every distinct category actually in use, income and expense both
+    // (this list is data-driven, not FORMS()' own built-in+custom lists,
+    // so it never needs to know which kind a name belongs to and can't
+    // drift out of sync with what's really in the ledger) -- plus F.category
+    // itself, in case a transaction still carries a category that's since
+    // been deleted from Settings (deleteCategory has no in-use guard), so
+    // that filter doesn't silently vanish out from under an active view.
+    const catSet = new Set(d.tx.map(x => x.category).filter(Boolean));
+    // "Other" itself needs adding explicitly if it's only ever implicit --
+    // a transaction with no category set at all is real and filterable
+    // (see the F.category === "Other" special-case above), even when
+    // nothing happens to carry the literal string "Other".
+    if (d.tx.some(x => catBucketTypes.includes(x.type) && !x.category)) catSet.add("Other");
+    if (F.category !== "all") catSet.add(F.category);
+    const catOptions = ["all"].concat([...catSet].sort((a, b) => a.localeCompare(b))).map(c => '<option value="' + esc(c) + '"' + (F.category === c ? " selected" : "") + ">" + (c === "all" ? esc(app.L("All categories", "كل الفئات")) : esc(c)) + "</option>").join("");
 
     const filters = '<div class="filter-row">' +
       '<input id="txSearch" class="input" type="search" placeholder="' + esc(t.search) + '" value="' + esc(F.q) + '" oninput="UI.setFilter(\'q\', this.value)">' +
       '<select class="input" onchange="UI.setFilter(\'type\', this.value)">' + typeOptions + "</select>" +
       '<select class="input" onchange="UI.setFilter(\'account\', this.value)">' + accOptions + "</select>" +
       '<select class="input" onchange="UI.setFilter(\'preset\', this.value)">' + presetOptions + "</select>" +
+      '<select class="input" onchange="UI.setFilter(\'category\', this.value)">' + catOptions + "</select>" +
     "</div>";
 
     return this.tabHeader(t.transactions, total + app.L(" records match your filters", " حركة مطابقة للفلاتر"),
