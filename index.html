@@ -1233,6 +1233,35 @@ class Engine {
     document.body.appendChild(a); a.click(); document.body.removeChild(a);
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
+  // ---- backup reminder ---------------------------------------------------
+  // Everything lives in this one browser's storage -- clearing site data,
+  // losing the device, or a browser bug is the difference between "fine"
+  // and "every transaction ever entered is gone for good," and the app's
+  // only real protection (Settings' Export JSON backup) is easy to forget
+  // exists once the novelty wears off. Called by UI.exportJson() only --
+  // exportCsv() is transactions-only and restoreFromJson() can't rebuild
+  // accounts/people/plans from it, so it doesn't count as a real backup.
+  recordBackup() {
+    const data = JSON.parse(JSON.stringify(this.state.data));
+    data.lastBackupAt = this.today();
+    data.lastBackupTxCount = data.tx.length;
+    this.persist(data);
+  }
+  // A nudge, not an alarm -- gated on there being real data worth losing
+  // (a fresh install's demo/near-empty ledger doesn't need this), then
+  // true once EITHER a real amount of time has passed since the last
+  // export OR enough new transactions have piled up since then that the
+  // last backup would leave a meaningful gap, whichever comes first.
+  // Cleared the moment recordBackup() runs again, same as saveError/
+  // loadError clear on their own resolving action.
+  needsBackupReminder() {
+    const d = this.state.data;
+    if (!d.tx || d.tx.length < 10) return false;
+    if (!d.lastBackupAt) return true;
+    const daysSince = Math.round((new Date(this.today()) - new Date(d.lastBackupAt)) / 86400000);
+    const newTxSince = d.tx.length - (d.lastBackupTxCount || 0);
+    return daysSince >= 30 || newTxSince >= 20;
+  }
 
   // ---- helpers ---------------------------------------------------------
   uid(p) { return p + "_" + Math.random().toString(36).slice(2, 9); }
@@ -3339,6 +3368,11 @@ const UI = {
   exportJson() {
     const d = this.app.state.data;
     this.app.download("personal-cfo-backup.json", JSON.stringify(d, null, 2), "application/json");
+    // Records this as a real backup (see Engine.recordBackup) so the
+    // Dashboard's "haven't backed up in a while" nudge clears right away
+    // instead of still showing on the very next visit.
+    this.app.recordBackup();
+    this.render();
   },
   restoreJsonFile(input) {
     const file = input.files && input.files[0]; if (!file) return;
@@ -3776,6 +3810,18 @@ const UI = {
       title: app.L("Your saved data couldn't be read", "بياناتك المحفوظة معرفتش تتقرا"),
       body: app.L("What you're looking at now is fresh demo data, not your real history — the browser's copy may be corrupted. If you have an earlier JSON backup, restore it from Settings rather than saving anything here first.", "اللي شايفه دلوقتي بيانات تجريبية، مش تاريخك الحقيقي — نسخة المتصفح ممكن تكون تلفت. لو عندك نسخة JSON قديمة، استعيدها من الإعدادات قبل ما تحفظ أي حاجة هنا."),
       cta: t.dataBackup + " →", go: "settings", sev: "neg"
+    });
+    // A hygiene nudge, not an active failure -- everything here still
+    // lives in this one browser (see Engine.needsBackupReminder), so
+    // losing the device or clearing site data loses it all with no
+    // warning unless a real export exists to fall back on. "warn", not
+    // "neg": nothing is actually broken right now the way saveError/
+    // loadError above mean, but ignoring it is how those two turn into a
+    // genuine, unrecoverable loss instead of an inconvenience.
+    if (app.needsBackupReminder()) alerts.push({
+      title: app.L("Back up your data", "اعمل نسخة احتياطية من بياناتك"),
+      body: app.L("Everything here lives only in this browser. Export a JSON backup so losing this device, or clearing its storage, doesn't lose your financial history with it.", "كل بياناتك هنا عايشة في المتصفح ده بس. صدّر نسخة JSON عشان لو ضاع الجهاز ده أو اتمسحت بياناته، تاريخك المالي مايضيعش معاه."),
+      cta: app.L("Export a backup", "تصدير نسخة احتياطية") + " →", act: "UI.exportJson()", sev: "warn"
     });
     D.plans.filter(p => p.overdue > 0).forEach(p => alerts.push({
       title: app.L(p.direction === "in" ? "Overdue collection · " : "Overdue payment · ") + app.personName(p.personId),
@@ -5040,8 +5086,16 @@ const UI = {
       { k: app.L("Opening positions"), v: app.L("receivables and debts carried in from before the system move no cash.") },
       { k: app.L("Forecast"), v: app.L("recurring rules plus unpaid installment rows, applied to today's available balance.") }
     ];
+    // "Never" isn't scary phrasing here on purpose -- someone who just
+    // started using the app genuinely hasn't needed to yet; the Dashboard
+    // alert (see needsBackupReminder) is where urgency actually belongs,
+    // once there's real data worth losing.
+    const lastBackupText = d.lastBackupAt
+      ? app.L("Last backup: ", "آخر نسخة احتياطية: ") + d.lastBackupAt
+      : app.L("Last backup: never", "آخر نسخة احتياطية: لسه معملتش");
     return this.tabHeader(t.settings, app.L("Backup, restore and the calculation rules in force"), []) +
       '<section class="dash-section"><h2 class="section-title">' + esc(t.dataBackup) + '</h2><p class="muted small">' + esc(t.backupNote) + '</p>' +
+      '<p class="muted small">' + esc(lastBackupText) + '</p>' +
       '<div class="btn-row wrap"><button class="btn btn-secondary" onclick="UI.exportJson()">' + esc(t.exportJson) + '</button><button class="btn btn-secondary" onclick="UI.exportCsv()">' + esc(t.exportCsv) + "</button>" +
       '<button class="btn btn-secondary" onclick="document.getElementById(\'restoreFile\').click()">' + esc(t.importJson) + "</button>" +
       '<input type="file" id="restoreFile" accept="application/json,.json" style="display:none" onchange="UI.restoreJsonFile(this)">' +
