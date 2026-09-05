@@ -2880,6 +2880,27 @@ function esc(s) {
   return String(s === undefined || s === null ? "" : s)
     .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
+// Real bug, found and fixed once (the chart tooltip), then found again at
+// every other call site that builds an onclick="Fn(event,'...')" argument
+// out of user-controlled text (a person's name, a tag, a custom category)
+// -- each one hand-rolled esc(x).replace(/'/g, "\\'") on its own, which
+// escapes the closing quote but not a literal backslash that might sit
+// right before it. A value ending in a backslash-then-quote (a person
+// named ...\", say) would let that backslash escape the ESCAPED quote
+// instead, closing the onclick string early -- the exact bug the chart
+// tooltip had. One shared helper closes this off structurally, so a
+// future call site gets it right by construction instead of needing the
+// same fix re-derived and re-verified by hand every time: esc()
+// (HTML-attribute-safe) plus backslash-before-quote (JS-string-literal-
+// safe). The two don't actually interact -- esc() only ever touches
+// & < > ", the backslash/quote step only ever touches \ and ' -- so
+// unlike the original bug (missing the backslash step entirely), the
+// order between these two specific steps isn't itself what's load-
+// bearing here; doing both, in either order, is what the original bug
+// skipped.
+function escJsArg(s) {
+  return esc(s).replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+}
 function svgIcon(d, size) {
   size = size || 16;
   return '<svg width="' + size + '" height="' + size + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="' + d + '"></path></svg>';
@@ -3603,23 +3624,18 @@ const UI = {
     const max = Math.max(1, ...items.map((i) => Math.abs(i.value)));
     return '<div class="chart-cols">' + items.map((i) => {
       const c = colorFn(i);
-      const tip = esc(i.label) + ": " + esc(app.fmtPlain(i.value));
-      // Backslashes must be escaped BEFORE quotes, not just quotes alone --
-      // a label containing a literal backslash right before a quote (e.g. a
-      // card statement's free-text period field) would otherwise let the
-      // escaped-quote sequence itself get swallowed by the injected
-      // backslash, closing the onclick string early. i.label reaches this
-      // codebase's usual esc()'d-then-quote-escaped pattern used all over
-      // ui.js for onclick args, none of which escape backslashes either --
-      // but this is the one call site fed by genuinely free text (a
-      // statement's period), not a fixed category/tag/person name, so it
-      // gets the real fix rather than repeating the shared gap.
-      const tipJs = tip.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+      // rawTip feeds two different contexts that need two different
+      // escapes -- tipAttr (esc() alone, for the aria-label HTML
+      // attribute) and tipJs (escJsArg(), for the onclick JS-string
+      // argument inside that same kind of attribute) -- see escJsArg()'s
+      // own comment for why plain esc() isn't enough there.
+      const rawTip = i.label + ": " + app.fmtPlain(i.value);
+      const tipAttr = esc(rawTip);
+      const tipJs = escJsArg(rawTip);
       // role/tabindex/onkeydown -- a plain onclick div is mouse/touch-only;
       // this makes the tooltip (the bar's one and only way to expose its
-      // exact value as text) reachable by keyboard too. tip is already
-      // esc()'d, safe to reuse verbatim as the aria-label.
-      return '<div class="chart-col"><div class="chart-bar" role="button" tabindex="0" aria-label="' + tip + '" onclick="UI.showChartTooltip(event,\'' + tipJs + '\')" onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();UI.showChartTooltip(event,\'' + tipJs + '\')}" style="height:' + Math.max(4, Math.abs(i.value) / max * 100) + '%;' +
+      // exact value as text) reachable by keyboard too.
+      return '<div class="chart-col"><div class="chart-bar" role="button" tabindex="0" aria-label="' + tipAttr + '" onclick="UI.showChartTooltip(event,\'' + tipJs + '\')" onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();UI.showChartTooltip(event,\'' + tipJs + '\')}" style="height:' + Math.max(4, Math.abs(i.value) / max * 100) + '%;' +
         "background:linear-gradient(180deg,color-mix(in srgb," + c + " 70%,white 30%)," + c + ");" +
         "box-shadow:0 -6px 14px -4px color-mix(in srgb," + c + " 55%,transparent)" +
         '"></div><div class="chart-label">' + esc(i.label) + "</div></div>";
@@ -3635,7 +3651,7 @@ const UI = {
   catBar(name, v, max, kind, over, suffix) {
     const app = this.app;
     const ring = over ? ";outline:2px solid var(--c-neg);outline-offset:1px" : "";
-    return '<button class="bar-row" onclick="UI.viewCategoryTx(\'' + esc(name).replace(/'/g, "\\'") + '\')"><span class="bar-name">' + esc(name) + '</span>' +
+    return '<button class="bar-row" onclick="UI.viewCategoryTx(\'' + escJsArg(name) + '\')"><span class="bar-name">' + esc(name) + '</span>' +
       '<div class="bar-track"><div class="bar-fill" style="width:' + Math.max(4, v / max * 100) + '%;background:' + app.categoryColor(name, kind) + ring + '"></div></div>' +
       '<span class="bar-val' + (over ? " tone-neg" : "") + '">' + app.fmt(v) + (suffix || "") + "</span></button>";
   },
@@ -3820,7 +3836,7 @@ const UI = {
         // here at construction instead (matching fmt()'s <bdi> HTML).
         title: app.L(over ? "Over budget — " : "Near budget — ") + cat,
         body: app.fmt(spent) + app.L(" of ") + app.fmt(budgets[cat]) + app.L(" spent this month."),
-        cta: t.transactions + " →", act: "UI.setPage('transactions');UI.setFilter('category','" + esc(cat).replace(/'/g, "\\'") + "')", sev: over ? "neg" : "warn"
+        cta: t.transactions + " →", act: "UI.setPage('transactions');UI.setFilter('category','" + escJsArg(cat) + "')", sev: over ? "neg" : "warn"
       });
     });
     // Overall monthly budget (Settings) -- same 90%-before-it's-over nudge
@@ -3838,7 +3854,7 @@ const UI = {
     app.unusualSpending(monthSpend).slice(0, 2).forEach(u => alerts.push({
       title: app.L("Unusual spending — ") + u.category,
       body: app.fmt(u.current) + app.L(" this month so far — about ") + Math.round(u.pct * 100) + app.L("% above your recent average of ") + app.fmt(u.avg) + ".",
-      cta: t.transactions + " →", act: "UI.setPage('transactions');UI.setFilter('category','" + esc(u.category).replace(/'/g, "\\'") + "')", sev: "info"
+      cta: t.transactions + " →", act: "UI.setPage('transactions');UI.setFilter('category','" + escJsArg(u.category) + "')", sev: "info"
     }));
 
     const needsAttention = '<section class="dash-section">' +
@@ -4235,7 +4251,7 @@ const UI = {
   // Transactions and Person Detail's History.
   txTagChips(r) {
     return (r.tags && r.tags.length) ? '<div class="pill-row" style="margin:4px 0 0">' + r.tags.map((tag) =>
-      '<button class="pill tag-chip" style="' + this.tagStyle(tag) + '" onclick="UI.viewTagTx(\'' + esc(tag).replace(/'/g, "\\'") + '\')">#' + esc(tag) + "</button>"
+      '<button class="pill tag-chip" style="' + this.tagStyle(tag) + '" onclick="UI.viewTagTx(\'' + escJsArg(tag) + '\')">#' + esc(tag) + "</button>"
     ).join("") + "</div>" : "";
   },
   // Reverse stays available on every non-void row, for a formal audit-trail
@@ -4421,14 +4437,14 @@ const UI = {
       "<th>" + esc(t.name) + "</th><th>" + esc(t.phone) + "</th><th class=\"num\">" + esc(t.owesMe) + "</th><th class=\"num\">" + esc(t.iOwe) + "</th><th class=\"num\">" + esc(t.net) + "</th><th></th>" +
       "</tr></thead><tbody>" + rows.map((row) => { const { p, r, y, net } = row;
         return "<tr><td><div class=\"person-id\">" + this.personAvatar(p, "sm") + "<button class=\"link-btn\" onclick=\"UI.viewPerson('" + p.id + "')\">" + esc(p.name) + "</button></div></td><td>" + esc(p.phone || "—") + '</td><td class="num tone-pos">' + app.fmt(r) + '</td><td class="num tone-neg">' + app.fmt(y) + '</td><td class="num ' + (net >= 0 ? "tone-pos" : "tone-neg") + '">' + app.fmt(net) + "</td>" +
-        '<td><button class="link-btn small" onclick="UI.setPage(\'transactions\');UI.setFilter(\'q\',\'' + esc(p.name).replace(/'/g, "\\'") + '\')">' + esc(t.viewTx) + "</button>" + personActions(row) + "</td></tr>";
+        '<td><button class="link-btn small" onclick="UI.setPage(\'transactions\');UI.setFilter(\'q\',\'' + escJsArg(p.name) + '\')">' + esc(t.viewTx) + "</button>" + personActions(row) + "</td></tr>";
       }).join("") + "</tbody></table></div>";
 
     const cards = '<div class="card-list mobile-only">' + rows.map((row) => { const { p, r, y, net } = row;
       return '<div class="card-row person-card" style="border-inline-start:4px solid ' + this.personColor(p) + '"><div class="card-row-top"><div class="person-id">' + this.personAvatar(p) + '<div><button class="link-btn card-row-title" onclick="UI.viewPerson(\'' + p.id + '\')">' + esc(p.name) + '</button><div class="card-row-sub">' + this.personTag(p) + (p.phone ? " · " + esc(p.phone) : "") + "</div></div></div>" +
       '<div class="card-row-amt ' + (net >= 0 ? "tone-pos" : "tone-neg") + '">' + app.fmt(net) + "</div></div>" +
       '<div class="card-row-meta"><span>' + esc(t.owesMe) + ": " + app.fmt(r) + '</span><span>' + esc(t.iOwe) + ": " + app.fmt(y) + "</span></div>" +
-      '<div class="btn-row wrap"><button class="link-btn small" onclick="UI.setPage(\'transactions\');UI.setFilter(\'q\',\'' + esc(p.name).replace(/'/g, "\\'") + '\')">' + esc(t.viewTx) + "</button>" + personActions(row) + "</div></div>";
+      '<div class="btn-row wrap"><button class="link-btn small" onclick="UI.setPage(\'transactions\');UI.setFilter(\'q\',\'' + escJsArg(p.name) + '\')">' + esc(t.viewTx) + "</button>" + personActions(row) + "</div></div>";
     }).join("") + "</div>";
 
     return this.tabHeader(t.people, d.people.length + app.L(" people · balances computed from the ledger", " شخص · الأرصدة محسوبة من السجل"), [[t.aPerson, "UI.openModal('person')"]]) + table + cards;
@@ -4928,7 +4944,7 @@ const UI = {
     const custom = d.customCategories || { income: [], expense: [] };
     const catChips = (kind, list) => list.length ?
       '<div class="btn-row wrap">' + list.map(c =>
-        '<span class="pill">' + esc(c) + ' <button class="link-btn small danger" onclick="UI.deleteCategoryC(\'' + kind + '\',\'' + esc(c).replace(/'/g, "\\'") + '\')" aria-label="' + esc(app.L("Remove ") + c) + '">×</button></span>'
+        '<span class="pill">' + esc(c) + ' <button class="link-btn small danger" onclick="UI.deleteCategoryC(\'' + kind + '\',\'' + escJsArg(c) + '\')" aria-label="' + esc(app.L("Remove ") + c) + '">×</button></span>'
       ).join("") + "</div>" :
       // No body text -- the section intro right above already explains
       // what to do, so a second line here would just repeat it.
@@ -4950,7 +4966,12 @@ const UI = {
     // "which budget is this" cue in a list that's otherwise just names.
     const budgetRows = Object.keys(budgets).length ? '<div class="card-list">' + Object.entries(budgets).sort((a, b) => b[1] - a[1]).map(([cat, amt]) =>
       '<div class="card-row" style="border-inline-start:4px solid ' + app.categoryColor(cat, "expense") + '"><div class="card-row-top"><div class="card-row-title">' + esc(cat) + '</div><div class="card-row-amt">' + app.fmt(amt) + "/" + esc(app.L("mo", "شهر")) + "</div></div>" +
-      '<button class="link-btn small" onclick="UI.clearBudgetC(\'' + cat.replace(/'/g, "\\'") + '\')">' + esc(app.L("Remove")) + "</button></div>"
+      // Real bug, found while auditing every onclick arg for this same
+      // class of bug: this one was missing esc() entirely (not just the
+      // backslash-before-quote fix escJsArg() applies everywhere else) --
+      // a budget category name containing '<', '>', '"' or '&' would have
+      // reached the page as raw, unescaped HTML.
+      '<button class="link-btn small" onclick="UI.clearBudgetC(\'' + escJsArg(cat) + '\')">' + esc(app.L("Remove")) + "</button></div>"
     ).join("") + "</div>" : this.emptyState(ICON_PLUS, app.L("No budgets set yet", "لسه مفيش ميزانيات متحددة"));
     const budgetsSection = '<section class="dash-section"><h2 class="section-title">' + esc(app.L("Budgets")) + '</h2><p class="muted small">' + esc(app.L("Set a monthly limit per expense category — the Dashboard flags it once you're near or over.", "حدد سقف شهري لكل فئة مصروف — الداشبورد هينبهك لما تقرب أو تتخطاه.")) + '</p>' +
       '<div class="field-grid">' +
@@ -5142,7 +5163,7 @@ const UI = {
         // click just sets its value directly, same no-render() reasoning
         // as UI.setColorField.
         const kind = S.modal === "income" ? "income" : "expense";
-        const pills = f.options.map(o => '<button type="button" class="cat-pill" style="--pill-c:' + app.categoryColor(o.v, kind) + '" onclick="UI.setCategoryField(\'' + esc(o.v).replace(/'/g, "\\'") + '\')">' + esc(o.l) + "</button>").join("");
+        const pills = f.options.map(o => '<button type="button" class="cat-pill" style="--pill-c:' + app.categoryColor(o.v, kind) + '" onclick="UI.setCategoryField(\'' + escJsArg(o.v) + '\')">' + esc(o.l) + "</button>").join("");
         // onchange="UI._categoryTouched=true" -- the user directly picking
         // one (dropdown or keyboard, not the pills, which set this
         // themselves in setCategoryField) is exactly the deliberate choice
