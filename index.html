@@ -1104,6 +1104,20 @@ class Engine {
   }
 
   // ---- bootstrap -----------------------------------------------------
+  // The one place the localStorage key name is decided. Bump this the day
+  // the stored data's shape changes in a way old code genuinely can't
+  // read (not for every small addition -- new fields old code just
+  // ignores are fine under the same key) -- and push the value it's
+  // replacing onto the FRONT of legacyStorageKeys() below (newest first).
+  // Without that second step, a version bump on its own is exactly the
+  // bug load() used to have before loadError existed: every existing
+  // user's real financial history sits under a key this build no longer
+  // looks at, and silently looks like a fresh install with demo data --
+  // now migrateOrLoad() finds it under the old key instead and carries it
+  // forward, the first time this build runs for them.
+  storageKey() { return "pcfo.v7"; }
+  // e.g. return ["pcfo.v7"]; the day storageKey() above becomes "pcfo.v8".
+  legacyStorageKeys() { return []; }
   // Real bug, found by inspection: a genuinely first-time user (nothing
   // stored yet -- raw is simply null) and someone whose real saved data
   // just failed to load (corrupted JSON, or localStorage itself throwing)
@@ -1114,23 +1128,60 @@ class Engine {
   // loadError now distinguishes them: renderDashboard's Needs Attention
   // surfaces it (same pattern as saveError) rather than silently handing
   // back someone's real financial history as if it never existed.
+  // Reads one stored key and, if it parses, returns the data -- otherwise
+  // records the failure (loadError, plus a best-effort raw backup under
+  // its OWN key so a later, older legacy key's own corrupted-backup can
+  // never collide with or overwrite this one) and returns null so the
+  // caller can keep looking rather than stopping here.
+  readStoredKey(key) {
+    let raw = null;
+    try { raw = localStorage.getItem(key); } catch (e) { this.state.loadError = true; return null; }
+    if (!raw) return null;
+    try { return JSON.parse(raw); } catch (e) {
+      this.state.loadError = true;
+      // The very next persist() overwrites the current key with fresh
+      // demo data plus whatever the user does next, permanently losing
+      // any chance of recovering this raw string -- stash an untouched
+      // copy first, best-effort, so real data corrupted by something
+      // outside this app (a failed write mid-save, a browser bug) isn't
+      // unrecoverable the moment the user does anything at all.
+      try { localStorage.setItem(key + ".corrupted-backup", raw); } catch (e2) {}
+      return null;
+    }
+  }
   load() {
-    let d = null, raw = null;
-    try { raw = localStorage.getItem("pcfo.v7"); } catch (e) { this.state.loadError = true; }
-    if (raw) {
-      try { d = JSON.parse(raw); } catch (e) {
-        this.state.loadError = true;
-        // The very next persist() overwrites "pcfo.v7" with fresh demo
-        // data plus whatever the user does next, permanently losing any
-        // chance of recovering this raw string -- stash an untouched copy
-        // under its own key first, best-effort, so real data corrupted by
-        // something outside this app (a failed write mid-save, a browser
-        // bug) isn't unrecoverable the moment the user does anything at all.
-        try { localStorage.setItem("pcfo.v7.corrupted-backup", raw); } catch (e2) {}
+    let d = this.readStoredKey(this.storageKey());
+    // Nothing (or unreadable garbage) under the current key doesn't
+    // necessarily mean a fresh install -- check every key storageKey()
+    // has ever replaced before assuming that and handing back demo data
+    // over someone's real history. Each legacy key that fails to parse
+    // is skipped, not treated as the final answer -- an unrelated bit of
+    // corruption sitting under a middle key must never block reaching a
+    // perfectly good one further back, and readStoredKey() has already
+    // recorded/backed up that failure on its own. Checked newest-first
+    // (legacyStorageKeys()' own order), so the most recently superseded
+    // key wins if more than one somehow still has real data.
+    let migratedFrom = null;
+    if (!d) {
+      for (const oldKey of this.legacyStorageKeys()) {
+        const legacyData = this.readStoredKey(oldKey);
+        if (legacyData) { d = legacyData; migratedFrom = oldKey; break; }
       }
     }
     if (!d) d = this.seed();
     this.state.data = d;
+    // A migration only actually counts once it's written under the
+    // current key -- read-only isn't enough, or the NEXT version bump's
+    // own load() would look for this one's legacy key (the one it just
+    // read from) and still find nothing there, having never promoted the
+    // data forward from the one before that. Only reached when d
+    // genuinely came from a legacy key that parsed -- never for the
+    // seed() fallback, which would otherwise (a real bug, caught before
+    // shipping) call persist() successfully and silently clear the very
+    // loadError that fallback exists to report. persist() with no note:
+    // this alone isn't a change worth an audit-trail entry, just the
+    // same data settling under its new key.
+    if (migratedFrom) this.persist(d);
     this.state.horizon = Number(this.props.defaultHorizon || 30);
     this.state.privacy = !!this.props.privacyDefault;
   }
@@ -1150,7 +1201,7 @@ class Engine {
     const d = Object.assign({}, data);
     if (note) d.audit = [{ at: new Date().toISOString().slice(0, 16).replace("T", " "), what: note }].concat(d.audit || []).slice(0, 120);
     let ok = true;
-    try { localStorage.setItem("pcfo.v7", JSON.stringify(d)); } catch (e) { ok = false; }
+    try { localStorage.setItem(this.storageKey(), JSON.stringify(d)); } catch (e) { ok = false; }
     this.state.data = d;
     if (ok) {
       this.state.saved = "Saved " + new Date().toLocaleTimeString();
