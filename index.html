@@ -947,6 +947,19 @@ button.bar-row{width:100%;border:0;background:none;padding:6px 0;min-height:44px
 .flash-pill-enter{opacity:0;transform:translateY(8px) scale(.92)}
 .flash-pill-exit{opacity:0;transform:translateY(-6px) scale(.96)}
 .flash-pill svg{color:var(--c-pos);flex:none}
+/* A save failure is a real warning, not a quick confirmation -- longer
+   message, a dismiss button, no auto-hide -- so it gets its own shape
+   (a rounded card, not a fully round pill sized for one short line) and
+   re-enables pointer-events on itself specifically, since .flash's own
+   pointer-events:none (fine for the plain auto-dismissing pills) would
+   otherwise swallow clicks on its dismiss button too. */
+.flash-pill.danger{pointer-events:auto;border-radius:14px;max-width:min(92vw,380px);
+  align-items:flex-start;box-shadow:0 1px 0 rgba(255,255,255,.25) inset, var(--glow-neg-strong)}
+.flash-pill.danger svg{color:var(--c-neg);margin-top:1px}
+.flash-pill.danger span{flex:1}
+.flash-dismiss{background:none;border:0;padding:0 0 0 6px;margin:0;color:inherit;opacity:.7;
+  font-size:16px;line-height:1;cursor:pointer;flex:none}
+.flash-dismiss:hover{opacity:1}
 @media (prefers-reduced-motion:reduce){
   .flash-pill{transition:opacity .15s ease}
   .flash-pill-enter, .flash-pill-exit{transform:none}
@@ -983,6 +996,18 @@ class Engine {
     this.props = props || { defaultHorizon: "30", receivablesAreAssets: true, privacyDefault: false };
     this.state = { page: "dashboard", lang: "en", modal: null, form: {}, err: "", privacy: false,
       horizon: 30, filt: { q: "", type: "all", account: "all", preset: "all", category: "all" }, openPlan: null, saved: "",
+      // Set the instant a persist() actually fails to reach localStorage --
+      // see persist() itself -- and cleared the instant one succeeds again.
+      // Not persisted itself for the obvious reason: if storage is what's
+      // broken, this can only ever live in memory for the current session.
+      saveError: false,
+      // Set once, at load(), if the stored data existed but couldn't be
+      // read back (corrupted JSON, or localStorage itself throwing) --
+      // never cleared automatically, since the demo data it fell back to
+      // is not the user's real data and every save from here on would
+      // otherwise silently start overwriting whatever's still recoverable
+      // in that raw stored string.
+      loadError: false,
       data: null, txVisible: 25, moreOpen: false, arabicNumerals: false, personDetailId: null, whatIf: [], payoffOrder: "largest",
       locked: false, lockErr: "", pinMsg: "", payoffCalc: { personId: "all", amount: "" } };
   }
@@ -1079,20 +1104,72 @@ class Engine {
   }
 
   // ---- bootstrap -----------------------------------------------------
+  // Real bug, found by inspection: a genuinely first-time user (nothing
+  // stored yet -- raw is simply null) and someone whose real saved data
+  // just failed to load (corrupted JSON, or localStorage itself throwing)
+  // used to be treated identically -- both silently fell back to seed()'s
+  // demo data, so an actual load failure looked exactly like a fresh
+  // install, with no way to tell the difference and no chance to recover
+  // the raw string before it's overwritten by the very next persist().
+  // loadError now distinguishes them: renderDashboard's Needs Attention
+  // surfaces it (same pattern as saveError) rather than silently handing
+  // back someone's real financial history as if it never existed.
   load() {
-    let d = null;
-    try { const raw = localStorage.getItem("pcfo.v7"); if (raw) d = JSON.parse(raw); } catch (e) {}
+    let d = null, raw = null;
+    try { raw = localStorage.getItem("pcfo.v7"); } catch (e) { this.state.loadError = true; }
+    if (raw) {
+      try { d = JSON.parse(raw); } catch (e) {
+        this.state.loadError = true;
+        // The very next persist() overwrites "pcfo.v7" with fresh demo
+        // data plus whatever the user does next, permanently losing any
+        // chance of recovering this raw string -- stash an untouched copy
+        // under its own key first, best-effort, so real data corrupted by
+        // something outside this app (a failed write mid-save, a browser
+        // bug) isn't unrecoverable the moment the user does anything at all.
+        try { localStorage.setItem("pcfo.v7.corrupted-backup", raw); } catch (e2) {}
+      }
+    }
     if (!d) d = this.seed();
     this.state.data = d;
     this.state.horizon = Number(this.props.defaultHorizon || 30);
     this.state.privacy = !!this.props.privacyDefault;
   }
+  // Real bug, found by inspection: localStorage.setItem's own failure (a
+  // full quota -- very reachable after months of real use in a finance
+  // app that keeps every transaction forever -- or Safari private
+  // browsing, which blocks writes outright) used to be silently
+  // swallowed here, then state.saved was set to "Saved ..." regardless,
+  // so the UI told the user their change was safe when it never actually
+  // reached disk. state.data is still updated in memory either way, so
+  // the app stays usable for the rest of this session -- but
+  // state.saveError now records the truth, and UI.flash()/the Dashboard
+  // alert built on it (see renderDashboard) make sure that truth is
+  // actually seen instead of silently reverting on the next reload with
+  // no warning at all.
   persist(data, note) {
     const d = Object.assign({}, data);
     if (note) d.audit = [{ at: new Date().toISOString().slice(0, 16).replace("T", " "), what: note }].concat(d.audit || []).slice(0, 120);
-    try { localStorage.setItem("pcfo.v7", JSON.stringify(d)); } catch (e) {}
+    let ok = true;
+    try { localStorage.setItem("pcfo.v7", JSON.stringify(d)); } catch (e) { ok = false; }
     this.state.data = d;
-    this.state.saved = "Saved " + new Date().toLocaleTimeString();
+    if (ok) {
+      this.state.saved = "Saved " + new Date().toLocaleTimeString();
+      this.state.saveError = false;
+      // Real bug, found by inspection: any successful persist() means
+      // state.data is now exactly what's on disk, whatever caused an
+      // earlier load() to fail (a corrupted read, or the user
+      // deliberately reseeding/wiping/restoring over it) is moot from
+      // here on -- but loadError, unlike saveError just above, was never
+      // being reset anywhere. Left alone, restoreFromJson() successfully
+      // loading a REAL backup still left the "your data couldn't be
+      // read... this is demo data" alert stuck on screen for the rest of
+      // the session, actively contradicting what just happened.
+      this.state.loadError = false;
+    } else {
+      this.state.saved = "";
+      this.state.saveError = true;
+    }
+    return ok;
   }
   // Real bug, found late: this was called by exportJson()/exportCsv() but
   // never actually defined, so both buttons threw "app.download is not a
@@ -3031,14 +3108,36 @@ const UI = {
   // Each pill manages its own lifecycle via its own setTimeout, so several
   // queued in a row (a quick run of edits/deletes) stack and fade
   // independently instead of one replacing the last.
+  // saveError branch: a real bug, found by inspection, not reported by a
+  // user -- Engine.persist() used to swallow localStorage.setItem's own
+  // failure (a full quota, or Safari private browsing blocking writes
+  // outright) and still report success. A save that genuinely failed
+  // needs a warning that's actually seen, not a 1.8s pill indistinguishable
+  // from every routine success one -- so this variant carries its own
+  // danger styling, a role="alert" (not "status", which many screen
+  // readers announce far less assertively), stays until the user
+  // dismisses it, and reads as an alert-triangle rather than the usual
+  // checkmark.
   flash() {
     const stack = document.getElementById("flashStack");
     if (!stack) return;
+    const app = this.app;
     const pill = document.createElement("div");
+    if (app.state.saveError) {
+      pill.className = "flash-pill danger flash-pill-enter";
+      pill.setAttribute("role", "alert");
+      pill.setAttribute("aria-live", "assertive");
+      pill.innerHTML = svgIcon("M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0ZM12 9v4M12 17h.01", 15) +
+        '<span>' + esc(app.L("Not saved — check your browser storage isn't full or blocked.", "لم يُحفظ — تأكد إن تخزين المتصفح مش ممتلئ أو محظور.")) + "</span>" +
+        '<button type="button" class="flash-dismiss" aria-label="' + esc(app.L("Dismiss")) + '" onclick="this.closest(\'.flash-pill\').remove()">×</button>';
+      stack.appendChild(pill);
+      requestAnimationFrame(() => pill.classList.remove("flash-pill-enter"));
+      return;
+    }
     pill.className = "flash-pill flash-pill-enter";
     pill.setAttribute("role", "status");
     pill.setAttribute("aria-live", "polite");
-    pill.innerHTML = svgIcon("M20 6 9 17l-5-5", 15) + esc(this.app.state.saved);
+    pill.innerHTML = svgIcon("M20 6 9 17l-5-5", 15) + esc(app.state.saved);
     stack.appendChild(pill);
     requestAnimationFrame(() => pill.classList.remove("flash-pill-enter"));
     setTimeout(() => {
@@ -3594,6 +3693,23 @@ const UI = {
     // Falls back to "info" (see .alert-card's base rule) if a future push
     // site forgets to set one, rather than defaulting to alarming red.
     const alerts = [];
+    // A save/load failure is more urgent than any budget nudge below, so
+    // it goes first -- and unlike a toast (see UI.flash()'s danger
+    // variant, shown once at the moment of a failed save), this stays
+    // visible on every Dashboard visit for as long as app.state.saveError/
+    // loadError is actually true, so it can't be missed just because the
+    // failure happened on some other page or the toast was dismissed
+    // before it was read.
+    if (app.state.saveError) alerts.push({
+      title: app.L("Your last change wasn't saved", "آخر تعديل ماتحفظش"),
+      body: app.L("Something is blocking this browser's storage (it may be full, or you're in private browsing). Export a backup now so nothing is lost.", "حاجة بتمنع تخزين المتصفح ده (ممكن يكون امتلأ، أو إنك في وضع تصفح خاص). صدّر نسخة احتياطية دلوقتي عشان مفيش حاجة تضيع."),
+      cta: app.L("Export a backup", "تصدير نسخة احتياطية") + " →", act: "UI.exportJson()", sev: "neg"
+    });
+    if (app.state.loadError) alerts.push({
+      title: app.L("Your saved data couldn't be read", "بياناتك المحفوظة معرفتش تتقرا"),
+      body: app.L("What you're looking at now is fresh demo data, not your real history — the browser's copy may be corrupted. If you have an earlier JSON backup, restore it from Settings rather than saving anything here first.", "اللي شايفه دلوقتي بيانات تجريبية، مش تاريخك الحقيقي — نسخة المتصفح ممكن تكون تلفت. لو عندك نسخة JSON قديمة، استعيدها من الإعدادات قبل ما تحفظ أي حاجة هنا."),
+      cta: t.dataBackup + " →", go: "settings", sev: "neg"
+    });
     D.plans.filter(p => p.overdue > 0).forEach(p => alerts.push({
       title: app.L(p.direction === "in" ? "Overdue collection · " : "Overdue payment · ") + app.personName(p.personId),
       body: p.overdue + app.L(" installment(s) past due — ") + app.fmt(p.overdueAmt) + app.L(" on ") + esc(p.title),
