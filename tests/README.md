@@ -62,9 +62,23 @@ account can be deleted, a card's Available/Limit stay consistent).
 ## Adding a new one
 
 Match the existing shape: launch Chromium (respecting `PW_CHROMIUM_PATH`),
-block non-`file://` requests, navigate to `../index.html`, drive the UI with
-Playwright locators, and `console.log` clearly-labeled assertions rather than
-using a real assertion library — these scripts are meant to be read top to
-bottom like a script of what a person clicked and what they should see, not
-just a pass/fail count. If the script exists specifically because of a bug
-someone found, say so in a comment, the way the ones above do.
+block non-`file://` requests, navigate to `../index.html`, `require("./_watchdog")`
+right after the `require`s at the top, drive the UI with Playwright locators,
+and `console.log` clearly-labeled assertions rather than using a real
+assertion library — these scripts are meant to be read top to bottom like a
+script of what a person clicked and what they should see, not just a
+pass/fail count. If the script exists specifically because of a bug someone
+found, say so in a comment, the way the ones above do.
+
+`_watchdog.js` (any file starting with `_` is a shared helper, not a test —
+`npm test`'s glob skips them) is what makes a wrong result actually fail the
+run instead of just printing something a human has to notice: it treats any
+logged literal `false` as a failure and sets a non-zero exit code once the
+script ends. Follow the suite's existing "`<label>: <expected-true-boolean>`"
+phrasing for anything that should be caught this way. A check that can't
+naturally be phrased as a boolean (a raw count, a captured-errors array
+that's fine to be non-empty in the label but not the whole story) needs its
+own explicit boolean line, the way the `errors.length ? errors : "none"`
+dump used everywhere is followed by `errors.length === 0` — don't rely on
+the watchdog to infer pass/fail from a non-boolean value, it deliberately
+doesn't (see the comment in `_watchdog.js` for why).

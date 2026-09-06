@@ -4396,7 +4396,12 @@ const UI = {
     // matching both when it's unset (typing "Other" in by hand, or a
     // manual dropdown pick, has no specific bar to disambiguate from).
     const otherTypesByKind = { expense: ["expense"], income: ["income", "refund", "investment_return"] };
-    const catBucketTypes = otherTypesByKind[F.categoryKind] || ["income", "expense", "refund", "investment_return"];
+    // Single source of truth for "every type any bar's total ever sums" --
+    // both the actual filter match below and the "does 'Other' even belong
+    // in the dropdown" check further down derive from this instead of each
+    // repeating the same type list (and risking the two drifting apart).
+    const anyCatBucketType = otherTypesByKind.expense.concat(otherTypesByKind.income);
+    const catBucketTypes = otherTypesByKind[F.categoryKind] || anyCatBucketType;
     if (F.category !== "all") rows = rows.filter(r => F.category === "Other" ? (catBucketTypes.includes(r.type) && !r.category) : r.category === F.category);
     if (F.q.trim()) { const q = F.q.toLowerCase(); rows = rows.filter(r => [r.desc, r.category, typeLabels[r.type], app.personName(r.personId), app.accName(r.accountId), app.accName(r.fromId), app.accName(r.toId), (r.tags || []).join(" ")].join(" ").toLowerCase().includes(q)); }
     const total = rows.length;
@@ -4459,7 +4464,6 @@ const UI = {
     // the dropdown at all shouldn't depend on which bar (if any) got the
     // user here; that narrowing only matters for the actual filter match
     // above, once "Other" is the thing being filtered on.
-    const anyCatBucketType = ["income", "expense", "refund", "investment_return"];
     if (d.tx.some(x => anyCatBucketType.includes(x.type) && !x.category)) catSet.add("Other");
     if (F.category !== "all") catSet.add(F.category);
     const catOptions = ["all"].concat([...catSet].sort((a, b) => a.localeCompare(b))).map(c => '<option value="' + esc(c) + '"' + (F.category === c ? " selected" : "") + ">" + (c === "all" ? esc(app.L("All categories", "كل الفئات")) : esc(c)) + "</option>").join("");

@@ -1,6 +1,8 @@
 const { chromium } = require("playwright");
 const path = require("path");
 
+require("./_watchdog"); // shared pass/fail detector -- see that file
+
 (async () => {
   const browser = await chromium.launch(process.env.PW_CHROMIUM_PATH ? { executablePath: process.env.PW_CHROMIUM_PATH } : {});
   const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
@@ -69,5 +71,6 @@ const path = require("path");
   console.log("labels:", await firstCard.locator(".cc-label").allTextContents());
 
   console.log("\nerrors:", errors.length ? errors : "none");
+  console.log("no unexpected JS errors:", errors.length === 0);
   await browser.close();
 })();

@@ -1,6 +1,8 @@
 const { chromium } = require("playwright");
 const path = require("path");
 
+require("./_watchdog"); // shared pass/fail detector -- see that file
+
 (async () => {
   const browser = await chromium.launch(process.env.PW_CHROMIUM_PATH ? { executablePath: process.env.PW_CHROMIUM_PATH } : {});
   const page = await browser.newPage({ viewport: { width: 390, height: 900 }, colorScheme: "dark" });
@@ -9,6 +11,19 @@ const path = require("path");
   page.on("pageerror", (e) => errors.push(e.message));
   await page.goto("file://" + path.resolve(__dirname, "..", "index.html"));
   await page.waitForTimeout(300);
+
+  // Anchor Food transaction that's never touched again, so step 2's Dashboard
+  // check has a guaranteed reason to show a Food bar regardless of whether
+  // the app's own randomly-generated demo data (engine.js's seed uses
+  // Math.random() to assign categories) happens to include any Food that
+  // day -- without this, the test's own only Food transaction is the one
+  // recategorized away two steps down, and whether Food still shows on
+  // Dashboard afterwards would depend entirely on that random seed's luck.
+  await page.click("button:has-text('+ Expense')"); await page.waitForTimeout(200);
+  await page.fill("#f_desc", "Anchor food expense");
+  await page.selectOption("#f_category", "Food");
+  await page.fill("#f_amount", "100");
+  await page.click("button:has-text('Save')"); await page.waitForTimeout(200);
 
   console.log("=== 1) Reproduce the exact user scenario: description mentions 'Food', category changed away ===");
   await page.click("button:has-text('+ Expense')"); await page.waitForTimeout(200);
@@ -35,7 +50,8 @@ const path = require("path");
     console.log("landed on Transactions:", await page.locator(".tab-title").innerText());
     console.log("category filter now set to:", await page.locator(".filter-row select").nth(3).inputValue());
     const stillShowsIt = await page.locator(".card-row", { hasText: "Work food -Talabat" }).count();
-    console.log("re-categorized 'Work food -Talabat' row still shows under Food filter (should be false/0):", stillShowsIt);
+    console.log("re-categorized 'Work food -Talabat' row count still under Food filter (informational):", stillShowsIt);
+    console.log("re-categorized row correctly absent from Food filter:", stillShowsIt === 0);
   }
 
   console.log("\n=== 3) Category filter dropdown: picking 'Shopping' shows the row; 'Food' does not ===");
@@ -45,7 +61,7 @@ const path = require("path");
   await catSelect.selectOption("Shopping"); await page.waitForTimeout(200);
   console.log("under Shopping filter, row present:", await page.locator(".card-row", { hasText: "Work food -Talabat" }).count() > 0);
   await catSelect.selectOption("Food"); await page.waitForTimeout(200);
-  console.log("under Food filter, row present (should be false):", await page.locator(".card-row", { hasText: "Work food -Talabat" }).count() > 0);
+  console.log("under Food filter, row correctly absent:", await page.locator(".card-row", { hasText: "Work food -Talabat" }).count() === 0);
   await catSelect.selectOption("all"); await page.waitForTimeout(200);
 
   console.log("\n=== 4) Tag chips still do a free-text search (unchanged behavior) ===");
@@ -62,5 +78,6 @@ const path = require("path");
   console.log("tag click still fills free-text search:", await page.locator("#txSearch").inputValue());
 
   console.log("\nerrors:", errors.length ? errors : "none");
+  console.log("no unexpected JS errors:", errors.length === 0);
   await browser.close();
 })();

@@ -1,6 +1,8 @@
 const { chromium } = require("playwright");
 const path = require("path");
 
+require("./_watchdog"); // shared pass/fail detector -- see that file
+
 const PAYLOAD = "x\\');alert(document.cookie);//<script>alert(1)</script>&\"'";
 
 (async () => {
@@ -66,6 +68,7 @@ const PAYLOAD = "x\\');alert(document.cookie);//<script>alert(1)</script>&\"'";
   }
 
   console.log("\nerrors:", errors.length ? errors : "none");
+  console.log("no unexpected JS errors:", errors.length === 0);
   console.log("all dialogs seen (expected: only the app's own confirm/alert, always showing the payload as plain literal text, never actually executing it):");
   dialogs.forEach(d => console.log(" -", d));
   await browser.close();

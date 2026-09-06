@@ -3,7 +3,7 @@
   "private": true,
   "description": "Playwright regression suite for index.html — a single self-contained static app, so these scripts drive it straight from disk via file:// rather than through a dev server.",
   "scripts": {
-    "test": "for f in *.js; do echo \"### $f ###\"; node \"$f\" || exit 1; done"
+    "test": "for f in [!_]*.js; do echo \"### $f ###\"; node \"$f\" || exit 1; done"
   },
   "devDependencies": {
     "playwright": "^1.47.0"
