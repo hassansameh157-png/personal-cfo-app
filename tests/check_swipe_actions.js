@@ -42,11 +42,16 @@ require("./_watchdog"); // shared pass/fail detector -- see that file
   const content = page.locator(".swipe-content").first();
   const box = await content.boundingBox();
   const startX = box.x + box.width - 20, y = box.y + box.height / 2;
-  await content.evaluate((el, sx, sy) => window.__dispatchTouch(el, "touchstart", sx, sy), startX, y);
-  await content.evaluate((el, sx, sy) => window.__dispatchTouch(el, "touchmove", sx - 100, sy), startX, y);
+  // locator.evaluate(pageFunction, arg) only accepts ONE extra arg -- wrap
+  // multiple values into an array/object rather than passing them
+  // positionally (a real bug: this worked against the sandbox's own
+  // globally-installed Playwright locally, but failed strictly once CI
+  // installed the pinned version from package-lock.json).
+  await content.evaluate((el, [sx, sy]) => window.__dispatchTouch(el, "touchstart", sx, sy), [startX, y]);
+  await content.evaluate((el, [sx, sy]) => window.__dispatchTouch(el, "touchmove", sx - 100, sy), [startX, y]);
   const midTransform = await content.evaluate(el => el.style.transform);
   console.log("mid-drag transform is a partial negative translateX:", /translateX\(-\d+px\)/.test(midTransform) && !midTransform.includes("-144"));
-  await content.evaluate((el, sx, sy) => window.__dispatchTouch(el, "touchmove", sx - 130, sy), startX, y);
+  await content.evaluate((el, [sx, sy]) => window.__dispatchTouch(el, "touchmove", sx - 130, sy), [startX, y]);
   await content.evaluate(el => window.__dispatchTouch(el, "touchend", 0, 0));
   await page.waitForTimeout(250);
   console.log("snapped fully open (translateX(-144px)):", (await content.evaluate(el => el.style.transform)).includes("-144"));
@@ -56,8 +61,8 @@ require("./_watchdog"); // shared pass/fail detector -- see that file
   const secondContent = page.locator(".swipe-content").nth(1);
   const box2 = await secondContent.boundingBox();
   const sx2 = box2.x + box2.width - 20, y2 = box2.y + box2.height / 2;
-  await secondContent.evaluate((el, x, y) => window.__dispatchTouch(el, "touchstart", x, y), sx2, y2);
-  await secondContent.evaluate((el, x, y) => window.__dispatchTouch(el, "touchmove", x - 130, y), sx2, y2);
+  await secondContent.evaluate((el, [x, y]) => window.__dispatchTouch(el, "touchstart", x, y), [sx2, y2]);
+  await secondContent.evaluate((el, [x, y]) => window.__dispatchTouch(el, "touchmove", x - 130, y), [sx2, y2]);
   await secondContent.evaluate(el => window.__dispatchTouch(el, "touchend", 0, 0));
   await page.waitForTimeout(250);
   console.log("second row now open:", await secondContent.evaluate(el => el.classList.contains("swipe-open")));
@@ -79,8 +84,8 @@ require("./_watchdog"); // shared pass/fail detector -- see that file
   const content3 = page.locator(".swipe-content").first();
   const box3 = await content3.boundingBox();
   const sx3 = box3.x + box3.width - 20, y3 = box3.y + box3.height / 2;
-  await content3.evaluate((el, x, y) => window.__dispatchTouch(el, "touchstart", x, y), sx3, y3);
-  await content3.evaluate((el, x, y) => window.__dispatchTouch(el, "touchmove", x - 30, y), sx3, y3);
+  await content3.evaluate((el, [x, y]) => window.__dispatchTouch(el, "touchstart", x, y), [sx3, y3]);
+  await content3.evaluate((el, [x, y]) => window.__dispatchTouch(el, "touchmove", x - 30, y), [sx3, y3]);
   await content3.evaluate(el => window.__dispatchTouch(el, "touchend", 0, 0));
   await page.waitForTimeout(250);
   console.log("snapped back closed (translateX(0px) or none):", !(await content3.evaluate(el => el.classList.contains("swipe-open"))));
@@ -100,13 +105,13 @@ require("./_watchdog"); // shared pass/fail detector -- see that file
   const content4 = page.locator(".swipe-content").first();
   const box4 = await content4.boundingBox();
   const sx4 = box4.x + box4.width - 20, y4 = box4.y + box4.height / 2;
-  await content4.evaluate((el, x, y) => window.__dispatchTouch(el, "touchstart", x, y), sx4, y4);
-  await content4.evaluate((el, x, y) => window.__dispatchTouch(el, "touchmove", x - 130, y), sx4, y4);
+  await content4.evaluate((el, [x, y]) => window.__dispatchTouch(el, "touchstart", x, y), [sx4, y4]);
+  await content4.evaluate((el, [x, y]) => window.__dispatchTouch(el, "touchmove", x - 130, y), [sx4, y4]);
   await content4.evaluate(el => window.__dispatchTouch(el, "touchend", 0, 0));
   await page.waitForTimeout(250);
   const editBtn = page.locator(".swipe-edit").first();
   const editBox = await editBtn.boundingBox();
-  await editBtn.evaluate((el, x, y) => window.__dispatchTouch(el, "touchstart", x, y), editBox.x + editBox.width / 2, editBox.y + editBox.height / 2);
+  await editBtn.evaluate((el, [x, y]) => window.__dispatchTouch(el, "touchstart", x, y), [editBox.x + editBox.width / 2, editBox.y + editBox.height / 2]);
   await page.waitForTimeout(100);
   console.log("row stays open when touching its own revealed Edit button:", await content4.evaluate(el => el.classList.contains("swipe-open")));
 
@@ -119,8 +124,8 @@ require("./_watchdog"); // shared pass/fail detector -- see that file
   // In RTL, .swipe-actions sits at the physical left -- start the drag
   // from the row's left edge and drag right (positive dx) to reveal it.
   const sxRtl = boxRtl.x + 20, yRtl = boxRtl.y + boxRtl.height / 2;
-  await contentRtl.evaluate((el, x, y) => window.__dispatchTouch(el, "touchstart", x, y), sxRtl, yRtl);
-  await contentRtl.evaluate((el, x, y) => window.__dispatchTouch(el, "touchmove", x + 130, y), sxRtl, yRtl);
+  await contentRtl.evaluate((el, [x, y]) => window.__dispatchTouch(el, "touchstart", x, y), [sxRtl, yRtl]);
+  await contentRtl.evaluate((el, [x, y]) => window.__dispatchTouch(el, "touchmove", x + 130, y), [sxRtl, yRtl]);
   await contentRtl.evaluate(el => window.__dispatchTouch(el, "touchend", 0, 0));
   await page.waitForTimeout(250);
   const rtlTransform = await contentRtl.evaluate(el => el.style.transform);
