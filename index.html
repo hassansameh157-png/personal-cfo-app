@@ -995,7 +995,10 @@ class Engine {
   constructor(props) {
     this.props = props || { defaultHorizon: "30", receivablesAreAssets: true, privacyDefault: false };
     this.state = { page: "dashboard", lang: "en", modal: null, form: {}, err: "", privacy: false,
-      horizon: 30, filt: { q: "", type: "all", account: "all", preset: "all", category: "all" }, openPlan: null, saved: "",
+      // categoryKind: not a real dropdown filter of its own -- set only by
+      // UI.viewCategoryTx() to disambiguate an "Other" tap (see there),
+      // and ignored for any real, named category.
+      horizon: 30, filt: { q: "", type: "all", account: "all", preset: "all", category: "all", categoryKind: "" }, openPlan: null, saved: "",
       // Set the instant a persist() actually fails to reach localStorage --
       // see persist() itself -- and cleared the instant one succeeds again.
       // Not persisted itself for the obvious reason: if storage is what's
@@ -3008,7 +3011,17 @@ const UI = {
   // so a re-categorized transaction whose description still happened to
   // mention "food" kept showing up under Food regardless of its real,
   // already-changed category field.
-  viewCategoryTx(name) { this.app.state.filt.category = name; this.setPage("transactions"); },
+  // kind ("expense"/"income", matching catBar's own param) disambiguates
+  // "Other" specifically -- a real bug, found by inspection: an
+  // uncategorized expense and an uncategorized income both fall into
+  // "Other" (see Engine's category aggregations, all `category ||
+  // "Other"`), so without knowing which side's bar was tapped, filtering
+  // by category name alone would show BOTH kinds mixed together under
+  // one "Other" click -- more than that specific bar's own total ever
+  // counted. A real, named category never needs this (its name alone is
+  // already unambiguous in the ordinary case), so this only matters for
+  // "Other"; renderTransactions ignores categoryKind for anything else.
+  viewCategoryTx(name, kind) { this.app.state.filt.category = name; this.app.state.filt.categoryKind = kind || ""; this.setPage("transactions"); },
   // A tag isn't a category field value -- unlike viewCategoryTx above,
   // this one genuinely belongs in the free-text search (a tag chip click
   // is "search for this word", not "filter to this exact category"),
@@ -3248,6 +3261,18 @@ const UI = {
   },
   loadMoreTx() { this.app.state.txVisible += 25; this.render(true); },
   setFilter(k, v) { this.app.state.filt[k] = v; this.app.state.txVisible = 25; this.render(true); },
+  // Sets several filter fields at once with a single render() -- for the
+  // spots that used to chain two UI.setFilter() calls back to back (the
+  // category dropdown resetting categoryKind alongside category, the
+  // budget/unusual-spending alerts setting both together): each
+  // setFilter() call independently re-derives the whole app state and
+  // rebuilds the page, so two chained calls did that work twice for one
+  // user action. obj is applied in whatever order Object.entries gives it,
+  // which is fine here since none of these fields' effects on each other
+  // depend on write order (unlike, say, category needing categoryKind
+  // already in place before rendering -- both land in state before the
+  // one render() call reads either).
+  setFilters(obj) { Object.assign(this.app.state.filt, obj); this.app.state.txVisible = 25; this.render(true); },
   reverseTx(id) { this.app.reverse(id); this.render(); },
   // Opens the same add-modal a plain entry was created from (income,
   // expense, transfer, a loan or a payment against it, an installment or a
@@ -3685,7 +3710,11 @@ const UI = {
   catBar(name, v, max, kind, over, suffix) {
     const app = this.app;
     const ring = over ? ";outline:2px solid var(--c-neg);outline-offset:1px" : "";
-    return '<button class="bar-row" onclick="UI.viewCategoryTx(\'' + escJsArg(name) + '\')"><span class="bar-name">' + esc(name) + '</span>' +
+    // escJsArg(kind) too, not just name -- kind is only ever the literal
+    // "expense"/"income" today, but this is exactly the class of bug the
+    // shared helper exists to close structurally at every onclick-arg
+    // site, not just the ones currently fed anything non-trivial.
+    return '<button class="bar-row" onclick="UI.viewCategoryTx(\'' + escJsArg(name) + "','" + escJsArg(kind) + '\')"><span class="bar-name">' + esc(name) + '</span>' +
       '<div class="bar-track"><div class="bar-fill" style="width:' + Math.max(4, v / max * 100) + '%;background:' + app.categoryColor(name, kind) + ring + '"></div></div>' +
       '<span class="bar-val' + (over ? " tone-neg" : "") + '">' + app.fmt(v) + (suffix || "") + "</span></button>";
   },
@@ -3882,7 +3911,11 @@ const UI = {
         // here at construction instead (matching fmt()'s <bdi> HTML).
         title: app.L(over ? "Over budget — " : "Near budget — ") + cat,
         body: app.fmt(spent) + app.L(" of ") + app.fmt(budgets[cat]) + app.L(" spent this month."),
-        cta: t.transactions + " →", act: "UI.setPage('transactions');UI.setFilter('category','" + escJsArg(cat) + "')", sev: over ? "neg" : "warn"
+        // categoryKind: 'expense' -- monthCategorySpend() (what budgets()
+        // are keyed against) is expense-only, so if this ever pointed at
+        // an "Other" bucket (a deleted category's stale budget key), the
+        // filter should scope the same way viewCategoryTx() would.
+        cta: t.transactions + " →", act: "UI.setPage('transactions');UI.setFilters({categoryKind:'expense',category:'" + escJsArg(cat) + "'})", sev: over ? "neg" : "warn"
       });
     });
     // Overall monthly budget (Settings) -- same 90%-before-it's-over nudge
@@ -3900,7 +3933,11 @@ const UI = {
     app.unusualSpending(monthSpend).slice(0, 2).forEach(u => alerts.push({
       title: app.L("Unusual spending — ") + u.category,
       body: app.fmt(u.current) + app.L(" this month so far — about ") + Math.round(u.pct * 100) + app.L("% above your recent average of ") + app.fmt(u.avg) + ".",
-      cta: t.transactions + " →", act: "UI.setPage('transactions');UI.setFilter('category','" + escJsArg(u.category) + "')", sev: "info"
+      // categoryKind: 'expense' -- unusualSpending() is built from
+      // monthCategorySpend(), expense-only, so u.category === "Other" (a
+      // real possibility -- see the "|| Other" fallback there) needs the
+      // same scoping viewCategoryTx() gives a real bar tap.
+      cta: t.transactions + " →", act: "UI.setPage('transactions');UI.setFilters({categoryKind:'expense',category:'" + escJsArg(u.category) + "'})", sev: "info"
     }));
 
     const needsAttention = '<section class="dash-section">' +
@@ -4349,7 +4386,17 @@ const UI = {
     // either, but was never counted into that bar's total, so a bare
     // `!r.category` on its own would sweep in unrelated transactions the
     // "Other" bar never claimed to represent.
-    const catBucketTypes = ["income", "expense", "refund", "investment_return"];
+    // Real bug, found by inspection: an uncategorized expense and an
+    // uncategorized income both fall into "Other" (the same category ||
+    // "Other" logic above applies to both catMap and srcMap), so without
+    // knowing which side's bar was actually tapped, this used to show
+    // both kinds mixed together -- more than that one bar's own total
+    // ever counted. F.categoryKind (set by viewCategoryTx() -- see there)
+    // narrows "Other" to just the side that was clicked; falls back to
+    // matching both when it's unset (typing "Other" in by hand, or a
+    // manual dropdown pick, has no specific bar to disambiguate from).
+    const otherTypesByKind = { expense: ["expense"], income: ["income", "refund", "investment_return"] };
+    const catBucketTypes = otherTypesByKind[F.categoryKind] || ["income", "expense", "refund", "investment_return"];
     if (F.category !== "all") rows = rows.filter(r => F.category === "Other" ? (catBucketTypes.includes(r.type) && !r.category) : r.category === F.category);
     if (F.q.trim()) { const q = F.q.toLowerCase(); rows = rows.filter(r => [r.desc, r.category, typeLabels[r.type], app.personName(r.personId), app.accName(r.accountId), app.accName(r.fromId), app.accName(r.toId), (r.tags || []).join(" ")].join(" ").toLowerCase().includes(q)); }
     const total = rows.length;
@@ -4408,7 +4455,12 @@ const UI = {
     // a transaction with no category set at all is real and filterable
     // (see the F.category === "Other" special-case above), even when
     // nothing happens to carry the literal string "Other".
-    if (d.tx.some(x => catBucketTypes.includes(x.type) && !x.category)) catSet.add("Other");
+    // Unscoped by F.categoryKind on purpose -- whether "Other" belongs in
+    // the dropdown at all shouldn't depend on which bar (if any) got the
+    // user here; that narrowing only matters for the actual filter match
+    // above, once "Other" is the thing being filtered on.
+    const anyCatBucketType = ["income", "expense", "refund", "investment_return"];
+    if (d.tx.some(x => anyCatBucketType.includes(x.type) && !x.category)) catSet.add("Other");
     if (F.category !== "all") catSet.add(F.category);
     const catOptions = ["all"].concat([...catSet].sort((a, b) => a.localeCompare(b))).map(c => '<option value="' + esc(c) + '"' + (F.category === c ? " selected" : "") + ">" + (c === "all" ? esc(app.L("All categories", "كل الفئات")) : esc(c)) + "</option>").join("");
 
@@ -4417,7 +4469,11 @@ const UI = {
       '<select class="input" onchange="UI.setFilter(\'type\', this.value)">' + typeOptions + "</select>" +
       '<select class="input" onchange="UI.setFilter(\'account\', this.value)">' + accOptions + "</select>" +
       '<select class="input" onchange="UI.setFilter(\'preset\', this.value)">' + presetOptions + "</select>" +
-      '<select class="input" onchange="UI.setFilter(\'category\', this.value)">' + catOptions + "</select>" +
+      // categoryKind reset alongside it -- a manual pick from this
+      // dropdown has no specific bar to disambiguate "Other" from, and
+      // shouldn't silently inherit a stale kind left over from an earlier
+      // bar tap (see viewCategoryTx()/the "Other" scoping above).
+      '<select class="input" onchange="UI.setFilters({categoryKind:\'\',category:this.value})">' + catOptions + "</select>" +
     "</div>";
 
     return this.tabHeader(t.transactions, total + app.L(" records match your filters", " حركة مطابقة للفلاتر"),

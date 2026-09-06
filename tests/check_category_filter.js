@@ -1,0 +1,66 @@
+const { chromium } = require("playwright");
+const path = require("path");
+
+(async () => {
+  const browser = await chromium.launch(process.env.PW_CHROMIUM_PATH ? { executablePath: process.env.PW_CHROMIUM_PATH } : {});
+  const page = await browser.newPage({ viewport: { width: 390, height: 900 }, colorScheme: "dark" });
+  await page.route("**/*", r => r.request().url().startsWith("file://") ? r.continue() : r.abort());
+  const errors = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  await page.goto("file://" + path.resolve(__dirname, "..", "index.html"));
+  await page.waitForTimeout(300);
+
+  console.log("=== 1) Reproduce the exact user scenario: description mentions 'Food', category changed away ===");
+  await page.click("button:has-text('+ Expense')"); await page.waitForTimeout(200);
+  await page.fill("#f_desc", "Work food -Talabat");
+  await page.selectOption("#f_category", "Food");
+  await page.fill("#f_amount", "263");
+  await page.click("button:has-text('Save')"); await page.waitForTimeout(200);
+
+  await page.click(".navbtn:has-text('Transactions')"); await page.waitForTimeout(200);
+  await page.fill("#txSearch", "Work food -Talabat"); await page.waitForTimeout(200);
+  await page.locator(".card-row", { hasText: "Work food -Talabat" }).first().locator("button:has-text('Edit')").click();
+  await page.waitForTimeout(200);
+  console.log("category before re-categorizing:", await page.locator("#f_category").inputValue());
+  await page.selectOption("#f_category", "Shopping"); // this app's built-in list has no literal "Personal Expense" -- Shopping is the closest stand-in for "not Food"
+  await page.click("button:has-text('Save')"); await page.waitForTimeout(200);
+
+  console.log("\n=== 2) Tap the 'Food' category bar on Dashboard -- must NOT show the re-categorized row ===");
+  await page.click(".navbtn:has-text('Dashboard')"); await page.waitForTimeout(200);
+  const foodBar = page.locator(".bar-row", { hasText: "Food" }).first();
+  const foodBarCount = await foodBar.count();
+  console.log("Food bar present:", foodBarCount > 0);
+  if (foodBarCount) {
+    await foodBar.click(); await page.waitForTimeout(200);
+    console.log("landed on Transactions:", await page.locator(".tab-title").innerText());
+    console.log("category filter now set to:", await page.locator(".filter-row select").nth(3).inputValue());
+    const stillShowsIt = await page.locator(".card-row", { hasText: "Work food -Talabat" }).count();
+    console.log("re-categorized 'Work food -Talabat' row still shows under Food filter (should be false/0):", stillShowsIt);
+  }
+
+  console.log("\n=== 3) Category filter dropdown: picking 'Shopping' shows the row; 'Food' does not ===");
+  await page.click(".navbtn:has-text('Transactions')"); await page.waitForTimeout(200);
+  await page.fill("#txSearch", ""); await page.waitForTimeout(150);
+  const catSelect = page.locator(".filter-row select").nth(3);
+  await catSelect.selectOption("Shopping"); await page.waitForTimeout(200);
+  console.log("under Shopping filter, row present:", await page.locator(".card-row", { hasText: "Work food -Talabat" }).count() > 0);
+  await catSelect.selectOption("Food"); await page.waitForTimeout(200);
+  console.log("under Food filter, row present (should be false):", await page.locator(".card-row", { hasText: "Work food -Talabat" }).count() > 0);
+  await catSelect.selectOption("all"); await page.waitForTimeout(200);
+
+  console.log("\n=== 4) Tag chips still do a free-text search (unchanged behavior) ===");
+  await page.fill("#txSearch", ""); await page.waitForTimeout(150);
+  await page.click("button:has-text('+ Expense')"); await page.waitForTimeout(200);
+  await page.fill("#f_amount", "77");
+  await page.fill("#f_desc", "Tag test");
+  await page.fill("#f_tags", "sample");
+  await page.click("button:has-text('Save')"); await page.waitForTimeout(200);
+  await page.fill("#txSearch", "Tag test"); await page.waitForTimeout(200);
+  const tagRow = page.locator(".card-row", { hasText: "Tag test" }).first();
+  await tagRow.locator(".pill-row button", { hasText: "sample" }).click();
+  await page.waitForTimeout(200);
+  console.log("tag click still fills free-text search:", await page.locator("#txSearch").inputValue());
+
+  console.log("\nerrors:", errors.length ? errors : "none");
+  await browser.close();
+})();

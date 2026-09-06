@@ -1,0 +1,4 @@
+node_modules/
+# Screenshots some test scripts write as a side effect (page.screenshot())
+# -- generated output, not source, and would go stale on every re-run.
+tests/*.png
