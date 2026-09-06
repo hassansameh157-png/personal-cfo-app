@@ -22,6 +22,15 @@ Every script blocks all non-`file://` network requests before navigating, so a
 flaky `fonts.googleapis.com` preconnect (the app's only external reference) can
 never affect a result.
 
+`npm test` runs each script under `timeout -k 10 90` (needs GNU coreutils'
+`timeout` — already on any GitHub Actions Linux runner and most Linux dev
+boxes; macOS needs `brew install coreutils` and to alias `gtimeout` as
+`timeout`) so one script hanging can't block the whole suite indefinitely —
+seen for real once, when a runner under load pushed an ordinarily-instant
+click well past Playwright's own action timeout. A script that legitimately
+needs longer than 90s would need this bumped, but nothing in the suite has
+come close so far.
+
 ## What's covered
 
 **Core flows** (`smoke_batch1.js`–`smoke_batch7.js`, `smoke_accounts.js`,

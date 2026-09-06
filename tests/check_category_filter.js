@@ -19,10 +19,16 @@ require("./_watchdog"); // shared pass/fail detector -- see that file
   // day -- without this, the test's own only Food transaction is the one
   // recategorized away two steps down, and whether Food still shows on
   // Dashboard afterwards would depend entirely on that random seed's luck.
+  // Dashboard only shows the top 5 categories by this-month spend
+  // (ui.js's `catArr.slice(0, 5)`), so a small anchor amount isn't enough
+  // on its own -- this one is deliberately far larger than anything the
+  // random seed data plausibly puts in a single category this month
+  // (its per-transaction amounts top out around 2,500), to guarantee Food
+  // lands at #1 regardless of how that randomness rolls.
   await page.click("button:has-text('+ Expense')"); await page.waitForTimeout(200);
   await page.fill("#f_desc", "Anchor food expense");
   await page.selectOption("#f_category", "Food");
-  await page.fill("#f_amount", "100");
+  await page.fill("#f_amount", "500000");
   await page.click("button:has-text('Save')"); await page.waitForTimeout(200);
 
   console.log("=== 1) Reproduce the exact user scenario: description mentions 'Food', category changed away ===");
