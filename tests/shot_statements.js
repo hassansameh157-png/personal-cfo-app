@@ -48,7 +48,10 @@ require("./_watchdog"); // shared pass/fail detector -- see that file
   console.log("\n=== 4b) Edit that payment -- \"Paid from\" must round-trip, not reset to the first account ===");
   await page.click(".navbtn:has-text('Transactions')"); await page.waitForTimeout(200);
   await page.fill("#txSearch", "Statement payment"); await page.waitForTimeout(200);
-  await page.locator(".card-row", { hasText: "2,000" }).first().locator("button:has-text('Edit')").click();
+  // button.link-btn -- this is a transaction row (a statement_payment),
+  // which now offers Edit two ways (a swipe panel + the always-visible
+  // rowActions link); target the always-visible one by class.
+  await page.locator(".card-row", { hasText: "2,000" }).first().locator("button.link-btn:has-text('Edit')").click();
   await page.waitForTimeout(200);
   const editedFrom = await page.locator("#f_fromId").inputValue();
   const editedFromLabel = await page.locator("#f_fromId option[value='" + editedFrom + "']").textContent();
@@ -83,7 +86,7 @@ require("./_watchdog"); // shared pass/fail detector -- see that file
   console.log("\n=== 8) Edit dialog title says 'Edit transaction', not 'Pay statement' ===");
   await page.click(".navbtn:has-text('Transactions')"); await page.waitForTimeout(200);
   await page.fill("#txSearch", "Titanium statement — partial"); await page.waitForTimeout(200);
-  await page.locator(".card-row", { hasText: "Titanium statement" }).first().locator("button:has-text('Edit')").click();
+  await page.locator(".card-row", { hasText: "Titanium statement" }).first().locator("button.link-btn:has-text('Edit')").click();
   await page.waitForTimeout(200);
   console.log("edit title:", await page.locator(".dialog-title").innerText());
   await page.click("button:has-text('Cancel')"); await page.waitForTimeout(150);

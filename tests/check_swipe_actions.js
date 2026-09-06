@@ -1,0 +1,133 @@
+const { chromium } = require("playwright");
+const path = require("path");
+
+require("./_watchdog"); // shared pass/fail detector -- see that file
+
+(async () => {
+  const browser = await chromium.launch(process.env.PW_CHROMIUM_PATH ? { executablePath: process.env.PW_CHROMIUM_PATH } : {});
+  const page = await browser.newPage({ viewport: { width: 390, height: 844 }, hasTouch: true });
+  await page.route("**/*", r => r.request().url().startsWith("file://") ? r.continue() : r.abort());
+  const errors = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  // Dispatches a synthetic touch event with a single touch point at (x, y)
+  // -- must live in the page's own JS context (Touch/TouchEvent are DOM
+  // globals), so addInitScript rather than a plain Node-side function.
+  await page.addInitScript(() => {
+    window.__dispatchTouch = (el, type, x, y) => {
+      const touch = new Touch({ identifier: 1, target: el, clientX: x, clientY: y });
+      el.dispatchEvent(new TouchEvent(type, { touches: type === "touchend" ? [] : [touch], targetTouches: type === "touchend" ? [] : [touch], changedTouches: [touch], bubbles: true, cancelable: true }));
+    };
+  });
+  await page.goto("file://" + path.resolve(__dirname, "..", "index.html"));
+  await page.waitForTimeout(300);
+  await page.click(".navbtn:has-text('Transactions')");
+  await page.waitForTimeout(200);
+
+  console.log("=== 1) An editable row gets the swipe wrapper with Edit/Delete ===");
+  const firstRow = page.locator(".card-row").first();
+  console.log("first row is a swipe-row:", await firstRow.evaluate(el => el.classList.contains("swipe-row")));
+  console.log("has a swipe-content child:", await firstRow.locator(".swipe-content").count() === 1);
+  console.log("has Edit + Delete swipe buttons:", await firstRow.locator(".swipe-act").count() === 2);
+  console.log("still has the full rowActions link row underneath (additive, not replacing):", await firstRow.locator(".btn-row.wrap button").count() >= 3);
+
+  console.log("\n=== 2) A reversed (non-editable) transaction gets NO swipe wrapper ===");
+  const rowId = await firstRow.evaluate(el => el.querySelector(".swipe-edit").getAttribute("onclick").match(/openTxEdit\('([^']+)'\)/)[1]);
+  await page.evaluate((id) => UI.reverseTx(id), rowId);
+  await page.waitForTimeout(200);
+  const reversedRow = page.locator(".card-row.voided").first();
+  console.log("reversed row is NOT a swipe-row:", !(await reversedRow.evaluate(el => el.classList.contains("swipe-row"))));
+  console.log("reversed row has no swipe-content:", await reversedRow.locator(".swipe-content").count() === 0);
+
+  console.log("\n=== 3) Dragging a swipe-content left reveals the actions, and it snaps open past the threshold ===");
+  const content = page.locator(".swipe-content").first();
+  const box = await content.boundingBox();
+  const startX = box.x + box.width - 20, y = box.y + box.height / 2;
+  await content.evaluate((el, sx, sy) => window.__dispatchTouch(el, "touchstart", sx, sy), startX, y);
+  await content.evaluate((el, sx, sy) => window.__dispatchTouch(el, "touchmove", sx - 100, sy), startX, y);
+  const midTransform = await content.evaluate(el => el.style.transform);
+  console.log("mid-drag transform is a partial negative translateX:", /translateX\(-\d+px\)/.test(midTransform) && !midTransform.includes("-144"));
+  await content.evaluate((el, sx, sy) => window.__dispatchTouch(el, "touchmove", sx - 130, sy), startX, y);
+  await content.evaluate(el => window.__dispatchTouch(el, "touchend", 0, 0));
+  await page.waitForTimeout(250);
+  console.log("snapped fully open (translateX(-144px)):", (await content.evaluate(el => el.style.transform)).includes("-144"));
+  console.log("has swipe-open class:", await content.evaluate(el => el.classList.contains("swipe-open")));
+
+  console.log("\n=== 4) Opening a second row's swipe closes the first one ===");
+  const secondContent = page.locator(".swipe-content").nth(1);
+  const box2 = await secondContent.boundingBox();
+  const sx2 = box2.x + box2.width - 20, y2 = box2.y + box2.height / 2;
+  await secondContent.evaluate((el, x, y) => window.__dispatchTouch(el, "touchstart", x, y), sx2, y2);
+  await secondContent.evaluate((el, x, y) => window.__dispatchTouch(el, "touchmove", x - 130, y), sx2, y2);
+  await secondContent.evaluate(el => window.__dispatchTouch(el, "touchend", 0, 0));
+  await page.waitForTimeout(250);
+  console.log("second row now open:", await secondContent.evaluate(el => el.classList.contains("swipe-open")));
+  console.log("first row auto-closed:", !(await content.evaluate(el => el.classList.contains("swipe-open"))));
+
+  console.log("\n=== 5) Tapping Delete in the revealed panel actually deletes the transaction ===");
+  page.once("dialog", (d) => d.accept()); // deleteTxC() gates on a native confirm()
+  // .card-row's own DOM count stays pinned at S.txVisible (25) regardless
+  // -- renderTransactions() paginates, so a real deletion just pulls the
+  // next row up to refill the visible slot. The actual data is the real
+  // signal.
+  const txCountBefore = await page.evaluate(() => UI.app.state.data.tx.length);
+  await page.locator(".swipe-delete").nth(1).click();
+  await page.waitForTimeout(200);
+  const txCountAfter = await page.evaluate(() => UI.app.state.data.tx.length);
+  console.log("transaction actually removed from data:", txCountAfter === txCountBefore - 1);
+
+  console.log("\n=== 6) A short drag that doesn't clear the threshold snaps back closed ===");
+  const content3 = page.locator(".swipe-content").first();
+  const box3 = await content3.boundingBox();
+  const sx3 = box3.x + box3.width - 20, y3 = box3.y + box3.height / 2;
+  await content3.evaluate((el, x, y) => window.__dispatchTouch(el, "touchstart", x, y), sx3, y3);
+  await content3.evaluate((el, x, y) => window.__dispatchTouch(el, "touchmove", x - 30, y), sx3, y3);
+  await content3.evaluate(el => window.__dispatchTouch(el, "touchend", 0, 0));
+  await page.waitForTimeout(250);
+  console.log("snapped back closed (translateX(0px) or none):", !(await content3.evaluate(el => el.classList.contains("swipe-open"))));
+
+  console.log("\n=== 7) Desktop viewport: swipe panel is hidden (still has the full rowActions links) ===");
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.waitForTimeout(200);
+  console.log("swipe-actions hidden on desktop:", await page.locator(".swipe-actions").first().isVisible().then(v => !v).catch(() => true));
+
+  console.log("\n=== 8) Tapping a revealed Edit/Delete button doesn't slide the row shut under the tap ===");
+  await page.setViewportSize({ width: 390, height: 844 }); // back from test 7's desktop check
+  await page.waitForTimeout(150);
+  // Real bug found by code review: touchstart's closeAllExcept(null) was
+  // closing every open row, including the one whose own button was just
+  // touched, since .swipe-act lives in .swipe-actions (a sibling of
+  // .swipe-content, not inside it).
+  const content4 = page.locator(".swipe-content").first();
+  const box4 = await content4.boundingBox();
+  const sx4 = box4.x + box4.width - 20, y4 = box4.y + box4.height / 2;
+  await content4.evaluate((el, x, y) => window.__dispatchTouch(el, "touchstart", x, y), sx4, y4);
+  await content4.evaluate((el, x, y) => window.__dispatchTouch(el, "touchmove", x - 130, y), sx4, y4);
+  await content4.evaluate(el => window.__dispatchTouch(el, "touchend", 0, 0));
+  await page.waitForTimeout(250);
+  const editBtn = page.locator(".swipe-edit").first();
+  const editBox = await editBtn.boundingBox();
+  await editBtn.evaluate((el, x, y) => window.__dispatchTouch(el, "touchstart", x, y), editBox.x + editBox.width / 2, editBox.y + editBox.height / 2);
+  await page.waitForTimeout(100);
+  console.log("row stays open when touching its own revealed Edit button:", await content4.evaluate(el => el.classList.contains("swipe-open")));
+
+  console.log("\n=== 9) RTL (Arabic): swiping reveals the actions on the correct (now-physical-left) side ===");
+  await page.evaluate(() => { UI.setLang("ar"); });
+  await page.waitForTimeout(200);
+  console.log("document dir is rtl:", await page.evaluate(() => document.documentElement.getAttribute("dir")) === "rtl");
+  const contentRtl = page.locator(".swipe-content").first();
+  const boxRtl = await contentRtl.boundingBox();
+  // In RTL, .swipe-actions sits at the physical left -- start the drag
+  // from the row's left edge and drag right (positive dx) to reveal it.
+  const sxRtl = boxRtl.x + 20, yRtl = boxRtl.y + boxRtl.height / 2;
+  await contentRtl.evaluate((el, x, y) => window.__dispatchTouch(el, "touchstart", x, y), sxRtl, yRtl);
+  await contentRtl.evaluate((el, x, y) => window.__dispatchTouch(el, "touchmove", x + 130, y), sxRtl, yRtl);
+  await contentRtl.evaluate(el => window.__dispatchTouch(el, "touchend", 0, 0));
+  await page.waitForTimeout(250);
+  const rtlTransform = await contentRtl.evaluate(el => el.style.transform);
+  console.log("RTL swipe snaps open with a POSITIVE translateX (144px, not -144):", rtlTransform.includes("144") && !rtlTransform.includes("-144"));
+  console.log("RTL row has swipe-open class:", await contentRtl.evaluate(el => el.classList.contains("swipe-open")));
+
+  console.log("\nerrors:", errors.length ? errors : "none");
+  console.log("no unexpected JS errors:", errors.length === 0);
+  await browser.close();
+})();

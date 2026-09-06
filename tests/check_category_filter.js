@@ -40,7 +40,11 @@ require("./_watchdog"); // shared pass/fail detector -- see that file
 
   await page.click(".navbtn:has-text('Transactions')"); await page.waitForTimeout(200);
   await page.fill("#txSearch", "Work food -Talabat"); await page.waitForTimeout(200);
-  await page.locator(".card-row", { hasText: "Work food -Talabat" }).first().locator("button:has-text('Edit')").click();
+  // button.link-btn -- a transaction row now offers Edit two ways (swipe
+  // panel + the always-visible rowActions link), both calling the same
+  // openTxEdit(id); the swipe one only becomes clickable once the row is
+  // actually swiped open, so target the always-visible one by class.
+  await page.locator(".card-row", { hasText: "Work food -Talabat" }).first().locator("button.link-btn:has-text('Edit')").click();
   await page.waitForTimeout(200);
   console.log("category before re-categorizing:", await page.locator("#f_category").inputValue());
   await page.selectOption("#f_category", "Shopping"); // this app's built-in list has no literal "Personal Expense" -- Shopping is the closest stand-in for "not Food"

@@ -24,7 +24,11 @@ require("./_watchdog"); // shared pass/fail detector -- see that file
   console.log("amount before edit:", await rowBefore.locator(".card-row-amt").innerText());
 
   console.log("\n=== 2) Edit it: change amount + description ===");
-  await rowBefore.locator("button:has-text('Edit')").click();
+  // button.link-btn -- a transaction row now offers Edit two ways (swipe
+  // panel + the always-visible rowActions link), both calling the same
+  // openTxEdit(id); the swipe one only becomes clickable once the row is
+  // actually swiped open, so target the always-visible one by class.
+  await rowBefore.locator("button.link-btn:has-text('Edit')").click();
   await page.waitForTimeout(200);
   const dialogTitle = await page.locator(".dialog-title").innerText();
   console.log("edit dialog title (should say Edit, not '+ Expense'):", dialogTitle);
@@ -40,7 +44,8 @@ require("./_watchdog"); // shared pass/fail detector -- see that file
 
   console.log("\n=== 3) Delete it ===");
   page.once("dialog", (d) => d.accept());
-  await rowAfter.locator("button:has-text('Delete')").click();
+  // button.link-btn -- same two-Delete-buttons situation as Edit above.
+  await rowAfter.locator("button.link-btn:has-text('Delete')").click();
   await page.waitForTimeout(200);
   const rowDeleted = await page.locator(".card-row", { hasText: "EditMe expense" }).count();
   console.log("row removed after delete:", rowDeleted === 0);
@@ -60,7 +65,7 @@ require("./_watchdog"); // shared pass/fail detector -- see that file
   console.log("net before edit (should be -EGP 10,000-ish):", netBefore);
 
   await page.click(".navbtn:has-text('Transactions')"); await page.waitForTimeout(200);
-  await page.locator(".card-row", { hasText: "Loan v1" }).first().locator("button:has-text('Edit')").click();
+  await page.locator(".card-row", { hasText: "Loan v1" }).first().locator("button.link-btn:has-text('Edit')").click();
   await page.waitForTimeout(150);
   await page.fill("#f_amount", "7000");
   await page.click("button:has-text('Save')"); await page.waitForTimeout(200);

@@ -519,9 +519,17 @@ h1,h2,h3{font-family:var(--font-head);font-weight:600;margin:0;text-wrap:balance
 
 /* ---- bars ---- */
 .bar-list{display:flex;flex-direction:column;gap:9px}
-.bar-row{display:grid;grid-template-columns:96px 1fr auto;gap:9px;align-items:center;font-size:14.5px}
+.bar-row{display:grid;grid-template-columns:112px 1fr auto;gap:9px;align-items:center;font-size:14.5px}
 button.bar-row{width:100%;border:0;background:none;padding:6px 0;min-height:44px;font:inherit;text-align:inherit;cursor:pointer;color:inherit;font-family:inherit}
-.bar-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--c-text-soft)}
+/* A real icon per category (categoryIcon()) reads at a glance where the
+   color-only bar-fill needed a legend to decode -- min-width:0 on both the
+   flex container and the text span is what lets text-overflow:ellipsis
+   still work one level deeper than before (a flex item's default min-width
+   is auto, i.e. "never shrink below content", which would otherwise push
+   the icon out of the already-tight 112px column instead of truncating). */
+.bar-name{display:flex;align-items:center;gap:5px;min-width:0;color:var(--c-text-soft)}
+.bar-name-ico{flex:none;display:inline-flex}
+.bar-name-text{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
 .bar-track{height:7px;border-radius:999px;background:var(--c-surface-3);overflow:hidden}
 .bar-track.thin{height:5px;margin-top:8px}
 /* Every .bar-fill's actual color is set inline (category hex, an
@@ -543,11 +551,25 @@ button.bar-row{width:100%;border:0;background:none;padding:6px 0;min-height:44px
    .cc-stmt already use, so a user who's about to blow their whole
    month's budget gets the same visual weight as any other real alert. */
 .overall-budget{margin:14px 0 4px;padding:10px 12px;border-radius:10px;border:1px solid var(--c-line)}
-.overall-budget-row{display:flex;justify-content:space-between;font-size:13.5px;margin-bottom:8px;font-variant-numeric:tabular-nums}
+.overall-budget-main{display:flex;align-items:center;gap:14px}
+.overall-budget-info{flex:1;min-width:0}
+/* Stacked, not the plain label/value side-by-side row this used to be --
+   now that it shares its line with the ring (.overall-budget-main), the
+   old side-by-side layout squeezed both spans onto too little width and
+   the label wrapped mid-word into the amount. */
+.overall-budget-row{display:flex;flex-direction:column;gap:2px;font-size:13.5px;color:var(--c-text-soft)}
+.overall-budget-amt{font-size:15.5px;font-weight:700;color:var(--c-text);font-variant-numeric:tabular-nums}
 .overall-budget.near{border-color:var(--c-warn);box-shadow:var(--glow-warn)}
 .overall-budget.over{border-color:var(--c-neg);box-shadow:var(--glow-neg)}
 .overall-budget-proj{margin-top:8px;font-size:12.5px;color:var(--c-text-faint)}
 .overall-budget-proj.warn{color:var(--c-warn)}
+/* The ring itself (ringChart()) is just the two SVG circles -- the % label
+   is real HTML overlaid on top via this wrapper, absolutely centering it
+   without needing to hand-manage SVG text metrics/baseline at every size
+   this might ever render at. */
+.ring-wrap{position:relative;flex:none;width:84px;height:84px;display:flex;align-items:center;justify-content:center}
+.ring-wrap svg{position:absolute;inset:0}
+.ring-label{position:relative;font-size:17px;font-weight:700;font-variant-numeric:tabular-nums}
 
 /* ---- events ---- */
 .event-list{display:flex;flex-direction:column;gap:2px}
@@ -608,9 +630,40 @@ button.bar-row{width:100%;border:0;background:none;padding:6px 0;min-height:44px
 .card-list{display:flex;flex-direction:column;gap:8px}
 .card-row{border:1px solid var(--c-line);border-radius:10px;padding:12px 14px;background:var(--c-surface)}
 .card-row.voided{opacity:.5}
+/* ---- swipe-to-reveal (Edit/Delete) -- see initSwipeRows() in ui.js ----
+   .swipe-row keeps the plain .card-row's own border/radius/left accent,
+   but moves its padding down onto .swipe-content and clips overflow at
+   this level, so the sliding content's square corners never poke out past
+   the row's own rounded ones. .swipe-actions sits underneath, revealed as
+   .swipe-content slides off to the inline-start (never actually moving
+   itself -- it's already exactly where the content ends up uncovering). */
+.card-row.swipe-row{padding:0;overflow:hidden;position:relative}
+.swipe-actions{position:absolute;inset-block:0;inset-inline-end:0;display:flex;width:144px}
+.swipe-act{flex:1;border:0;color:#fff;font-size:13.5px;font-weight:600;cursor:pointer;font-family:inherit}
+.swipe-edit{background:var(--c-accent-fill)}
+.swipe-delete{background:var(--c-neg)}
+.swipe-content{position:relative;background:var(--c-surface);padding:12px 14px;
+  transition:transform .2s ease;touch-action:pan-y}
+@media (prefers-reduced-motion:reduce){ .swipe-content{transition:none} }
+/* Swipe is a touch gesture -- on a mouse+keyboard desktop the two-button
+   panel would just sit there permanently reachable by nothing (no drag,
+   and it's already redundant with the same Edit/Delete rowActions() always
+   shows below), so hide the whole mechanism above the breakpoint where
+   .mobile-only's own cards stop rendering at all. */
+@media (min-width:781px){ .swipe-actions{display:none} }
 .card-row-top{display:flex;align-items:flex-start;gap:10px}
 .card-row-top>div:first-child{flex:1;min-width:0}
 .card-row-title{font-weight:600;font-size:16px;overflow:hidden;text-overflow:ellipsis}
+/* Same categoryColor() the row's own left border already uses, just as a
+   small filled badge in front of the description -- the border alone
+   only reads as "some category" without a legend; the icon inside says
+   which one without needing to look it up. A dark icon stroke (not white)
+   is what stays legible across the whole categorical palette -- several
+   of its 8 hues (amber, pink) are light enough that white would read as
+   washed-out on those specifically, and a dark stroke reads fine on every
+   one of them, light or saturated alike. */
+.cat-badge{display:inline-flex;align-items:center;justify-content:center;flex:none;
+  width:20px;height:20px;border-radius:50%;color:rgba(0,0,0,.72);margin-inline-end:6px;vertical-align:middle}
 .card-row-sub{font-size:13px;color:var(--c-text-faint);margin-top:1px}
 .card-row-amt{font-variant-numeric:tabular-nums;font-weight:600;font-size:16.5px;white-space:nowrap}
 .card-row-meta{display:flex;gap:14px;flex-wrap:wrap;font-size:13.5px;color:var(--c-text-soft);margin-top:8px}
@@ -790,6 +843,14 @@ button.bar-row{width:100%;border:0;background:none;padding:6px 0;min-height:44px
 :root[data-theme="dark"] .nav-ico-cashflow{color:#34d399}
 :root[data-theme="dark"] .nav-ico-settings{color:#cbd5e1}
 :root[data-theme="dark"] .nav-ico-more{color:#c4b5fd}
+/* Quick-add sheet icons (expense/income/transfer) -- unlike the fixed-hue
+   set above, these carry real meaning (the same pos/neg semantics as an
+   amount's own tone-pos/tone-neg), so they take the theme-aware --c-pos/
+   --c-neg tokens directly instead of a hardcoded hue pair, and need no
+   separate dark-mode block. */
+.nav-ico-expense{color:var(--c-neg)}
+.nav-ico-income{color:var(--c-pos)}
+.nav-ico-transfer{color:var(--c-accent-fill)}
 @media (min-width:900px) and (pointer:fine){
   .shell{flex-direction:row;padding-bottom:0}
   .primary-nav{position:sticky;top:0;inset-inline:auto;bottom:auto;flex-direction:column;width:196px;flex:none;height:100vh;
@@ -895,7 +956,15 @@ button.bar-row{width:100%;border:0;background:none;padding:6px 0;min-height:44px
    the whole container fading as a single unit, so several queued in a
    row (UI.flash()) actually stack -- newest appended last, at the
    anchored bottom edge, earlier ones pushed upward as it grows. */
-.flash{position:fixed;bottom:64px;inset-inline:0;z-index:20;pointer-events:none;
+/* z-index:42, above .fab's 41 -- a real bug caught by the regression suite:
+   the danger pill's max-width:min(92vw,380px) (below) spans wide enough on
+   a narrow phone to reach the same bottom-end corner the FAB occupies, and
+   .fab sat on top of it at the old z-index:20, physically blocking its own
+   dismiss button. The plain auto-dismissing pills stay pointer-events:none
+   (below) so raising this doesn't make them start blocking the FAB either
+   -- only the danger pill re-enables pointer-events on itself, and that's
+   exactly the one that must never be unreachable. */
+.flash{position:fixed;bottom:64px;inset-inline:0;z-index:42;pointer-events:none;
   display:flex;flex-direction:column;align-items:center;gap:8px}
 .flash-pill{display:inline-flex;align-items:center;gap:7px;background:var(--c-surface);border:1px solid var(--c-line);
   border-radius:999px;padding:9px 16px 9px 12px;font-size:13px;color:var(--c-text);
@@ -923,6 +992,30 @@ button.bar-row{width:100%;border:0;background:none;padding:6px 0;min-height:44px
   .flash-pill-enter, .flash-pill-exit{transform:none}
 }
 @media (min-width:900px) and (pointer:fine){ .flash{bottom:14px} }
+
+/* ---- quick-add FAB ---- */
+/* A persistent floating "+" reachable from every page (see
+   UI.renderQuickAddFab) -- inset-inline-end, not right, so it sits at the
+   trailing edge in both LTR and RTL instead of pinning to a fixed physical
+   side. bottom clears .primary-nav's own height (~60px including its
+   safe-area padding) the same way .flash's bottom:64px above already does,
+   plus its own gap so the two floating layers never touch. z-index sits
+   above the nav (40) but below both sheet layers (45/46), so opening
+   either sheet's own backdrop correctly dims it out instead of leaving it
+   floating on top of a modal. */
+.fab{position:fixed;inset-inline-end:16px;bottom:calc(64px + 16px);z-index:41;width:56px;height:56px;
+  border-radius:50%;border:0;background:var(--c-accent-fill);color:#fff;display:flex;align-items:center;
+  justify-content:center;cursor:pointer;box-shadow:0 6px 20px rgba(0,0,0,.28);transition:transform .12s ease}
+.fab:hover{filter:brightness(1.08)}
+.fab:active{transform:scale(.92)}
+@media (prefers-reduced-motion:reduce){ .fab{transition:none} }
+@media (min-width:900px) and (pointer:fine){
+  /* The sticky topbar's own "+ Expense" (renderTopbar) already covers this
+     need on desktop without scrolling or hunting for a per-page button --
+     a second floating control fighting it for the same corner would be
+     redundant, not additive. */
+  .fab{display:none}
+}
 
 @media (prefers-reduced-motion:no-preference){
   .dash-section, .card-row{transition:none}

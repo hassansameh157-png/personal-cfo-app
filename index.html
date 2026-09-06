@@ -561,9 +561,17 @@ h1,h2,h3{font-family:var(--font-head);font-weight:600;margin:0;text-wrap:balance
 
 /* ---- bars ---- */
 .bar-list{display:flex;flex-direction:column;gap:9px}
-.bar-row{display:grid;grid-template-columns:96px 1fr auto;gap:9px;align-items:center;font-size:14.5px}
+.bar-row{display:grid;grid-template-columns:112px 1fr auto;gap:9px;align-items:center;font-size:14.5px}
 button.bar-row{width:100%;border:0;background:none;padding:6px 0;min-height:44px;font:inherit;text-align:inherit;cursor:pointer;color:inherit;font-family:inherit}
-.bar-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--c-text-soft)}
+/* A real icon per category (categoryIcon()) reads at a glance where the
+   color-only bar-fill needed a legend to decode -- min-width:0 on both the
+   flex container and the text span is what lets text-overflow:ellipsis
+   still work one level deeper than before (a flex item's default min-width
+   is auto, i.e. "never shrink below content", which would otherwise push
+   the icon out of the already-tight 112px column instead of truncating). */
+.bar-name{display:flex;align-items:center;gap:5px;min-width:0;color:var(--c-text-soft)}
+.bar-name-ico{flex:none;display:inline-flex}
+.bar-name-text{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
 .bar-track{height:7px;border-radius:999px;background:var(--c-surface-3);overflow:hidden}
 .bar-track.thin{height:5px;margin-top:8px}
 /* Every .bar-fill's actual color is set inline (category hex, an
@@ -585,11 +593,25 @@ button.bar-row{width:100%;border:0;background:none;padding:6px 0;min-height:44px
    .cc-stmt already use, so a user who's about to blow their whole
    month's budget gets the same visual weight as any other real alert. */
 .overall-budget{margin:14px 0 4px;padding:10px 12px;border-radius:10px;border:1px solid var(--c-line)}
-.overall-budget-row{display:flex;justify-content:space-between;font-size:13.5px;margin-bottom:8px;font-variant-numeric:tabular-nums}
+.overall-budget-main{display:flex;align-items:center;gap:14px}
+.overall-budget-info{flex:1;min-width:0}
+/* Stacked, not the plain label/value side-by-side row this used to be --
+   now that it shares its line with the ring (.overall-budget-main), the
+   old side-by-side layout squeezed both spans onto too little width and
+   the label wrapped mid-word into the amount. */
+.overall-budget-row{display:flex;flex-direction:column;gap:2px;font-size:13.5px;color:var(--c-text-soft)}
+.overall-budget-amt{font-size:15.5px;font-weight:700;color:var(--c-text);font-variant-numeric:tabular-nums}
 .overall-budget.near{border-color:var(--c-warn);box-shadow:var(--glow-warn)}
 .overall-budget.over{border-color:var(--c-neg);box-shadow:var(--glow-neg)}
 .overall-budget-proj{margin-top:8px;font-size:12.5px;color:var(--c-text-faint)}
 .overall-budget-proj.warn{color:var(--c-warn)}
+/* The ring itself (ringChart()) is just the two SVG circles -- the % label
+   is real HTML overlaid on top via this wrapper, absolutely centering it
+   without needing to hand-manage SVG text metrics/baseline at every size
+   this might ever render at. */
+.ring-wrap{position:relative;flex:none;width:84px;height:84px;display:flex;align-items:center;justify-content:center}
+.ring-wrap svg{position:absolute;inset:0}
+.ring-label{position:relative;font-size:17px;font-weight:700;font-variant-numeric:tabular-nums}
 
 /* ---- events ---- */
 .event-list{display:flex;flex-direction:column;gap:2px}
@@ -650,9 +672,40 @@ button.bar-row{width:100%;border:0;background:none;padding:6px 0;min-height:44px
 .card-list{display:flex;flex-direction:column;gap:8px}
 .card-row{border:1px solid var(--c-line);border-radius:10px;padding:12px 14px;background:var(--c-surface)}
 .card-row.voided{opacity:.5}
+/* ---- swipe-to-reveal (Edit/Delete) -- see initSwipeRows() in ui.js ----
+   .swipe-row keeps the plain .card-row's own border/radius/left accent,
+   but moves its padding down onto .swipe-content and clips overflow at
+   this level, so the sliding content's square corners never poke out past
+   the row's own rounded ones. .swipe-actions sits underneath, revealed as
+   .swipe-content slides off to the inline-start (never actually moving
+   itself -- it's already exactly where the content ends up uncovering). */
+.card-row.swipe-row{padding:0;overflow:hidden;position:relative}
+.swipe-actions{position:absolute;inset-block:0;inset-inline-end:0;display:flex;width:144px}
+.swipe-act{flex:1;border:0;color:#fff;font-size:13.5px;font-weight:600;cursor:pointer;font-family:inherit}
+.swipe-edit{background:var(--c-accent-fill)}
+.swipe-delete{background:var(--c-neg)}
+.swipe-content{position:relative;background:var(--c-surface);padding:12px 14px;
+  transition:transform .2s ease;touch-action:pan-y}
+@media (prefers-reduced-motion:reduce){ .swipe-content{transition:none} }
+/* Swipe is a touch gesture -- on a mouse+keyboard desktop the two-button
+   panel would just sit there permanently reachable by nothing (no drag,
+   and it's already redundant with the same Edit/Delete rowActions() always
+   shows below), so hide the whole mechanism above the breakpoint where
+   .mobile-only's own cards stop rendering at all. */
+@media (min-width:781px){ .swipe-actions{display:none} }
 .card-row-top{display:flex;align-items:flex-start;gap:10px}
 .card-row-top>div:first-child{flex:1;min-width:0}
 .card-row-title{font-weight:600;font-size:16px;overflow:hidden;text-overflow:ellipsis}
+/* Same categoryColor() the row's own left border already uses, just as a
+   small filled badge in front of the description -- the border alone
+   only reads as "some category" without a legend; the icon inside says
+   which one without needing to look it up. A dark icon stroke (not white)
+   is what stays legible across the whole categorical palette -- several
+   of its 8 hues (amber, pink) are light enough that white would read as
+   washed-out on those specifically, and a dark stroke reads fine on every
+   one of them, light or saturated alike. */
+.cat-badge{display:inline-flex;align-items:center;justify-content:center;flex:none;
+  width:20px;height:20px;border-radius:50%;color:rgba(0,0,0,.72);margin-inline-end:6px;vertical-align:middle}
 .card-row-sub{font-size:13px;color:var(--c-text-faint);margin-top:1px}
 .card-row-amt{font-variant-numeric:tabular-nums;font-weight:600;font-size:16.5px;white-space:nowrap}
 .card-row-meta{display:flex;gap:14px;flex-wrap:wrap;font-size:13.5px;color:var(--c-text-soft);margin-top:8px}
@@ -832,6 +885,14 @@ button.bar-row{width:100%;border:0;background:none;padding:6px 0;min-height:44px
 :root[data-theme="dark"] .nav-ico-cashflow{color:#34d399}
 :root[data-theme="dark"] .nav-ico-settings{color:#cbd5e1}
 :root[data-theme="dark"] .nav-ico-more{color:#c4b5fd}
+/* Quick-add sheet icons (expense/income/transfer) -- unlike the fixed-hue
+   set above, these carry real meaning (the same pos/neg semantics as an
+   amount's own tone-pos/tone-neg), so they take the theme-aware --c-pos/
+   --c-neg tokens directly instead of a hardcoded hue pair, and need no
+   separate dark-mode block. */
+.nav-ico-expense{color:var(--c-neg)}
+.nav-ico-income{color:var(--c-pos)}
+.nav-ico-transfer{color:var(--c-accent-fill)}
 @media (min-width:900px) and (pointer:fine){
   .shell{flex-direction:row;padding-bottom:0}
   .primary-nav{position:sticky;top:0;inset-inline:auto;bottom:auto;flex-direction:column;width:196px;flex:none;height:100vh;
@@ -937,7 +998,15 @@ button.bar-row{width:100%;border:0;background:none;padding:6px 0;min-height:44px
    the whole container fading as a single unit, so several queued in a
    row (UI.flash()) actually stack -- newest appended last, at the
    anchored bottom edge, earlier ones pushed upward as it grows. */
-.flash{position:fixed;bottom:64px;inset-inline:0;z-index:20;pointer-events:none;
+/* z-index:42, above .fab's 41 -- a real bug caught by the regression suite:
+   the danger pill's max-width:min(92vw,380px) (below) spans wide enough on
+   a narrow phone to reach the same bottom-end corner the FAB occupies, and
+   .fab sat on top of it at the old z-index:20, physically blocking its own
+   dismiss button. The plain auto-dismissing pills stay pointer-events:none
+   (below) so raising this doesn't make them start blocking the FAB either
+   -- only the danger pill re-enables pointer-events on itself, and that's
+   exactly the one that must never be unreachable. */
+.flash{position:fixed;bottom:64px;inset-inline:0;z-index:42;pointer-events:none;
   display:flex;flex-direction:column;align-items:center;gap:8px}
 .flash-pill{display:inline-flex;align-items:center;gap:7px;background:var(--c-surface);border:1px solid var(--c-line);
   border-radius:999px;padding:9px 16px 9px 12px;font-size:13px;color:var(--c-text);
@@ -965,6 +1034,30 @@ button.bar-row{width:100%;border:0;background:none;padding:6px 0;min-height:44px
   .flash-pill-enter, .flash-pill-exit{transform:none}
 }
 @media (min-width:900px) and (pointer:fine){ .flash{bottom:14px} }
+
+/* ---- quick-add FAB ---- */
+/* A persistent floating "+" reachable from every page (see
+   UI.renderQuickAddFab) -- inset-inline-end, not right, so it sits at the
+   trailing edge in both LTR and RTL instead of pinning to a fixed physical
+   side. bottom clears .primary-nav's own height (~60px including its
+   safe-area padding) the same way .flash's bottom:64px above already does,
+   plus its own gap so the two floating layers never touch. z-index sits
+   above the nav (40) but below both sheet layers (45/46), so opening
+   either sheet's own backdrop correctly dims it out instead of leaving it
+   floating on top of a modal. */
+.fab{position:fixed;inset-inline-end:16px;bottom:calc(64px + 16px);z-index:41;width:56px;height:56px;
+  border-radius:50%;border:0;background:var(--c-accent-fill);color:#fff;display:flex;align-items:center;
+  justify-content:center;cursor:pointer;box-shadow:0 6px 20px rgba(0,0,0,.28);transition:transform .12s ease}
+.fab:hover{filter:brightness(1.08)}
+.fab:active{transform:scale(.92)}
+@media (prefers-reduced-motion:reduce){ .fab{transition:none} }
+@media (min-width:900px) and (pointer:fine){
+  /* The sticky topbar's own "+ Expense" (renderTopbar) already covers this
+     need on desktop without scrolling or hunting for a per-page button --
+     a second floating control fighting it for the same corner would be
+     redundant, not additive. */
+  .fab{display:none}
+}
 
 @media (prefers-reduced-motion:no-preference){
   .dash-section, .card-row{transition:none}
@@ -1011,7 +1104,7 @@ class Engine {
       // otherwise silently start overwriting whatever's still recoverable
       // in that raw stored string.
       loadError: false,
-      data: null, txVisible: 25, moreOpen: false, arabicNumerals: false, personDetailId: null, whatIf: [], payoffOrder: "largest",
+      data: null, txVisible: 25, moreOpen: false, quickAddOpen: false, arabicNumerals: false, personDetailId: null, whatIf: [], payoffOrder: "largest",
       locked: false, lockErr: "", pinMsg: "", payoffCalc: { personId: "all", amount: "" } };
   }
   // ---- app lock (Settings -> App lock) -------------------------------
@@ -1353,7 +1446,7 @@ class Engine {
       availableBalance: "Available balance", availableNote: "Spendable right now — cash, bank and wallets. Receivables, investments and credit lines are excluded.", netWorth: "Net worth", receivables: "Owed to me", payables: "I owe", investmentsShort: "Invested", available: "Available",
       position: "Current financial position", whereMoney: "Where my money is", upcoming30: "Next 30 days", seeForecast: "Forecast →", thisMonth: "This month", income: "Income", expenses: "Expenses", topCategories: "Top spend categories", needsAttention: "Needs attention",
       cash: "Cash", bank: "Bank accounts", wallets: "Smart wallets", other: "Other / cards", totalAssets: "Total assets", liabilities: "Liabilities",
-      aIncome: "+ Income", aExpense: "+ Expense", aTransfer: "Transfer", aReceivable: "+ Lend / owed to me", aDebt: "+ Debt I owe", aSale: "+ Installment sale", aPurchasePlan: "+ Installment purchase", aInvest: "+ Investment", aPerson: "+ Person", aAccount: "+ Account", aCollect: "Record collection", aRepay: "Record repayment", aRecurring: "+ Recurring rule", aStatement: "+ Statement", payStatement: "Pay statement", aGoal: "+ Savings goal",
+      aIncome: "+ Income", aExpense: "+ Expense", aTransfer: "Transfer", aReceivable: "+ Lend / owed to me", aDebt: "+ Debt I owe", aSale: "+ Installment sale", aPurchasePlan: "+ Installment purchase", aInvest: "+ Investment", aPerson: "+ Person", aAccount: "+ Account", aCollect: "Record collection", aRepay: "Record repayment", aRecurring: "+ Recurring rule", aStatement: "+ Statement", payStatement: "Pay statement", aGoal: "+ Savings goal", quickAdd: "Quick add",
       search: "Search", type: "Type", account: "Account", period: "Period", clear: "Clear", date: "Date", details: "Details", person: "Person", category: "Category", amount: "Amount", phone: "Phone", owesMe: "Owes me", iOwe: "I owe", net: "Net", plans: "Plans", history: "History",
       total: "Sale total", collected: "Collected", remaining: "Remaining", dueDate: "Due", paid: "Paid", status: "Status", recordPayment: "Record payment", showSchedule: "Show schedule", hideSchedule: "Hide schedule",
       source: "Source", collect: "Collect", pay: "Pay", name: "Name", invested: "Invested", currentValue: "Current value", pnl: "Profit / loss", updateValue: "Update value",
@@ -1369,7 +1462,7 @@ class Engine {
       availableBalance: "الرصيد المتاح", availableNote: "المتاح للصرف الآن — كاش وبنك ومحافظ. لا يشمل المستحقات ولا الاستثمارات ولا حدود الكريدت.", netWorth: "صافي الثروة", receivables: "لي عند الناس", payables: "عليّ للناس", investmentsShort: "مستثمر", available: "المتاح",
       position: "الموقف المالي الحالي", whereMoney: "أين أموالي", upcoming30: "الـ 30 يوم القادمة", seeForecast: "التوقعات →", thisMonth: "هذا الشهر", income: "الإيرادات", expenses: "المصروفات", topCategories: "أكبر بنود الصرف", needsAttention: "يحتاج انتباه",
       cash: "كاش", bank: "حسابات بنكية", wallets: "محافظ إلكترونية", other: "أخرى / بطاقات", totalAssets: "إجمالي الأصول", liabilities: "الالتزامات",
-      aIncome: "+ إيراد", aExpense: "+ مصروف", aTransfer: "تحويل", aReceivable: "+ سلفة / لي", aDebt: "+ دين عليّ", aSale: "+ بيع بالتقسيط", aPurchasePlan: "+ شراء بالتقسيط", aInvest: "+ استثمار", aPerson: "+ شخص", aAccount: "+ حساب", aCollect: "تسجيل تحصيل", aRepay: "تسجيل سداد", aRecurring: "+ قاعدة متكررة", aStatement: "+ كشف حساب", payStatement: "سداد كشف حساب", aGoal: "+ هدف ادخار",
+      aIncome: "+ إيراد", aExpense: "+ مصروف", aTransfer: "تحويل", aReceivable: "+ سلفة / لي", aDebt: "+ دين عليّ", aSale: "+ بيع بالتقسيط", aPurchasePlan: "+ شراء بالتقسيط", aInvest: "+ استثمار", aPerson: "+ شخص", aAccount: "+ حساب", aCollect: "تسجيل تحصيل", aRepay: "تسجيل سداد", aRecurring: "+ قاعدة متكررة", aStatement: "+ كشف حساب", payStatement: "سداد كشف حساب", aGoal: "+ هدف ادخار", quickAdd: "إضافة سريعة",
       search: "بحث", type: "النوع", account: "الحساب", period: "الفترة", clear: "مسح", date: "التاريخ", details: "التفاصيل", person: "الشخص", category: "التصنيف", amount: "المبلغ", phone: "الهاتف", owesMe: "له عندي", iOwe: "عليّ", net: "الصافي", plans: "خطط", history: "السجل",
       total: "إجمالي البيع", collected: "المحصّل", remaining: "المتبقي", dueDate: "الاستحقاق", paid: "مدفوع", status: "الحالة", recordPayment: "تسجيل دفعة", showSchedule: "عرض الجدول", hideSchedule: "إخفاء الجدول",
       source: "المصدر", collect: "تحصيل", pay: "سداد", name: "الاسم", invested: "المستثمر", currentValue: "القيمة الحالية", pnl: "ربح / خسارة", updateValue: "تحديث القيمة",
@@ -2937,6 +3030,51 @@ function svgIcon(d, size) {
   size = size || 16;
   return '<svg width="' + size + '" height="' + size + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="' + d + '"></path></svg>';
 }
+// One glyph per built-in category (engine.js's own expense/income category
+// lists -- see FORMS()'s `cats`/`inc` arrays), so a category reads at a
+// glance instead of only by its color, which needs a legend to decode.
+// Categories that share a real-world theme intentionally share a glyph
+// (e.g. Rental income and Home both use the house icon; Family/Children
+// share one, since neither has an unambiguous icon of its own) rather than
+// forcing a distinct-but-arbitrary shape on every single one. A custom
+// category (added from Settings) or anything not in this table at all
+// falls back to CATEGORY_ICON_FALLBACK -- a plain tag, since there's no
+// real-world glyph for a name only the user knows.
+const CATEGORY_ICONS = {
+  // -- expense --
+  Food: "M7 2v6a2 2 0 0 0 4 0V2M9 8v14M16 2v8a2.5 2.5 0 0 0 5 0V2M18.5 12.5V22",
+  Transportation: "M4 16h16M6 16a2 2 0 1 0 4 0M14 16a2 2 0 1 0 4 0M4 16V8a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v8M7 6v4M12 6v4M17 6v4",
+  Rent: "M14.5 2a5.5 5.5 0 0 0-5.4 6.6L2 15.7V20h4.3l1-1h2v-2h2l2.3-2.3A5.5 5.5 0 1 0 14.5 2zM17.5 6.5h.01",
+  Electricity: "M13 2 3 14h9l-1 8 10-12h-9l1-8z",
+  Water: "M12 2.7C12 2.7 6 9 6 13.5a6 6 0 0 0 12 0C18 9 12 2.7 12 2.7z",
+  Internet: "M2 20h2v-4H2v4zM7 20h2v-8H7v8zM12 20h2v-12h-2v12zM17 20h2V4h-2v16z",
+  Mobile: "M17 2H7a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2zM11 18h2",
+  Shopping: "M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4zM3 6h18M16 10a4 4 0 0 1-8 0",
+  Clothing: "M8 3 4 6v4l3-1v12h10V9l3 1V6l-4-3-2 2h-4z",
+  Medical: "M12 21s-7-4.35-9.5-8.5C1 9 2.5 6 5.5 6c2 0 3.5 1.5 4.5 3 1-1.5 2.5-3 4.5-3 3 0 4.5 3 3 6.5C19 16.65 12 21 12 21z",
+  Education: "M4 19.5A2.5 2.5 0 0 1 6.5 17H20M4 4.5A2.5 2.5 0 0 1 6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15z",
+  Entertainment: "M3 3h18v18H3zM7 3v18M17 3v18M3 8h4M3 16h4M17 8h4M17 16h4",
+  Family: "M12 2a10 10 0 1 0 .001 0zM8 10h.01M16 10h.01M8 15c1 1.5 2.5 2 4 2s3-.5 4-2",
+  Children: "M12 2l2.9 6.9L22 9.6l-5.5 5.1L18 22l-6-3.5L6 22l1.5-7.3L2 9.6l7.1-.7z",
+  Car: "M5 17h14M7 17a2 2 0 1 0 4 0M13 17a2 2 0 1 0 4 0M5 17v-5l2-4h10l2 4v5",
+  Home: "M3 10 12 3l9 7v10a1 1 0 0 1-1 1h-5v-7H9v7H4a1 1 0 0 1-1-1z",
+  Subscriptions: "M2 6a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6zM2 10h20M6 15h4",
+  Loans: "M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M9 13h6M9 17h6M9 9h2",
+  // -- income --
+  Salary: "M20 7h-4V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2zM8 7V5h8v2",
+  Freelance: "M6 8 2 12l4 4M18 8l4 4-4 4M14 4l-4 16",
+  Business: "M4 21V4a1 1 0 0 1 1-1h8a1 1 0 0 1 1 1v17M17 21v-9a1 1 0 0 1 1-1h3v10M9 7h.01M9 11h.01M9 15h.01M4 21h17",
+  Commission: "M23 6 13.5 15.5 8.5 10.5 1 18M17 6h6v6",
+  Interest: "M19 5 5 19M6.5 8a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5zM17.5 21a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5z"
+};
+// Shared glyphs -- reused by name below instead of repeating the same `d`
+// string under two keys, so fixing one fixes both.
+CATEGORY_ICONS.Rental = CATEGORY_ICONS.Home;
+CATEGORY_ICONS["Selling items"] = CATEGORY_ICONS.Shopping;
+const CATEGORY_ICON_FALLBACK = "M20.6 12.3 12.7 20.2a2 2 0 0 1-2.8 0l-8-8a2 2 0 0 1 0-2.8L9.8 1.5H12l8.6 8.6a2 2 0 0 1 0 2.8zM7 7h.01";
+function categoryIcon(name) {
+  return CATEGORY_ICONS[name] || CATEGORY_ICON_FALLBACK;
+}
 // Curated preset swatches for every color field (account/card color, its
 // secondary color, a person's avatar color) -- approved from the card
 // customizer preview. Chosen to look good as a card face specifically
@@ -2966,8 +3104,86 @@ const UI = {
     this.app.load();
     this.app.state.locked = this.app.hasPin();
     window.addEventListener("resize", () => {});
+    this.initSwipeRows();
     this.render();
     this.maybeNotify();
+  },
+  // Swipe-to-reveal on .card-row.swipe-row (renderTransactions' cards --
+  // see the comment there). Attached once, here, via delegation on
+  // `document` rather than on each .swipe-content element directly,
+  // because render() replaces #root's entire innerHTML on every call (see
+  // render()'s own comment on #flashStack for why) -- a listener bound to
+  // a specific row element would be silently destroyed the next time
+  // anything re-renders, while delegation from a node that's never
+  // replaced keeps working across every future render for free.
+  // Pure DOM manipulation during the drag itself (direct style.transform,
+  // no state/render involved) is deliberate: this is a transient, purely
+  // visual gesture with nothing worth persisting, and routing every
+  // touchmove through app state + a full re-render would both be
+  // needless work and guarantee visible jank on a real phone.
+  initSwipeRows() {
+    const DIST = 144; // matches .swipe-actions' own width
+    let drag = null;
+    // .swipe-actions sits at inset-inline-end (CSS), which is the physical
+    // *left* in RTL -- transform:translateX is a physical property with no
+    // logical equivalent, so which direction "reveal" actually means has
+    // to be decided per-drag from the page's current dir, not hardcoded
+    // negative. A real bug caught by review: hardcoding negative-only left
+    // Arabic (this app's one RTL language) with a swipe that only ever
+    // revealed empty space on the wrong side, never the actions themselves.
+    const openX = () => document.documentElement.getAttribute("dir") === "rtl" ? DIST : -DIST;
+    const closeAllExcept = (except) => {
+      document.querySelectorAll(".swipe-content.swipe-open").forEach((el) => {
+        if (el === except) return;
+        el.style.transition = "";
+        el.style.transform = "translateX(0)";
+        el.classList.remove("swipe-open");
+      });
+    };
+    document.addEventListener("touchstart", (e) => {
+      const content = e.target.closest(".swipe-content");
+      // A tap landing on the revealed Edit/Delete buttons themselves
+      // isn't inside .swipe-content (they're .swipe-actions, a sibling,
+      // not a child) -- closeAllExcept(null) would then match every open
+      // row including the one whose own button was just tapped, sliding
+      // it shut out from under the tap. Except that row's own
+      // .swipe-content too whenever the touch lands anywhere in its
+      // .swipe-row, not just when it lands in .swipe-content directly.
+      const ownRow = e.target.closest(".swipe-row");
+      closeAllExcept(content || (ownRow && ownRow.querySelector(".swipe-content")));
+      if (!content) { drag = null; return; }
+      const t = e.touches[0];
+      const openAt = openX();
+      drag = { el: content, startX: t.clientX, startY: t.clientY, openAt, base: content.classList.contains("swipe-open") ? openAt : 0, horizontal: null, lastX: 0 };
+    }, { passive: true });
+    document.addEventListener("touchmove", (e) => {
+      if (!drag) return;
+      const t = e.touches[0];
+      const dx = t.clientX - drag.startX, dy = t.clientY - drag.startY;
+      // Undecided until the drag clears a small dead zone -- otherwise an
+      // almost-vertical scroll gesture that happens to start with a
+      // pixel or two of horizontal jitter would get mistaken for a swipe
+      // and hijack the page's own vertical scrolling.
+      if (drag.horizontal === null && (Math.abs(dx) > 6 || Math.abs(dy) > 6)) {
+        drag.horizontal = Math.abs(dx) > Math.abs(dy);
+      }
+      if (!drag.horizontal) return;
+      e.preventDefault();
+      const lo = Math.min(0, drag.openAt), hi = Math.max(0, drag.openAt);
+      drag.lastX = Math.max(lo, Math.min(hi, drag.base + dx));
+      drag.el.style.transition = "none";
+      drag.el.style.transform = "translateX(" + drag.lastX + "px)";
+    }, { passive: false });
+    const finishDrag = () => {
+      if (!drag || !drag.horizontal) { drag = null; return; }
+      const el = drag.el, open = Math.abs(drag.lastX) > Math.abs(drag.openAt) / 2;
+      el.style.transition = "";
+      el.style.transform = "translateX(" + (open ? drag.openAt : 0) + "px)";
+      el.classList.toggle("swipe-open", open);
+      drag = null;
+    };
+    document.addEventListener("touchend", finishDrag);
+    document.addEventListener("touchcancel", finishDrag);
   },
   // One-shot, on open only (not on every render) — a foreground summary
   // notification of how many things need attention, gated on the user
@@ -2990,13 +3206,13 @@ const UI = {
   },
 
   // ---- generic actions ---------------------------------------------------
-  setPage(p) { this.app.state.page = p; this.app.state.moreOpen = false; this.app.state.txVisible = 25; this.render(); window.scrollTo({ top: 0 }); },
+  setPage(p) { this.app.state.page = p; this.app.state.moreOpen = false; this.app.state.quickAddOpen = false; this.app.state.txVisible = 25; this.render(); window.scrollTo({ top: 0 }); },
   // A person's own page: every loan and installment plan tied to them (both
   // directions) in one place, instead of scattered across Receivables &
   // Payables and Installments — the gap that made juggling several loans
   // with the same person (e.g. a normal loan plus money held in trust) hard
   // to see at a glance.
-  viewPerson(id) { this.app.state.personDetailId = id; this.app.state.page = "person_detail"; this.app.state.moreOpen = false; this.render(); window.scrollTo({ top: 0 }); },
+  viewPerson(id) { this.app.state.personDetailId = id; this.app.state.page = "person_detail"; this.app.state.moreOpen = false; this.app.state.quickAddOpen = false; this.render(); window.scrollTo({ top: 0 }); },
   // Tapping an account/card jumps straight to its own transactions —
   // Transactions' account filter already matches accountId, fromId and
   // toId (a transfer either side), so this is the same filter a person
@@ -3027,7 +3243,11 @@ const UI = {
   // is "search for this word", not "filter to this exact category"),
   // same as searching for it by hand would do.
   viewTagTx(name) { this.app.state.filt.q = name; this.setPage("transactions"); },
-  toggleMore() { this.app.state.moreOpen = !this.app.state.moreOpen; this.render(); },
+  toggleMore() { this.app.state.moreOpen = !this.app.state.moreOpen; this.app.state.quickAddOpen = false; this.render(); },
+  // The FAB's own quick-add sheet -- same shape as toggleMore() above,
+  // just a different sheet (see renderQuickAddSheet) and mutually
+  // exclusive with it for the same reason openModal() above clears both.
+  toggleQuickAdd() { this.app.state.quickAddOpen = !this.app.state.quickAddOpen; this.app.state.moreOpen = false; this.render(); },
   setLang(l) { this.app.state.lang = l; this.render(); },
   togglePrivacy() { this.app.state.privacy = !this.app.state.privacy; this.render(); },
   toggleArabicNumerals() { this.app.state.arabicNumerals = !this.app.state.arabicNumerals; this.render(); },
@@ -3182,6 +3402,13 @@ const UI = {
   // section (see Engine.moveAccount).
   moveAccountC(id, dir) { this.app.moveAccount(id, dir); this.render(); },
   openModal(kind, pre) {
+    // Both sheets (More, quick-add) share the modal's own "sheet-backdrop"
+    // class/z-index (see renderModal below), so a modal opened while either
+    // was still open -- reachable now that the quick-add FAB's own items
+    // call this directly, unlike More's, which only ever call setPage() --
+    // would otherwise render both the sheet and the dialog at once.
+    this.app.state.quickAddOpen = false;
+    this.app.state.moreOpen = false;
     this.app.open(kind, pre);
     // A real saved color2 (not just our placeholder) must never be
     // silently overwritten by a later primary-color edit -- see
@@ -3478,7 +3705,9 @@ const UI = {
           '<main class="page">' + this.renderPage(D, t) + "</main>" +
         "</div>" +
       "</div>" +
+      this.renderQuickAddFab(t) +
       this.renderMoreSheet(t) +
+      this.renderQuickAddSheet(t) +
       this.renderModal(t);
       // #flashStack is NOT rendered here on purpose -- see UI.flash()'s
       // comment: it lives outside #root in the static page shell so it
@@ -3545,6 +3774,35 @@ const UI = {
         '<div class="sheet-title">' + esc(t.more) + "</div>" +
         '<div class="sheet-grid">' + rest.map(([id, path]) =>
           '<button class="sheet-item' + (S.page === id ? " on" : "") + '" aria-current="' + (S.page === id ? "page" : "false") + '" onclick="UI.setPage(\'' + id + '\')"><span class="nav-ico nav-ico-' + id + '">' + svgIcon(path, 22) + '</span><span>' + esc(t[id]) + "</span></button>"
+        ).join("") + "</div>" +
+      "</div>";
+  },
+  // A persistent floating "+" reachable from every page, not just whichever
+  // page happens to have its own "+ Expense"/"+ Income" button in its own
+  // header -- the three most common day-to-day adds (same three the topbar
+  // and Dashboard's own buttons already special-case), one tap away from
+  // anywhere. Hidden on the lock screen for free (render() returns before
+  // this is ever called there) and on desktop (see the CSS: the sticky
+  // topbar's own "+ Expense" already covers this need there without a
+  // second floating control competing for the same corner).
+  renderQuickAddFab(t) {
+    const S = this.app.state;
+    return '<button class="fab" aria-haspopup="true" aria-expanded="' + (S.quickAddOpen ? "true" : "false") + '" aria-label="' + esc(t.quickAdd) + '" onclick="UI.toggleQuickAdd()">' + svgIcon("M12 5v14M5 12h14", 24) + "</button>";
+  },
+  renderQuickAddSheet(t) {
+    const S = this.app.state;
+    if (!S.quickAddOpen) return "";
+    const items = [
+      ["expense", "M12 5v14M19 12l-7 7-7-7", t.aExpense],
+      ["income", "M12 19V5M5 12l7-7 7 7", t.aIncome],
+      ["transfer", "M7.5 21 3 16.5 7.5 12M3 16.5h18M16.5 3 21 7.5 16.5 12M21 7.5H3", t.aTransfer]
+    ];
+    return '<div class="sheet-backdrop" onclick="UI.toggleQuickAdd()"></div>' +
+      '<div class="sheet" role="dialog" aria-label="' + esc(t.quickAdd) + '">' +
+        '<div class="sheet-handle"></div>' +
+        '<div class="sheet-title">' + esc(t.quickAdd) + "</div>" +
+        '<div class="sheet-grid">' + items.map(([kind, path, label]) =>
+          '<button class="sheet-item" onclick="UI.openModal(\'' + kind + '\')"><span class="nav-ico nav-ico-' + kind + '">' + svgIcon(path, 22) + '</span><span>' + esc(label) + "</span></button>"
         ).join("") + "</div>" +
       "</div>";
   },
@@ -3649,6 +3907,28 @@ const UI = {
     return '<svg class="sparkline" width="' + w + '" height="' + h + '" viewBox="0 0 ' + w + ' ' + h + '" preserveAspectRatio="none" aria-hidden="true">' +
       '<path d="' + d + '" fill="none" stroke="' + color + '" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="filter:drop-shadow(0 0 2px ' + color + ')"/></svg>';
   },
+  // A circular progress ring -- two concentric circles (a fixed track,
+  // then a colored arc drawn via the standard stroke-dasharray/dashoffset
+  // trick: the whole circumference as the dash length means one dash that
+  // never repeats, and offsetting it by the "empty" fraction reveals only
+  // the "full" fraction, starting from 12 o'clock via the -90deg rotate
+  // rather than the default 3-o'clock start). `pct` past 100 (over
+  // budget) still draws a full ring rather than however>100% would look
+  // -- the exact number belongs in the text next to it, not bent into the
+  // ring's own geometry. The percentage label lives in HTML overlaid on
+  // top (ringPct(), where this is actually used), not baked in as SVG
+  // <text> -- much simpler to keep it crisp and in the app's own font at
+  // any size than hand-managing SVG text metrics.
+  ringChart(pct, color, size) {
+    size = size || 84;
+    const r = 32, c = 2 * Math.PI * r;
+    const dash = c * Math.max(0, Math.min(100, pct)) / 100;
+    return '<svg width="' + size + '" height="' + size + '" viewBox="0 0 80 80" aria-hidden="true">' +
+      '<circle cx="40" cy="40" r="' + r + '" fill="none" stroke="var(--c-surface-3)" stroke-width="8"></circle>' +
+      '<circle cx="40" cy="40" r="' + r + '" fill="none" stroke="' + color + '" stroke-width="8" stroke-linecap="round" ' +
+        'stroke-dasharray="' + c.toFixed(2) + '" stroke-dashoffset="' + (c - dash).toFixed(2) + '" transform="rotate(-90 40 40)"></circle>' +
+    "</svg>";
+  },
 
   // Shared bar-chart builder -- the .chart-cols/.chart-col/.chart-bar/
   // .chart-label markup, each bar scaled against the tallest in `items`.
@@ -3714,7 +3994,7 @@ const UI = {
     // "expense"/"income" today, but this is exactly the class of bug the
     // shared helper exists to close structurally at every onclick-arg
     // site, not just the ones currently fed anything non-trivial.
-    return '<button class="bar-row" onclick="UI.viewCategoryTx(\'' + escJsArg(name) + "','" + escJsArg(kind) + '\')"><span class="bar-name">' + esc(name) + '</span>' +
+    return '<button class="bar-row" onclick="UI.viewCategoryTx(\'' + escJsArg(name) + "','" + escJsArg(kind) + '\')"><span class="bar-name"><span class="bar-name-ico">' + svgIcon(categoryIcon(name), 14) + '</span><span class="bar-name-text">' + esc(name) + "</span></span>" +
       '<div class="bar-track"><div class="bar-fill" style="width:' + Math.max(4, v / max * 100) + '%;background:' + app.categoryColor(name, kind) + ring + '"></div></div>' +
       '<span class="bar-val' + (over ? " tone-neg" : "") + '">' + app.fmt(v) + (suffix || "") + "</span></button>";
   },
@@ -4045,17 +4325,29 @@ const UI = {
     // Overall monthly budget (Settings) -- one cap across every expense,
     // not per category. Only rendered once a budget is actually set (>0);
     // otherwise this section looks exactly as it always has.
+    const overallPct = overallBudget > 0 ? monthExpense / overallBudget * 100 : 0;
+    const overallRingColor = overallOver ? "var(--c-neg)" : overallNear ? "var(--c-warn)" : "var(--c-accent-fill)";
     const overallBudgetBar = overallBudget > 0 ? '<div class="overall-budget' + (overallOver ? " over" : overallNear ? " near" : "") + '">' +
-      '<div class="overall-budget-row"><span>' + esc(app.L("All expenses this month", "كل المصروفات الشهر ده")) + '</span><span>' + app.fmt(monthExpense) + " / " + app.fmt(overallBudget) + "</span></div>" +
-      '<div class="bar-track"><div class="bar-fill' + (overallOver ? " neg-fill" : overallNear ? " warn-fill" : "") + '" style="width:' + Math.min(100, monthExpense / overallBudget * 100) + '%"></div></div>' +
-      // No esc() around this whole line -- app.L()'s own text and
-      // app.fmt()'s <bdi>-wrapped HTML mix directly, same convention the
-      // Needs Attention alert bodies already use (esc() is for real
-      // user-provided strings, e.g. a category name, not developer-
-      // authored label text or fmt()'s own markup).
-      (showProjection ? '<div class="overall-budget-proj' + (projectionOver ? " warn" : "") + '">' + (projectionOver ?
-        app.L("At this pace, you'll reach ", "بمعدلك الحالي، هتوصل لـ ") + app.fmt(projectedMonthEnd) + app.L(" by month end — over budget.", " بنهاية الشهر — فوق الميزانية.") :
-        app.L("At this pace, you'll end the month around ", "بمعدلك الحالي، هتقفل الشهر حوالي ") + app.fmt(projectedMonthEnd) + ".") + "</div>" : "") +
+      '<div class="overall-budget-main">' +
+        '<div class="ring-wrap">' + this.ringChart(overallPct, overallRingColor) +
+          // The ring itself can't visually exceed "full circle" (ringChart
+          // already clamps its own geometry) -- but the label under it is
+          // the one place the real number belongs, over 100% and all
+          // ("134%" says something a ring stuck at "full" can't).
+          '<div class="ring-label' + (overallOver ? " tone-neg" : "") + '">' + Math.round(overallPct) + "%</div>" +
+        "</div>" +
+        '<div class="overall-budget-info">' +
+          '<div class="overall-budget-row"><span>' + esc(app.L("All expenses this month", "كل المصروفات الشهر ده")) + '</span><span class="overall-budget-amt">' + app.fmt(monthExpense) + " / " + app.fmt(overallBudget) + "</span></div>" +
+          // No esc() around this whole line -- app.L()'s own text and
+          // app.fmt()'s <bdi>-wrapped HTML mix directly, same convention the
+          // Needs Attention alert bodies already use (esc() is for real
+          // user-provided strings, e.g. a category name, not developer-
+          // authored label text or fmt()'s own markup).
+          (showProjection ? '<div class="overall-budget-proj' + (projectionOver ? " warn" : "") + '">' + (projectionOver ?
+            app.L("At this pace, you'll reach ", "بمعدلك الحالي، هتوصل لـ ") + app.fmt(projectedMonthEnd) + app.L(" by month end — over budget.", " بنهاية الشهر — فوق الميزانية.") :
+            app.L("At this pace, you'll end the month around ", "بمعدلك الحالي، هتقفل الشهر حوالي ") + app.fmt(projectedMonthEnd) + ".") + "</div>" : "") +
+        "</div>" +
+      "</div>" +
     "</div>" : "";
     const thisMonth = '<section class="dash-section">' +
       '<h2 class="section-title">' + esc(t.thisMonth) + "</h2>" +
@@ -4429,18 +4721,33 @@ const UI = {
     // uncategorized rows (transfers, statement payments, plain loans...)
     // stay plain rather than all getting a "neutral" bar that would imply
     // they're categorized-as-nothing instead of just not applicable.
-    const cards = '<div class="card-list mobile-only">' + items.map(({ r, isIn, amtTxt, acc, tone }) =>
-      '<div class="card-row' + (r.void ? " voided" : "") + '"' + (r.category ? ' style="border-inline-start:4px solid ' + app.categoryColor(r.category, r.type) + '"' : "") + '>' +
-        '<div class="card-row-top"><div><div class="card-row-title">' + esc(r.desc || "—") + '</div><div class="card-row-sub">' + r.date + " · " + esc(typeLabels[r.type] || r.type) + "</div></div>" +
+    // Swipe-to-reveal (Edit/Delete) is additive, not a replacement for
+    // rowActions() below it -- "reverse" and "Duplicate" have no swipe slot
+    // of their own, and swipe itself is undiscoverable for anyone who
+    // doesn't think to try it, so the full link row stays exactly as it
+    // was. Only a row app.txEditable() actually allows editing/deleting
+    // gets the swipe wrapper at all -- one that doesn't (already reversed,
+    // or a kind with no edit form) would reveal actions that do nothing.
+    const cards = '<div class="card-list mobile-only">' + items.map(({ r, isIn, amtTxt, acc, tone }) => {
+      const editable = app.txEditable(r);
+      const inner = '<div class="card-row-top"><div><div class="card-row-title">' + (r.category ? '<span class="cat-badge" style="background:' + app.categoryColor(r.category, r.type) + '">' + svgIcon(categoryIcon(r.category), 12) + "</span>" : "") + esc(r.desc || "—") + '</div><div class="card-row-sub">' + r.date + " · " + esc(typeLabels[r.type] || r.type) + "</div></div>" +
         '<div class="card-row-amt ' + tone + '">' + amtTxt + "</div></div>" +
         '<div class="card-row-meta">' +
           (r.personId ? '<span>' + esc(app.personName(r.personId)) + "</span>" : "") +
           '<span>' + esc(acc) + "</span>" +
         "</div>" +
         tagChips(r) +
-        rowActions(r) +
-      "</div>"
-    ).join("") + "</div>";
+        rowActions(r);
+      const rowStyle = r.category ? ' style="border-inline-start:4px solid ' + app.categoryColor(r.category, r.type) + '"' : "";
+      if (!editable) return '<div class="card-row' + (r.void ? " voided" : "") + '"' + rowStyle + ">" + inner + "</div>";
+      return '<div class="card-row swipe-row' + (r.void ? " voided" : "") + '"' + rowStyle + ">" +
+        '<div class="swipe-actions">' +
+          '<button class="swipe-act swipe-edit" onclick="UI.openTxEdit(\'' + r.id + '\')">' + esc(t.edit) + "</button>" +
+          '<button class="swipe-act swipe-delete" onclick="UI.deleteTxC(\'' + r.id + '\')">' + esc(t.delete) + "</button>" +
+        "</div>" +
+        '<div class="swipe-content">' + inner + "</div>" +
+      "</div>";
+    }).join("") + "</div>";
 
     const loadMore = total > S.txVisible ? '<button class="btn btn-secondary block" onclick="UI.loadMoreTx()">' + esc(t.loadMore) + " (" + (total - S.txVisible) + ")</button>" : "";
 

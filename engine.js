@@ -22,7 +22,7 @@ class Engine {
       // otherwise silently start overwriting whatever's still recoverable
       // in that raw stored string.
       loadError: false,
-      data: null, txVisible: 25, moreOpen: false, arabicNumerals: false, personDetailId: null, whatIf: [], payoffOrder: "largest",
+      data: null, txVisible: 25, moreOpen: false, quickAddOpen: false, arabicNumerals: false, personDetailId: null, whatIf: [], payoffOrder: "largest",
       locked: false, lockErr: "", pinMsg: "", payoffCalc: { personId: "all", amount: "" } };
   }
   // ---- app lock (Settings -> App lock) -------------------------------
@@ -364,7 +364,7 @@ class Engine {
       availableBalance: "Available balance", availableNote: "Spendable right now — cash, bank and wallets. Receivables, investments and credit lines are excluded.", netWorth: "Net worth", receivables: "Owed to me", payables: "I owe", investmentsShort: "Invested", available: "Available",
       position: "Current financial position", whereMoney: "Where my money is", upcoming30: "Next 30 days", seeForecast: "Forecast →", thisMonth: "This month", income: "Income", expenses: "Expenses", topCategories: "Top spend categories", needsAttention: "Needs attention",
       cash: "Cash", bank: "Bank accounts", wallets: "Smart wallets", other: "Other / cards", totalAssets: "Total assets", liabilities: "Liabilities",
-      aIncome: "+ Income", aExpense: "+ Expense", aTransfer: "Transfer", aReceivable: "+ Lend / owed to me", aDebt: "+ Debt I owe", aSale: "+ Installment sale", aPurchasePlan: "+ Installment purchase", aInvest: "+ Investment", aPerson: "+ Person", aAccount: "+ Account", aCollect: "Record collection", aRepay: "Record repayment", aRecurring: "+ Recurring rule", aStatement: "+ Statement", payStatement: "Pay statement", aGoal: "+ Savings goal",
+      aIncome: "+ Income", aExpense: "+ Expense", aTransfer: "Transfer", aReceivable: "+ Lend / owed to me", aDebt: "+ Debt I owe", aSale: "+ Installment sale", aPurchasePlan: "+ Installment purchase", aInvest: "+ Investment", aPerson: "+ Person", aAccount: "+ Account", aCollect: "Record collection", aRepay: "Record repayment", aRecurring: "+ Recurring rule", aStatement: "+ Statement", payStatement: "Pay statement", aGoal: "+ Savings goal", quickAdd: "Quick add",
       search: "Search", type: "Type", account: "Account", period: "Period", clear: "Clear", date: "Date", details: "Details", person: "Person", category: "Category", amount: "Amount", phone: "Phone", owesMe: "Owes me", iOwe: "I owe", net: "Net", plans: "Plans", history: "History",
       total: "Sale total", collected: "Collected", remaining: "Remaining", dueDate: "Due", paid: "Paid", status: "Status", recordPayment: "Record payment", showSchedule: "Show schedule", hideSchedule: "Hide schedule",
       source: "Source", collect: "Collect", pay: "Pay", name: "Name", invested: "Invested", currentValue: "Current value", pnl: "Profit / loss", updateValue: "Update value",
@@ -380,7 +380,7 @@ class Engine {
       availableBalance: "الرصيد المتاح", availableNote: "المتاح للصرف الآن — كاش وبنك ومحافظ. لا يشمل المستحقات ولا الاستثمارات ولا حدود الكريدت.", netWorth: "صافي الثروة", receivables: "لي عند الناس", payables: "عليّ للناس", investmentsShort: "مستثمر", available: "المتاح",
       position: "الموقف المالي الحالي", whereMoney: "أين أموالي", upcoming30: "الـ 30 يوم القادمة", seeForecast: "التوقعات →", thisMonth: "هذا الشهر", income: "الإيرادات", expenses: "المصروفات", topCategories: "أكبر بنود الصرف", needsAttention: "يحتاج انتباه",
       cash: "كاش", bank: "حسابات بنكية", wallets: "محافظ إلكترونية", other: "أخرى / بطاقات", totalAssets: "إجمالي الأصول", liabilities: "الالتزامات",
-      aIncome: "+ إيراد", aExpense: "+ مصروف", aTransfer: "تحويل", aReceivable: "+ سلفة / لي", aDebt: "+ دين عليّ", aSale: "+ بيع بالتقسيط", aPurchasePlan: "+ شراء بالتقسيط", aInvest: "+ استثمار", aPerson: "+ شخص", aAccount: "+ حساب", aCollect: "تسجيل تحصيل", aRepay: "تسجيل سداد", aRecurring: "+ قاعدة متكررة", aStatement: "+ كشف حساب", payStatement: "سداد كشف حساب", aGoal: "+ هدف ادخار",
+      aIncome: "+ إيراد", aExpense: "+ مصروف", aTransfer: "تحويل", aReceivable: "+ سلفة / لي", aDebt: "+ دين عليّ", aSale: "+ بيع بالتقسيط", aPurchasePlan: "+ شراء بالتقسيط", aInvest: "+ استثمار", aPerson: "+ شخص", aAccount: "+ حساب", aCollect: "تسجيل تحصيل", aRepay: "تسجيل سداد", aRecurring: "+ قاعدة متكررة", aStatement: "+ كشف حساب", payStatement: "سداد كشف حساب", aGoal: "+ هدف ادخار", quickAdd: "إضافة سريعة",
       search: "بحث", type: "النوع", account: "الحساب", period: "الفترة", clear: "مسح", date: "التاريخ", details: "التفاصيل", person: "الشخص", category: "التصنيف", amount: "المبلغ", phone: "الهاتف", owesMe: "له عندي", iOwe: "عليّ", net: "الصافي", plans: "خطط", history: "السجل",
       total: "إجمالي البيع", collected: "المحصّل", remaining: "المتبقي", dueDate: "الاستحقاق", paid: "مدفوع", status: "الحالة", recordPayment: "تسجيل دفعة", showSchedule: "عرض الجدول", hideSchedule: "إخفاء الجدول",
       source: "المصدر", collect: "تحصيل", pay: "سداد", name: "الاسم", invested: "المستثمر", currentValue: "القيمة الحالية", pnl: "ربح / خسارة", updateValue: "تحديث القيمة",

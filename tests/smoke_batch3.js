@@ -30,7 +30,11 @@ require("./_watchdog"); // shared pass/fail detector -- see that file
   console.log("matching receivable row posted:", receivableRow > 0);
 
   console.log("\n=== 2) Editing an existing expense hides split fields ===");
-  await page.locator(".card-row", { hasText: "Shared taxi" }).first().locator("button:has-text('Edit')").click();
+  // button.link-btn -- a transaction row now offers Edit two ways (a new
+  // swipe panel + the always-visible rowActions link); the swipe one only
+  // becomes clickable once the row is actually swiped open, so target the
+  // always-visible one by class rather than by DOM order/text alone.
+  await page.locator(".card-row", { hasText: "Shared taxi" }).first().locator("button.link-btn:has-text('Edit')").click();
   await page.waitForTimeout(200);
   console.log("splitPersonId field absent while editing:", await page.locator("#f_splitPersonId").count() === 0);
   await page.click("button:has-text('Cancel')"); await page.waitForTimeout(150);

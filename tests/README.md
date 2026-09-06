@@ -67,6 +67,28 @@ account can be deleted, a card's Available/Limit stay consistent).
   progress states, focus rings/flash-pill stacking/PWA metadata, internal
   transfers never counting as income or expense, Person Detail history, and
   card-statement rendering.
+- `check_category_icons.js` — a real icon per built-in category on
+  Dashboard's category bars and each categorized transaction row's badge,
+  a sensible fallback glyph for a custom (user-added) category rather than
+  a blank/broken one, and no badge at all on an uncategorized/transfer row.
+- `check_quick_add_fab.js` — the persistent floating "+" (mobile only,
+  hidden on desktop where the topbar's own "+ Expense" already covers it):
+  opens/closes its quick-add sheet, is mutually exclusive with the More
+  sheet, and each of its three items opens the right modal.
+- `check_swipe_actions.js` — swipe-to-reveal Edit/Delete on transaction
+  rows: only an `app.txEditable()` row gets the swipe wrapper at all, a
+  drag past halfway snaps open and a short one snaps back closed, opening
+  one row closes any other, RTL (Arabic) reveals on the correct physical
+  side (a real bug: `translateX` is a physical property, `.swipe-actions`
+  is positioned with a logical one), and tapping a revealed button doesn't
+  slide the row shut under the tap (a real bug: the buttons live in
+  `.swipe-actions`, a sibling of `.swipe-content`, not inside it).
+- `check_budget_ring.js` — the circular progress ring for the overall
+  monthly budget: appears only once a budget is set, tracks
+  normal/near/over color state, the label reads the true percentage even
+  past 100% while the ring geometry itself still clamps to a full circle,
+  and the label no longer overlaps the amount now that both share a row
+  with the ring (a real layout bug found and fixed during development).
 
 ## Adding a new one
 

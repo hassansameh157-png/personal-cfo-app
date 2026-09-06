@@ -27,7 +27,12 @@ require("./_watchdog"); // shared pass/fail detector -- see that file
   await page.click(".navbtn:has-text('Transactions')"); await page.waitForTimeout(200);
   await page.fill("#txSearch", "Car — day to day"); await page.waitForTimeout(200);
   const carRow = page.locator(".card-row", { hasText: "Car — day to day" }).first();
-  await carRow.locator("button:has-text('Edit')").click(); await page.waitForTimeout(200);
+  // button.link-btn -- a transaction row now offers Edit two ways (the
+  // swipe panel's own button, plus the always-visible rowActions link
+  // below it, both calling the exact same openTxEdit(id)); the swipe
+  // one only becomes clickable once the row is actually swiped open, so
+  // target the always-visible one by class rather than by DOM order.
+  await carRow.locator("button.link-btn:has-text('Edit')").click(); await page.waitForTimeout(200);
   const catBefore = await page.locator("#f_category").inputValue();
   console.log("category before any edit:", catBefore);
   await page.fill("#f_desc", "Car — day to day (toll)");
