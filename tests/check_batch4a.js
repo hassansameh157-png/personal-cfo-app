@@ -9,7 +9,14 @@ require("./_watchdog"); // shared pass/fail detector -- see that file
   const page = await browser.newPage({ viewport: { width: 390, height: 900 }, colorScheme: "dark" });
   await page.route("**/*", r => r.request().url().startsWith("file://") ? r.continue() : r.abort());
   page.on("pageerror", (e) => errors.push(e.message));
-  page.on("console", (m) => { if (m.type() === "error" && !m.text().includes("ERR_CONNECTION_RESET")) errors.push("console: " + m.text()); });
+  // "Failed to load resource" is expected noise here, not a real error --
+  // the route() above deliberately aborts every non-file:// request (the
+  // app's only external reference is a Google Fonts preconnect), and the
+  // network error code Chromium reports for an aborted request isn't
+  // consistent (ERR_CONNECTION_RESET and ERR_FAILED have both been seen),
+  // so match on the resource-load-failure message itself rather than
+  // chasing one specific error code.
+  page.on("console", (m) => { if (m.type() === "error" && !m.text().includes("Failed to load resource")) errors.push("console: " + m.text()); });
   await page.goto("file://" + path.resolve(__dirname, "..", "index.html"));
   await page.waitForTimeout(400);
 
