@@ -415,7 +415,22 @@ h1,h2,h3{font-family:var(--font-head);font-weight:600;margin:0;text-wrap:balance
    theme" reasoning the credit-card tile already used, just glass now
    instead of a flat navy fill, so the page's own aurora wash shows through
    it blurred. */
-.hero-card{background:var(--c-accent-900);color:#f5efe8;border-radius:var(--radius);padding:22px 22px 20px;
+/* 25 (Dashboard Recut): --c-accent-900 alone is .92 opaque, so the aurora
+   bleed the comment above promises is real but faint -- on a light-theme
+   page whose own --c-bg wash is itself only .05 alpha, barely anything of
+   it survives through backdrop-filter. These three radial gradients paint
+   the SAME hue family (violet/cyan/pink) directly onto the card, at a
+   strength that reads on either theme's --c-bg behind it, instead of
+   relying on how much of the page happens to bleed through -- the "always
+   dark" identity (--c-accent-900 last, still the base fill) is unchanged,
+   this only gives that base more of the depth the rest of Neon Aurora
+   already has. */
+.hero-card{background:
+    radial-gradient(220px 170px at 102% -18%, rgba(103,232,249,.22), transparent 62%),
+    radial-gradient(200px 190px at -12% 118%, rgba(244,114,182,.18), transparent 62%),
+    radial-gradient(280px 210px at 58% -30%, rgba(139,92,246,.24), transparent 66%),
+    var(--c-accent-900);
+  color:#f5efe8;border-radius:var(--radius);padding:22px 22px 20px;
   box-shadow:var(--shadow);border:1px solid rgba(255,255,255,.14);
   backdrop-filter:blur(22px) saturate(150%);-webkit-backdrop-filter:blur(22px) saturate(150%)}
 /* "You can spend today" -- its own tinted banner inside the hero card, same
@@ -551,7 +566,15 @@ h1,h2,h3{font-family:var(--font-head);font-weight:600;margin:0;text-wrap:balance
 .lock-input{text-align:center;font-size:24px;letter-spacing:10px;margin-top:14px}
 .hero-card.alt{background:var(--c-surface);color:var(--c-text);border:1px solid var(--c-line)}
 .hero-label{font-size:11.5px;letter-spacing:.12em;text-transform:uppercase;opacity:.75}
-.hero-value{font-family:var(--font-head);font-size:clamp(38px,10vw,52px);line-height:1.05;letter-spacing:-.01em;margin-top:4px;font-variant-numeric:tabular-nums}
+/* 27 (Dashboard Recut): a size+weight bump for the one number every
+   .hero-card exists to lead with (Dashboard's Available balance, Forecast's
+   projected balance, a Person's net position...) -- previously the same
+   visual weight as the sub-values sitting right underneath it in
+   .hero-sub-row, so nothing in the layout itself said "this is the number
+   that matters most here." font-weight:600 needs no new font-weight load:
+   Source Serif 4 400/600/700 are already pulled in by the page's own
+   <link>. */
+.hero-value{font-family:var(--font-head);font-weight:600;font-size:clamp(40px,10.5vw,56px);line-height:1.05;letter-spacing:-.01em;margin-top:4px;font-variant-numeric:tabular-nums}
 .hero-note{font-size:13.5px;opacity:.75;max-width:44ch;margin-top:6px}
 .hero-sub-row{display:flex;gap:22px;margin-top:14px;padding-top:12px;border-top:1px solid color-mix(in srgb, currentColor 20%, transparent);flex-wrap:wrap}
 .hero-sub-label{font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;opacity:.65}
@@ -593,6 +616,15 @@ h1,h2,h3{font-family:var(--font-head);font-weight:600;margin:0;text-wrap:balance
 @media (max-width:560px){ .tile-grid.four{grid-template-columns:repeat(2,minmax(0,1fr))} }
 .pos-tile{padding:10px 11px;border-radius:8px;background:var(--c-surface)}
 .pos-tile.alt{background:var(--c-accent2-100)}
+/* 28 (Dashboard Recut): "Where my money is" tiles that represent a real
+   money bucket (Cash/Bank/Wallets/Cards/Invested/Owed to me) -- --tile-tint
+   etc. are set inline per tile (UI.renderDashboard's positionTiles), one
+   color-mix'd against --c-surface/transparent so it stays legible over
+   either theme's own surface rather than a flat hardcoded hex. */
+.pos-tile.tinted{background:var(--tile-tint,var(--c-surface))}
+.tile-ico{width:22px;height:22px;border-radius:7px;display:flex;align-items:center;justify-content:center;
+  background:var(--tile-ico-bg,var(--c-surface-3));color:var(--tile-ico-fg,var(--c-text-faint));margin-bottom:4px}
+.tile-ico svg{width:13px;height:13px}
 .pos-label{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--c-text-faint);min-height:22px;line-height:1.25}
 .pos-value{font-family:var(--font-head);font-size:19px;margin-top:2px;font-variant-numeric:tabular-nums}
 .two-col{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px}
@@ -609,7 +641,6 @@ button.bar-row{width:100%;border:0;background:none;padding:6px 0;min-height:44px
    is auto, i.e. "never shrink below content", which would otherwise push
    the icon out of the already-tight 112px column instead of truncating). */
 .bar-name{display:flex;align-items:center;gap:5px;min-width:0;color:var(--c-text-soft)}
-.bar-name-ico{flex:none;display:inline-flex}
 .bar-name-text{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
 .bar-track{height:7px;border-radius:999px;background:var(--c-surface-3);overflow:hidden}
 .bar-track.thin{height:5px;margin-top:8px}
@@ -3333,6 +3364,19 @@ function categoryIcon(name) {
 const ICON_CHECK = "M20 6 9 17l-5-5";
 const ICON_PLUS = "M12 5v14M5 12h14";
 const ICON_SEARCH = "M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14zM21 21l-4.3-4.3";
+// Dashboard Recut #28 -- one icon per real money-bucket tile in "Where my
+// money is" (UI.renderDashboard). Multi-element inner markup (rect/circle,
+// not one path), so these hold full innerHTML rather than a single "d"
+// string the way ICON_CHECK/ICON_PLUS/ICON_SEARCH above do (those go
+// through svgIcon(), which only ever wraps one <path>). Hoisted to module
+// scope like every other shared icon table in this file, rather than
+// re-allocated as local consts on every single Dashboard render.
+const ICON_CASH = '<rect x="3" y="6" width="18" height="12" rx="2"/><path d="M3 10h18"/>';
+const ICON_BANK_TILE = '<rect x="2" y="7" width="20" height="12" rx="2"/><path d="M2 11h20"/>';
+const ICON_WALLET_TILE = '<rect x="4" y="4" width="16" height="16" rx="4"/><circle cx="12" cy="12" r="2.5"/>';
+const ICON_CARDS_TILE = '<rect x="2" y="6" width="20" height="13" rx="2"/><path d="M2 10h20"/>';
+const ICON_INVESTED_TILE = '<path d="M4 19V9M10 19V5M16 19v-7M22 19H2"/>';
+const ICON_OWED_TILE = '<path d="M16 19v-1a4 4 0 0 0-8 0v1M12 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6"/>';
 
 const COLOR_PALETTE = [
   "#0088b0", "#1d4ed8", "#2563eb", "#0ea5e9", "#0d9488", "#10b981", "#16a34a", "#65a30d",
@@ -3452,7 +3496,7 @@ const UI = {
   },
 
   // ---- generic actions ---------------------------------------------------
-  setPage(p) { this.app.state.page = p; this.app.state.moreOpen = false; this.app.state.quickAddOpen = false; this.app.state.txVisible = 25; this.render(); window.scrollTo({ top: 0 }); },
+  setPage(p) { this.app.state.page = p; this.app.state.moreOpen = false; this.app.state.quickAddOpen = false; this.app.state.txVisible = 25; this._needsAttentionExpanded = false; this.render(); window.scrollTo({ top: 0 }); },
   // A person's own page: every loan and installment plan tied to them (both
   // directions) in one place, instead of scattered across Receivables &
   // Payables and Installments — the gap that made juggling several loans
@@ -3511,6 +3555,14 @@ const UI = {
     if (this._expandedTxGroups.has(id)) this._expandedTxGroups.delete(id); else this._expandedTxGroups.add(id);
     this.render();
   },
+  // Dashboard's Needs Attention list -- collapsed to the first
+  // NEEDS_ATTENTION_COLLAPSED cards by default (see renderDashboard()),
+  // expanded on demand. Transient view state, not app data -- same
+  // this-instance-property reasoning as _expandedTxGroups above -- and
+  // setPage() resets it back to collapsed on every navigation, so landing
+  // on Dashboard fresh never silently starts pre-expanded from a previous
+  // visit.
+  toggleNeedsAttention() { this._needsAttentionExpanded = !this._needsAttentionExpanded; this.render(); },
   // Short physical buzz for a real moment -- currently every destructive
   // confirm() dialog (see hapticConfirm() below), the instant the user
   // actually accepts it. Feature-detected: navigator.vibrate doesn't exist
@@ -4473,7 +4525,14 @@ const UI = {
     // "expense"/"income" today, but this is exactly the class of bug the
     // shared helper exists to close structurally at every onclick-arg
     // site, not just the ones currently fed anything non-trivial.
-    return '<button class="bar-row" onclick="UI.viewCategoryTx(\'' + escJsArg(name) + "','" + escJsArg(kind) + '\')"><span class="bar-name"><span class="bar-name-ico">' + svgIcon(categoryIcon(name), 14) + '</span><span class="bar-name-text">' + esc(name) + "</span></span>" +
+    // 30 (Dashboard Recut): the same colored circular .cat-badge already
+    // used for this exact category on a Transactions row, rather than a
+    // flat muted-grey glyph here -- shared class (this being the one other
+    // place a category gets an icon at all), not a second copy of the
+    // color+icon pairing that could drift from Transactions' own.
+    // margin-inline-end:0 overrides cat-badge's own spacing since
+    // .bar-name's flex `gap` already places it, not this badge's margin.
+    return '<button class="bar-row" onclick="UI.viewCategoryTx(\'' + escJsArg(name) + "','" + escJsArg(kind) + '\')"><span class="bar-name"><span class="cat-badge" style="background:' + app.categoryColor(name, kind) + ';margin-inline-end:0">' + svgIcon(categoryIcon(name), 12) + '</span><span class="bar-name-text">' + esc(name) + "</span></span>" +
       '<div class="bar-track"><div class="bar-fill" style="width:' + Math.max(4, v / max * 100) + '%;background:' + app.categoryColor(name, kind) + ring + '"></div></div>' +
       '<span class="bar-val' + (over ? " tone-neg" : "") + '">' + app.fmt(v) + (suffix || "") + "</span></button>";
   },
@@ -4516,14 +4575,19 @@ const UI = {
     // .cc-stmt badge against its own always-dark background.
     const spendToday = app.spendableToday(D);
     const spendTodayBanner = '<div class="spend-today' + (spendToday < 0 ? " tight" : "") + '"><span class="spend-today-label">' + esc(app.L("You can spend today", "تقدر تصرف النهاردة")) + '</span><span class="spend-today-value">' + app.fmt(spendToday) + "</span></div>";
-    // Net worth sparkline -- same app.derive(cutoff) technique Reports'
-    // 6-month trend already uses, just 5 points at a weekly cadence
-    // instead of monthly (Dashboard renders far more often than Reports,
-    // so this stays a noticeably smaller pass: 5 derive() calls, each one
-    // one linear scan of the transaction list, negligible next to
-    // everything else this render already computes from D). Draws nothing
-    // (see sparkline()) if net worth hasn't moved across the window.
-    const nwSpark = [4, 3, 2, 1, 0].map(w => app.derive(app.iso(app.addDays(new Date(), -7 * w))).netWorth);
+    // Net worth + available-balance sparklines -- same app.derive(cutoff)
+    // technique Reports' 6-month trend already uses, just 5 points at a
+    // weekly cadence instead of monthly (Dashboard renders far more often
+    // than Reports, so this stays a noticeably smaller pass: 5 derive()
+    // calls, each one one linear scan of the transaction list, negligible
+    // next to everything else this render already computes from D). One
+    // shared set of 5 derive() results feeds BOTH series below -- calling
+    // derive() a second time with the same 5 cutoffs just to pull .available
+    // instead of .netWorth would silently double this cost on every single
+    // Dashboard render. Draws nothing (see sparkline()) if a series hasn't
+    // moved across the window.
+    const weeklyDerives = [4, 3, 2, 1, 0].map(w => app.derive(app.iso(app.addDays(new Date(), -7 * w))));
+    const nwSpark = weeklyDerives.map(x => x.netWorth);
     // Tappable -- expands into the same real monthly trend Reports shows
     // (nwTrendMonths(), shared with renderReports() so the two can't drift
     // apart). The 6 extra derive() calls that trend needs are NOT run here
@@ -4539,6 +4603,15 @@ const UI = {
     // content would still sit in the tab order with nothing to see or
     // announce, so the trigger follows the same all-or-nothing rule.
     const sparkSvg = this.sparkline(nwSpark, "var(--c-accent)");
+    // 29 (Dashboard Recut): the same weeklyDerives results above, just for
+    // `available` -- the headline hero-value itself previously had no trend
+    // indicator at all, only its smaller net-worth sub-value did. Purely
+    // decorative (sparkline()'s own <svg aria-hidden="true">, no
+    // .spark-trigger wrapper): unlike net worth, there's no existing
+    // "available balance over time" monthly series (nwTrendMonths() is
+    // net-worth-specific) to expand into, so this doesn't claim a tap
+    // interaction it can't back up.
+    const availSpark = this.sparkline(weeklyDerives.map(x => x.available), "var(--c-accent)");
     // aria-expanded="false" -- always false here since renderDashboard()
     // always starts the panel collapsed (see toggleNwTrend()'s own
     // comment on why a render() resets it); same open/close-toggle
@@ -4548,7 +4621,7 @@ const UI = {
     const hero =
       '<div class="hero-card">' +
         '<div class="hero-label">' + esc(t.availableBalance) + "</div>" +
-        '<div class="hero-value">' + app.fmt(D.available) + "</div>" +
+        '<div class="hero-value">' + app.fmt(D.available) + availSpark + "</div>" +
         '<div class="hero-note">' + esc(t.availableNote) + "</div>" +
         spendTodayBanner +
         '<div class="hero-sub-row">' +
@@ -4714,12 +4787,28 @@ const UI = {
       cta: t.todos + " →", go: "todos", sev: td.overdue ? "neg" : "warn"
     }));
 
+    // Collapsed to the first NEEDS_ATTENTION_COLLAPSED cards by default --
+    // real bug this fixes: with everything an alert (overdue plans, largest
+    // receivables, card balance, statements, savings goals, to-dos...) this
+    // list routinely ran to 10+ cards, pushing every other Dashboard section
+    // (Quick add, Where my money is, Forecast) several screens down. The
+    // full list is one tap away (UI.toggleNeedsAttention()), never hidden
+    // for good -- this only changes what's visible at rest.
+    const NEEDS_ATTENTION_COLLAPSED = 3;
+    const naExpanded = !!this._needsAttentionExpanded || alerts.length <= NEEDS_ATTENTION_COLLAPSED;
+    const naShown = naExpanded ? alerts : alerts.slice(0, NEEDS_ATTENTION_COLLAPSED);
+    // Reuses the same .btn.btn-secondary.block treatment Transactions'
+    // own "Load more" button already established, rather than inventing a
+    // second full-width-button style for what's the same interaction
+    // (reveal more of an already-fetched list) in a different section.
+    const naMoreBtn = !naExpanded ? '<button type="button" class="btn btn-secondary block small" aria-expanded="false" onclick="UI.toggleNeedsAttention()">' +
+      esc(app.L("+ " + (alerts.length - NEEDS_ATTENTION_COLLAPSED) + " more — show all", "+ " + (alerts.length - NEEDS_ATTENTION_COLLAPSED) + " تنبيهات تانية — عرض الكل")) + "</button>" : "";
     const needsAttention = '<section class="dash-section">' +
       '<h2 class="section-title">' + esc(t.needsAttention) + "</h2>" +
-      (alerts.length ? '<div class="alert-list">' + alerts.map(a =>
+      (alerts.length ? '<div class="alert-list">' + naShown.map(a =>
         '<div class="alert-card sev-' + (a.sev || "info") + '"><div class="alert-title">' + esc(a.title) + '</div><div class="alert-body">' + a.body + '</div>' +
         '<button class="alert-cta" onclick="' + (a.act || ("UI.setPage('" + a.go + "')")) + '">' + esc(a.cta) + "</button></div>"
-      ).join("") + "</div>" : this.emptyState(ICON_CHECK, app.L("All clear", "كله تمام"), app.L("Nothing needs your attention right now.", "مفيش حاجة محتاجة انتباهك دلوقتي."))) +
+      ).join("") + "</div>" + naMoreBtn : this.emptyState(ICON_CHECK, app.L("All clear", "كله تمام"), app.L("Nothing needs your attention right now.", "مفيش حاجة محتاجة انتباهك دلوقتي."))) +
     "</section>";
 
     // Repeat a common expense with one tap, pre-filled with its last
@@ -4747,15 +4836,32 @@ const UI = {
     "</section>" : "";
 
     // Where my money is — position breakdown, single instance only.
+    // 28 (Dashboard Recut): the first 6 tiles are real money "buckets"
+    // (a place value actually sits), so each gets its own icon + a matching
+    // tint -- reusing paths already established elsewhere in this app
+    // (Invested/Owed-to-me match Engine.NAV's own investments/people icons
+    // exactly, rather than inventing new glyphs those pages don't share)
+    // instead of the flat, undifferentiated grey every tile had before.
+    // The last 3 (I owe, Total assets, Net worth) are DERIVED totals, not
+    // a place money sits, so they deliberately keep the plain/alt tile
+    // treatment -- an icon on a subtraction or a grand total would just be
+    // decoration with nothing real to depict. ICON_CASH etc. are module-
+    // scope constants (see near ICON_CHECK/ICON_PLUS/ICON_SEARCH above).
     const positionTiles = [
-      [t.cash, D.cash], [t.bank, D.bank], [t.wallets, D.wallets],
-      [t.other, D.cards], [t.investmentsShort, D.invValue], [t.receivables, D.recvTotal],
+      [t.cash, D.cash, ICON_CASH, "var(--c-accent)"], [t.bank, D.bank, ICON_BANK_TILE, "var(--cat-1)"], [t.wallets, D.wallets, ICON_WALLET_TILE, "var(--cat-5)"],
+      [t.other, D.cards, ICON_CARDS_TILE, "var(--c-neg)"], [t.investmentsShort, D.invValue, ICON_INVESTED_TILE, "var(--cat-4)"], [t.receivables, D.recvTotal, ICON_OWED_TILE, "var(--c-pos)"],
       [t.payables, -D.payTotal], [t.totalAssets, D.assets], [t.netWorth, D.netWorth]
     ];
     const whereMoney = '<section class="dash-section">' +
       '<h2 class="section-title">' + esc(t.whereMoney) + "</h2>" +
-      '<div class="tile-grid">' + positionTiles.map(([l, v], i) =>
-        '<div class="pos-tile' + (i > 6 ? " alt" : "") + '"><div class="pos-label">' + esc(l) + '</div><div class="pos-value">' + app.fmt(v) + "</div></div>"
+      '<div class="tile-grid">' + positionTiles.map(([l, v, icon, tint], i) =>
+        '<div class="pos-tile' + (i > 6 ? " alt" : icon ? " tinted" : "") + '"' + (icon ? ' style="--tile-tint:color-mix(in srgb, ' + tint + ' 12%, var(--c-surface));--tile-ico-bg:color-mix(in srgb, ' + tint + ' 24%, transparent);--tile-ico-fg:' + tint + '"' : "") + '>' +
+        // aria-hidden -- decorative next to .pos-label, which already
+        // carries the real accessible name; same convention every other
+        // icon-producing helper in this file follows (svgIcon(), sparkline(),
+        // ringChart(), barChart()'s bars).
+        (icon ? '<div class="tile-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + icon + "</svg></div>" : "") +
+        '<div class="pos-label">' + esc(l) + '</div><div class="pos-value">' + app.fmt(v) + "</div></div>"
       ).join("") + "</div>" +
     "</section>";
 

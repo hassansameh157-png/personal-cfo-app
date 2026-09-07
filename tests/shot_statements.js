@@ -67,6 +67,12 @@ require("./_watchdog"); // shared pass/fail detector -- see that file
 
   console.log("\n=== 5) Needs Attention shows overdue statement (Platinum seed) ===");
   await page.click(".navbtn:has-text('Dashboard')"); await page.waitForTimeout(200);
+  // Dashboard Recut #25 collapses Needs Attention to its first 3 cards --
+  // expand (if a "+N more" button is even there) before looking for one
+  // that could easily sit past that cutoff, seeded alongside several other
+  // overdue plans/receivables.
+  const moreBtn = page.locator(".dash-section button.btn-secondary.block");
+  if (await moreBtn.count()) { await moreBtn.click(); await page.waitForTimeout(150); }
   const overdueAlert = page.locator(".alert-card", { hasText: "Overdue statement" });
   console.log("overdue statement alert present:", await overdueAlert.count() > 0);
   if (await overdueAlert.count() > 0) console.log("alert text:", await overdueAlert.first().innerText());

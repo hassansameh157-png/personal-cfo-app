@@ -12,11 +12,22 @@ require("./_watchdog"); // shared pass/fail detector -- see that file
   await page.goto("file://" + path.resolve(__dirname, "..", "index.html"));
   await page.waitForTimeout(300);
 
-  console.log("=== 1) Dashboard's category bars each show a real icon, not just the name ===");
-  const bars = page.locator(".bar-name-ico svg");
+  console.log("=== 1) Dashboard's category bars each show a real, colored icon badge, not just the name ===");
+  // Dashboard Recut #30: catBar() (shared with Reports) now reuses the same
+  // colored circular .cat-badge a categorized Transactions row gets,
+  // instead of a plain muted-grey glyph in its own .bar-name-ico wrapper --
+  // updated selector to match; see section 2 below for the badge's own
+  // shape/fallback coverage, already exercised on Transactions.
+  const bars = page.locator(".bar-row .cat-badge svg");
   const barCount = await bars.count();
   console.log("at least one category bar has an icon:", barCount > 0);
   console.log("icon svg actually has a path with real geometry:", await bars.first().locator("path").evaluate(el => el.getAttribute("d").length > 5));
+  // Real bug this would catch: catBar() forgetting to pass its own
+  // category-specific color through and falling back to one flat default
+  // for every bar -- two different categories' badges must render as two
+  // different colors, not the same one repeated.
+  const badgeColors = await page.locator(".bar-row .cat-badge").evaluateAll(els => [...new Set(els.map(el => getComputedStyle(el).backgroundColor))]);
+  console.log("different category bars get genuinely different badge colors:", badgeColors.length > 1);
 
   console.log("\n=== 2) A categorized transaction row shows a colored icon badge ===");
   await page.evaluate(() => {

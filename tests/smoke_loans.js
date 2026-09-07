@@ -35,6 +35,11 @@ require("./_watchdog"); // shared pass/fail detector -- see that file
 
   console.log("\n=== 3) Needs Attention shows the overdue payable ===");
   await page.click(".navbtn:has-text('Dashboard')"); await page.waitForTimeout(200);
+  // Dashboard Recut #25 collapses Needs Attention to its first 3 cards --
+  // expand (if a "+N more" button is even there) before looking for one
+  // that could sit past that cutoff, seeded alongside other real alerts.
+  const moreBtn3 = page.locator(".dash-section button.btn-secondary.block");
+  if (await moreBtn3.count()) { await moreBtn3.click(); await page.waitForTimeout(150); }
   const alertTitle = await page.locator(".alert-title", { hasText: "Overdue payment" }).count();
   console.log("Overdue payment alert present:", alertTitle > 0);
   if (alertTitle > 0) {
@@ -62,6 +67,8 @@ require("./_watchdog"); // shared pass/fail detector -- see that file
 
   console.log("\n=== 5) Repaying it in full clears the overdue alert ===");
   await page.click(".navbtn:has-text('Dashboard')"); await page.waitForTimeout(200);
+  const moreBtn5 = page.locator(".dash-section button.btn-secondary.block");
+  if (await moreBtn5.count()) { await moreBtn5.click(); await page.waitForTimeout(150); }
   const payBtn = page.locator(".alert-card", { has: page.locator(".alert-title", { hasText: "Overdue payment · " + personName }) }).first().locator(".alert-cta");
   if (await payBtn.count()) {
     await payBtn.click();

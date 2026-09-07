@@ -194,6 +194,28 @@ account can be deleted, a card's Available/Limit stay consistent).
   sites, and by extracting one shared `Engine.isTodoOverdue()` so the list
   page and the Dashboard/badge can never quietly disagree about which row
   counts as overdue.
+- `check_dashboard_recut.js` — six purely visual/layout changes to
+  Dashboard, previewed for the user as a concept mockup before shipping:
+  Needs Attention collapses to its first 3 alert cards with a "+N more"
+  expand button (starting collapsed again on every fresh visit, not stuck
+  open from a previous one), the hero card's background carries a real
+  multi-layer aurora gradient instead of a flat fill, its headline value
+  renders larger and semibold, the "Where my money is" tiles get a
+  matching icon + color tint for each of the 6 real money-bucket tiles
+  (deliberately NOT the 3 derived-total tiles — I owe/Total assets/Net
+  worth aren't a place money sits), the Available Balance headline gets
+  its own sparkline (previously only the smaller Net worth sub-value had
+  one, drawn as a genuinely separate `<svg>`, not the same element moved),
+  and Dashboard's/Reports' shared `catBar()` category-bar icons now match
+  the colored circular badge Transactions already uses for the same
+  category instead of a flat muted-grey glyph. Collapsing Needs Attention
+  to 3 cards meant several *other* existing tests could no longer find an
+  alert card by text past that cutoff — `check_todos.js`, `shot_statements.js`,
+  `smoke_loans.js`, `smoke_batch3.js` and `check_overall_states.js` were all
+  updated to expand the list (or set the expanded flag directly) before
+  asserting on a specific card, and `check_category_icons.js`'s Dashboard
+  section was updated for the new `.cat-badge` markup in place of the old
+  `.bar-name-ico` (removed entirely, no longer referenced anywhere).
 
 ## Adding a new one
 

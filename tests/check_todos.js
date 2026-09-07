@@ -3,6 +3,16 @@ const path = require("path");
 
 require("./_watchdog"); // shared pass/fail detector -- see that file
 
+// Dashboard Recut #25 collapses Needs Attention to its first 3 cards, with
+// a "+N more" button revealing the rest -- every .alert-card assertion in
+// this file needs the full list actually in the DOM (a to-do reminder can
+// easily land past position 3 once the seed's own overdue plans/receivables
+// are counted first), so expand before reading it every time.
+async function expandAlerts(page) {
+  const moreBtn = page.locator(".dash-section button.btn-secondary.block");
+  if (await moreBtn.count()) { await moreBtn.click(); await page.waitForTimeout(150); }
+}
+
 // The To-do list: a plain reminder with a due date, surfaced on the
 // Dashboard as it approaches -- and, by design, completely invisible to
 // every financial number in the app. Engine.submit()'s "todo"/"todo_edit"
@@ -51,6 +61,7 @@ require("./_watchdog"); // shared pass/fail detector -- see that file
   console.log("\n=== 2) A due-soon to-do surfaces as a Dashboard Needs Attention reminder ===");
   await page.evaluate(() => UI.setPage("dashboard"));
   await page.waitForTimeout(200);
+  await expandAlerts(page);
   const alertTexts = await page.locator(".alert-card").allTextContents();
   console.log("Dashboard shows a reminder card naming the to-do:", alertTexts.some(x => x.includes("Renew car insurance")));
   const attnBefore = await page.evaluate(() => UI.app.attentionCount(UI.app.derive()));
@@ -73,6 +84,7 @@ require("./_watchdog"); // shared pass/fail detector -- see that file
   await page.waitForTimeout(150);
   await page.evaluate(() => UI.setPage("dashboard"));
   await page.waitForTimeout(200);
+  await expandAlerts(page);
   const alertTexts2 = await page.locator(".alert-card").allTextContents();
   console.log("no-due-date to-do never becomes a reminder:", !alertTexts2.some(x => x.includes("repaint the balcony")));
   console.log("a to-do due 60 days out never becomes a reminder yet:", !alertTexts2.some(x => x.includes("Renew passport")));
@@ -88,6 +100,7 @@ require("./_watchdog"); // shared pass/fail detector -- see that file
   await page.waitForTimeout(150);
   await page.evaluate(() => UI.setPage("dashboard"));
   await page.waitForTimeout(200);
+  await expandAlerts(page);
   const alertTexts3 = await page.locator(".alert-card").allTextContents();
   const passportAlert = alertTexts3.find(x => x.includes("Renew passport"));
   console.log("now-overdue to-do shows up as a reminder:", !!passportAlert);
@@ -111,6 +124,7 @@ require("./_watchdog"); // shared pass/fail detector -- see that file
   console.log("the checked row gets the done styling:", await page.locator(".todo-row.todo-done", { hasText: "Renew car insurance" }).count() === 1);
   await page.evaluate(() => UI.setPage("dashboard"));
   await page.waitForTimeout(200);
+  await expandAlerts(page);
   const alertTexts4 = await page.locator(".alert-card").allTextContents();
   console.log("a done to-do no longer shows as a reminder even though its due date already passed the 3-day window:", !alertTexts4.some(x => x.includes("Renew car insurance")));
   console.log("the still-open overdue reminder (passport) keeps showing:", alertTexts4.some(x => x.includes("Renew passport")));

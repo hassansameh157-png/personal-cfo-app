@@ -9,6 +9,12 @@ require("./_watchdog"); // shared pass/fail detector -- see that file
   await page.route("**/*", r => r.request().url().startsWith("file://") ? r.continue() : r.abort());
   await page.goto("file://" + path.resolve(__dirname, "..", "index.html"));
   await page.waitForTimeout(400);
+  // Dashboard Recut #25 collapses Needs Attention to its first 3 cards --
+  // this script re-renders in place (UI.render(), never UI.setPage()) so
+  // setting this once up front holds for every check below, same as
+  // clicking the real "+N more" button would, without needing that button
+  // to exist yet at each of the three budget states being simulated.
+  await page.evaluate(() => { UI._needsAttentionExpanded = true; });
 
   // Set a very low overall budget so this month's real expenses blow past it -> "over"
   await page.evaluate(() => UI.app.setOverallBudget(100));

@@ -79,6 +79,11 @@ require("./_watchdog"); // shared pass/fail detector -- see that file
   console.log("budget row shown:", await page.locator(".card-row", { hasText: "Food" }).count() > 0);
 
   await page.click(".navbtn:has-text('Dashboard')"); await page.waitForTimeout(200);
+  // Dashboard Recut #25 collapses Needs Attention to its first 3 cards --
+  // expand (if a "+N more" button is even there) before looking for one
+  // that could sit past that cutoff, seeded alongside other real alerts.
+  const moreBtnBudget = page.locator(".dash-section button.btn-secondary.block");
+  if (await moreBtnBudget.count()) { await moreBtnBudget.click(); await page.waitForTimeout(150); }
   const overBudgetAlert = await page.locator(".alert-title", { hasText: "budget" }).count();
   console.log("over/near-budget alert appears on Dashboard (Food likely already spent > 10 this month in seed data):", overBudgetAlert > 0);
   const thisMonthFoodRow = await page.locator(".bar-row", { hasText: "Food" }).innerText().catch(() => "NONE");
