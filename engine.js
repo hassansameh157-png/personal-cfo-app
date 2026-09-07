@@ -1256,6 +1256,21 @@ class Engine {
       const isPaid = paidSoFar >= s.amount - 0.001;
       return { v: s.id, l: (acc ? acc.name : "?") + " — " + (s.period || s.due || "") + (isPaid ? " " + this.L("(paid)", "(متسدد)") : "") };
     });
+    // 54 (Installments Recut): same convention as stmtOptions just above --
+    // a bare title gave no sense of direction or how much was even left,
+    // and a fully-settled plan stayed pickable with no hint that any
+    // amount against it would be refused. Labelling with direction +
+    // remaining (or a "(paid)" suffix) instead of filtering settled plans
+    // out entirely keeps editing an existing payment against one able to
+    // still find its own plan here.
+    const planOptions = d.plans.map(p => {
+      const st = this.planState(p);
+      const isPaid = st.remaining <= 0.001;
+      const dir = this.L(p.direction === "in" ? "Owed to me" : "I owe");
+      // fmtPlain, not fmt: this label is an <option>'s text, which can't
+      // carry fmt()'s own <bdi> HTML wrap (see fmtPlain's own comment).
+      return { v: p.id, l: p.title + " — " + dir + (isPaid ? " " + this.L("(paid)", "(متسدد)") : " — " + this.fmtPlain(st.remaining)) };
+    });
     // Custom categories the user added in Settings — no ARW translation
     // exists for these (they're free text the user typed), so the language
     // pass below just leaves them as-is via its `|| o.l` fallback.
@@ -1308,7 +1323,7 @@ class Engine {
       debt_payment: { title: t.aRepay, fields: [D("date", t.date, "date"), D("amount", t.amount, "number"), D("personId", t.person, "select", { options: [{ v: "", l: "—" }].concat(ppl) }), D("accountId", "Paid from", "select", { options: accs }), D("desc", t.details, "text", { wide: true })] },
       sale: { title: t.aSale, fields: [D("date", "Sale date", "date"), D("personId", "Customer", "select", { options: ppl }), D("title", "What was sold", "text", { wide: true }), D("total", "Sale total", "number"), D("down", "Down payment", "number"), D("accountId", "Down payment into", "select", { options: [{ v: "", l: "No down payment" }].concat(accs) }), D("count", "Number of installments", "number"), D("freq", "Frequency", "select", { options: [{ v: "monthly", l: "Monthly" }, { v: "weekly", l: "Weekly" }, { v: "quarterly", l: "Quarterly" }] }), D("first", "First due date", "date"), D("balloon", "Final balloon payment", "number", { hint: "Optional. Leave 0 for equal installments." })] },
       purchase: { title: t.aPurchasePlan, fields: [D("date", "Purchase date", "date"), D("personId", "Seller", "select", { options: ppl }), D("title", "What was bought", "text", { wide: true }), D("total", "Total price", "number"), D("down", "Down payment", "number"), D("accountId", "Down payment from", "select", { options: [{ v: "", l: "No down payment" }].concat(accs) }), D("count", "Number of installments", "number"), D("freq", "Frequency", "select", { options: [{ v: "monthly", l: "Monthly" }, { v: "weekly", l: "Weekly" }, { v: "quarterly", l: "Quarterly" }] }), D("first", "First due date", "date"), D("balloon", "Final balloon payment", "number")] },
-      installment_payment: { title: t.recordPayment, fields: [D("date", t.date, "date"), D("planId", "Plan", "select", { options: d.plans.map(p => ({ v: p.id, l: p.title })) }), D("amount", t.amount, "number", { hint: "Partial, exact or several installments at once — allocation is automatic." }), D("accountId", "Account", "select", { options: accs }), D("desc", t.details, "text", { wide: true })] },
+      installment_payment: { title: t.recordPayment, fields: [D("date", t.date, "date"), D("planId", "Plan", "select", { options: planOptions }), D("amount", t.amount, "number", { hint: "Partial, exact or several installments at once — allocation is automatic." }), D("accountId", "Account", "select", { options: accs }), D("desc", t.details, "text", { wide: true })] },
       investment: { title: t.aInvest, fields: [D("name", t.name, "text"), D("type", t.type, "select", { options: ["Stocks", "Gold", "Mutual fund", "Fixed deposit", "Certificate", "Crypto", "Business", "Other"].map(v => ({ v, l: v })) }), D("invested", "Amount invested", "number"), D("value", "Current value", "number"), D("date", "Purchase date", "date"), D("accountId", "Funded from", "select", { options: [{ v: "", l: "No cash movement" }].concat(accs) })] },
       // A statement's amount is typed by hand from the real bank statement
       // -- it never touches the card's own transaction-derived Outstanding

@@ -355,6 +355,67 @@ account can be deleted, a card's Available/Limit stay consistent).
   the settled-collapse default -- a brand-new, zero-balance person is
   settled by construction, so any test creating one and immediately
   expecting to find their card needs to expand that section first.
+- `check_installments_recut.js` -- two real bugs plus nine mobile-focused
+  changes to the Installments screen. #48: a plan with nothing left owed on
+  it (`remaining <= 0.001`) loses its "Record payment" button -- previously
+  a guaranteed dead end, since `submit()`'s own cap check refuses any
+  amount against 0 remaining -- the same condition Person Detail's own
+  `planSection` already applied. #49: a direction (owed to me / I owe)
+  with zero plans in it at all now hides its whole KPI header and 4-tile
+  group, not just an all-zero one sitting there for nothing to act on.
+  #50: a plan's person name is a tappable link (`UI.viewPerson()`), the one
+  remaining place in the app holding a person's name that wasn't also a way
+  to jump to their own page. #51: the next unpaid schedule row now shows
+  right on the closed card ("Next: #3 · 2026-09-01 · 6d overdue") --
+  previously "when's my next payment?" cost a tap into "Show schedule" plus
+  a scan down the rows. #52: a slim collected/total progress bar
+  (`.bar-track`/`.bar-fill`, the same language Savings goals and Accounts
+  already draw progress in), colored by state (negative tone while
+  overdue, positive once fully paid, plain accent otherwise) -- the two raw
+  numbers alone took an actual subtraction to read as "almost done" vs
+  "barely started". #53: a plan that's fully paid off collapses into its
+  own "N completed" section by default, the same pattern People's own
+  settled-collapse (#45) established -- nothing ever archives a finished
+  plan, so without this the active list fills up with years-old finished
+  plans. #54: the "Record payment" plan-picker dropdown now names each
+  option's direction and remaining amount instead of a bare title, and
+  labels an already-settled plan "(paid)" rather than silently removing it
+  from the list -- removing it outright would have broken re-opening an
+  *existing* payment against that same now-settled plan (its saved
+  `planId` would no longer match any option). #55: plans sort most-urgent
+  first -- any plan carrying an overdue row, then by its own next due date
+  soonest-first -- the same "surface what needs attention first"
+  convention Dashboard and People already apply. #56: the "Due this month"
+  banner's own total already silently folded in the gam3eya share (see
+  `duesThisMonth()`'s "P1 KPI quirk" comment) but nothing on the page ever
+  explained that half -- a one-line breakdown ("Installments: X · Gam3eya:
+  Y") now appears whenever a gam3eya contribution is due this month, with
+  the gam3eya figure itself a link to Savings groups, where it actually
+  lives. #57: an overdue schedule row now says how overdue ("Overdue · 6d
+  overdue"), reusing `daysUntilText()` (already used for card statements
+  and savings goals) instead of just the bare word "Overdue". #58: a
+  completely empty plan list now shows a real empty state ("No installment
+  plans yet") instead of just the due banner sitting over a blank list --
+  falls out naturally once #49 hides both now-empty KPI groups.
+
+  A real bug caught by inspection while reviewing screenshots, not by any
+  of the ideas above: the "Show schedule"/"Hide schedule" toggle -- shared
+  with Savings groups' own plan cards -- used `app.L()`'s generic ARW
+  dictionary lookup, which has no entry for either phrase, silently falling
+  back to English under Arabic even though `t.showSchedule`/`t.hideSchedule`
+  already carried a real Arabic translation ("عرض الجدول"/"إخفاء الجدول")
+  that was simply never used. Fixed on both cards; regression-guarded here
+  on both screens.
+
+  A second real bug, caught by the test itself while writing #54 (not the
+  original design idea): the first attempt at the plan-picker's option
+  labels formatted the remaining amount with `fmt()`, which wraps its
+  output in a `<bdi>` tag for correct bidi rendering -- fine in HTML markup,
+  but an `<option>`'s label is plain text, so the tag showed up literally
+  ("— Owed to me — <bdi ...>EGP 18,800</bdi>") instead of being parsed.
+  Fixed by using `fmtPlain()` instead, the same helper already documented
+  for exactly this ("a chart tooltip's textContent, an onclick argument
+  that can't carry HTML").
 
 ## Adding a new one
 

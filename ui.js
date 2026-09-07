@@ -234,7 +234,7 @@ const UI = {
   },
 
   // ---- generic actions ---------------------------------------------------
-  setPage(p) { this.app.state.page = p; this.app.state.moreOpen = false; this.app.state.quickAddOpen = false; this.app.state.txVisible = 25; this._needsAttentionExpanded = false; this._txActionRow = null; this._txFiltersOpen = false; this._acctActionRow = null; this._personActionRow = null; this._peopleSettledExpanded = false; this.render(); window.scrollTo({ top: 0 }); },
+  setPage(p) { this.app.state.page = p; this.app.state.moreOpen = false; this.app.state.quickAddOpen = false; this.app.state.txVisible = 25; this._needsAttentionExpanded = false; this._txActionRow = null; this._txFiltersOpen = false; this._acctActionRow = null; this._personActionRow = null; this._peopleSettledExpanded = false; this._plansCompletedExpanded = false; this.render(); window.scrollTo({ top: 0 }); },
   // A person's own page: every loan and installment plan tied to them (both
   // directions) in one place, instead of scattered across Receivables &
   // Payables and Installments — the gap that made juggling several loans
@@ -876,6 +876,11 @@ const UI = {
   },
   setHorizon(h) { this.app.state.horizon = Number(h); this.render(); },
   togglePlanRows(id) { this.app.state.openPlan = this.app.state.openPlan === id ? null : id; this.render(true); },
+  // 53 (Installments Recut): a plan that's fully paid off stays in
+  // state.data.plans forever (nothing ever archives it) -- this collapses
+  // it out of the main list by default, the same "N settled" pattern
+  // People's own list already established for the same reason.
+  togglePlansCompleted() { this._plansCompletedExpanded = !this._plansCompletedExpanded; this.render(); },
   exportJson() {
     const d = this.app.state.data;
     this.app.download("personal-cfo-backup.json", JSON.stringify(d, null, 2), "application/json");
@@ -2902,30 +2907,96 @@ const UI = {
       return '<div class="tile-grid four">' + kpis.map(([l, v, tone]) => '<div class="pos-tile"><div class="pos-label">' + esc(l) + '</div><div class="pos-value tone-' + tone + '">' + v + "</div></div>").join("") + "</div>";
     };
     const due = app.duesThisMonth(D);
-    const dueBanner = '<div class="due-banner"><div class="pos-label">' + esc(app.L("Due this month (installments + gam3eya)", "المطلوب مني الشهر ده (أقساط + جمعيات)")) + '</div><div class="hero-sub-value tone-neg" style="font-size:22px">' + app.fmt(due.total) + "</div></div>";
-    const kpiRow = dueBanner +
-      '<h2 class="section-title">' + esc(t.receivables) + " · " + app.fmt(inPlans.reduce((s, p) => s + p.remaining, 0)) + "</h2>" + kpiGroup(inPlans, "neg", t.collected) +
-      '<h2 class="section-title">' + esc(t.payables) + " · " + app.fmt(outPlans.reduce((s, p) => s + p.remaining, 0)) + "</h2>" + kpiGroup(outPlans, "neg", t.paid);
+    // 56 (Installments Recut): due.total already silently folds in the
+    // gam3eya share (see duesThisMonth's own "P1 KPI quirk" comment above)
+    // -- but nothing else on this page ever explains that half, only the
+    // installment plans below it. A one-line breakdown, with a real way to
+    // reach where the gam3eya half actually lives, makes the banner's own
+    // number fully traceable from here instead of a mystery top-line total.
+    const dueBreakdown = due.groups > 0.001 ? '<div class="card-row-sub" style="margin-top:4px">' +
+      esc(app.L("Installments: ", "أقساط: ")) + app.fmt(due.installments) + esc(app.L(" · Gam3eya: ", " · جمعيات: ")) +
+      '<button class="inline-link" onclick="UI.setPage(\'groups\')">' + app.fmt(due.groups) + "</button></div>" : "";
+    const dueBanner = '<div class="due-banner"><div class="pos-label">' + esc(app.L("Due this month (installments + gam3eya)", "المطلوب مني الشهر ده (أقساط + جمعيات)")) + '</div><div class="hero-sub-value tone-neg" style="font-size:22px">' + app.fmt(due.total) + "</div>" + dueBreakdown + "</div>";
+    // 49: a direction with no plans at all used to still show a full,
+    // all-zero KPI section under its own header -- pure clutter, nothing
+    // to act on.
+    const groupSection = (plans, label, dueLabel) => !plans.length ? "" :
+      '<h2 class="section-title">' + esc(label) + " · " + app.fmt(plans.reduce((s, p) => s + p.remaining, 0)) + "</h2>" + kpiGroup(plans, "neg", dueLabel);
+    const kpiRow = dueBanner + groupSection(inPlans, t.receivables, t.collected) + groupSection(outPlans, t.payables, t.paid);
 
-    const planCards = D.plans.map(p => {
+    // 55: most urgent first -- any plan carrying an overdue row, then by
+    // its own next due date soonest-first, the same "surface what needs
+    // attention first" convention Dashboard and People already apply.
+    const byUrgency = (a, b) => (b.overdue > 0) - (a.overdue > 0) || (a.next ? a.next.due : "9999-99").localeCompare(b.next ? b.next.due : "9999-99");
+    const sortedPlans = D.plans.slice().sort(byUrgency);
+    // 53: a fully-paid-off plan stays in state.data.plans forever (nothing
+    // ever archives it) -- collapsing it out of the way by default, the
+    // same "N settled" pattern People's own list already established,
+    // keeps the active list from filling up with years-old finished plans.
+    const activePlans = sortedPlans.filter(p => p.remaining > 0.001);
+    const completedPlans = sortedPlans.filter(p => p.remaining <= 0.001);
+    const completedCollapsed = !this._plansCompletedExpanded && completedPlans.length > 0;
+
+    const planCard = (p) => {
       const open = app.state.openPlan === p.id;
-      const rowsHtml = p.rows.map(r => '<div class="sched-row status-' + r.status + '"><span>#' + r.no + " · " + r.due + '</span><span>' + app.fmt(r.amount) + '</span><span class="sched-status">' + esc(app.L(r.status === "paid" ? "Fully settled" : r.status === "overdue" ? "Overdue" : r.status === "partial" ? "On schedule" : "Open")) + "</span></div>").join("");
+      const rowsHtml = p.rows.map(r => {
+        // 57: an overdue row used to just say "Overdue" with no sense of
+        // how overdue -- reusing the same day-counting daysUntilText()
+        // already used for card statements/savings goals.
+        const statusLabel = r.status === "paid" ? app.L("Fully settled") : r.status === "overdue" ? app.L("Overdue") + " · " + this.daysUntilText(r.due) : r.status === "partial" ? app.L("On schedule") : app.L("Open");
+        return '<div class="sched-row status-' + r.status + '"><span>#' + r.no + " · " + r.due + '</span><span>' + app.fmt(r.amount) + '</span><span class="sched-status">' + esc(statusLabel) + "</span></div>";
+      }).join("");
+      // 51: "when's my next payment?" used to cost a tap into "Show
+      // schedule" plus a scan down the rows -- surfaced right on the
+      // closed card now, for every plan that still has one (a fully-paid
+      // plan has no `next` row left at all).
+      const nextLine = !p.next ? "" : '<span>' + esc(app.L("Next: ")) + "#" + p.next.no + " · " + p.next.due + " · " + esc(this.daysUntilText(p.next.due)) + "</span>";
+      // 52: a slim collected/total progress bar, the same .bar-track/
+      // .bar-fill language Savings goals and Accounts already draw
+      // progress in -- the two raw numbers (Collected: X / Y) took an
+      // actual subtraction to read as "almost done" vs "barely started".
+      const pct = p.total > 0 ? Math.min(100, Math.round(p.collected / p.total * 100)) : 100;
+      const barColor = p.remaining <= 0.001 ? "var(--c-pos)" : p.overdue > 0 ? "var(--c-neg)" : "var(--c-accent)";
       return '<div class="card-row">' +
-        '<div class="card-row-top"><div><div class="card-row-title">' + esc(p.title) + '</div><div class="card-row-sub">' + esc(app.personName(p.personId)) + " · " + esc(app.L(p.direction === "in" ? "Owed to me" : "I owe")) + "</div></div>" +
+        // 50: the person's name used to be plain text here, the one place
+        // left in the app carrying a person's name that wasn't also a way
+        // to jump to their own page (Transactions and People's own cards
+        // already do, via UI.viewPerson()).
+        '<div class="card-row-top"><div><div class="card-row-title">' + esc(p.title) + '</div><div class="card-row-sub"><button class="inline-link" onclick="UI.viewPerson(\'' + p.personId + '\')">' + esc(app.personName(p.personId)) + "</button> · " + esc(app.L(p.direction === "in" ? "Owed to me" : "I owe")) + "</div></div>" +
         '<div class="card-row-amt ' + (p.direction === "in" ? "tone-pos" : "tone-neg") + '">' + app.fmt(p.remaining) + "</div></div>" +
+        '<div class="bar-track thin"><div class="bar-fill" style="width:' + Math.max(2, pct) + '%;background:' + barColor + '"></div></div>' +
         '<div class="card-row-meta"><span>' + esc(t.collected) + ": " + app.fmt(p.collected) + " / " + app.fmt(p.total) + '</span>' +
-        (p.overdue > 0 ? '<span class="tone-neg">' + esc(app.L("Overdue: ")) + p.overdue + "</span>" : '<span>' + esc(app.L("No overdue")) + "</span>") + "</div>" +
-        '<button class="link-btn small" onclick="UI.togglePlanRows(\'' + p.id + '\')">' + esc(app.L(open ? "Hide schedule" : "Show schedule")) + "</button>" +
+        (p.overdue > 0 ? '<span class="tone-neg">' + esc(app.L("Overdue: ")) + p.overdue + "</span>" : '<span>' + esc(app.L("No overdue")) + "</span>") +
+        nextLine + "</div>" +
+        // Real bug caught in review: this used app.L()'s generic ARW
+        // lookup, which has no entry for either phrase and so silently
+        // fell back to English under Arabic -- t.showSchedule/hideSchedule
+        // already exist with a real Arabic translation, just never used.
+        '<button class="link-btn small" onclick="UI.togglePlanRows(\'' + p.id + '\')">' + esc(open ? t.hideSchedule : t.showSchedule) + "</button>" +
         (open ? '<div class="sched-list">' + rowsHtml + "</div>" : "") +
         '<div class="btn-row wrap">' +
-        '<button class="btn btn-secondary small" onclick="UI.openModal(\'installment_payment\',{planId:\'' + p.id + '\'})">' + esc(t.recordPayment) + "</button>" +
+        // 48: a fully-settled plan (remaining 0) used to keep this button
+        // regardless -- a guaranteed dead end, since submit()'s own cap
+        // check refuses any amount against 0 remaining -- gone now, the
+        // same condition Person Detail's own planSection already applies.
+        (p.remaining > 0.001 ? '<button class="btn btn-secondary small" onclick="UI.openModal(\'installment_payment\',{planId:\'' + p.id + '\'})">' + esc(t.recordPayment) + "</button>" : "") +
         (app.planCanDelete(p.id) ? '<button class="link-btn small danger" onclick="UI.deletePlanC(\'' + p.id + '\')">' + esc(app.L("Delete plan")) + "</button>" : "") +
         "</div>" +
       "</div>";
-    }).join("");
+    };
+
+    const activeCards = activePlans.map(planCard).join("");
+    const completedSection = !completedPlans.length ? "" : (completedCollapsed ?
+      '<button class="btn btn-secondary block" onclick="UI.togglePlansCompleted()">' + esc(app.L(completedPlans.length + " completed", completedPlans.length + " متسدد")) + "</button>" :
+      '<h2 class="section-title">' + esc(app.L("Completed", "متسدد")) + '</h2><div class="card-list">' + completedPlans.map(planCard).join("") + "</div>");
+
+    // 58: with both KPI groups now hidden whenever their own direction is
+    // empty (see groupSection above), a brand-new install with zero plans
+    // would otherwise be just the due banner sitting over a blank list.
+    const emptyPlans = D.plans.length ? "" : '<div style="margin-top:16px">' + this.emptyState(ICON_PLUS, app.L("No installment plans yet", "لسه مفيش خطط تقسيط"), app.L("A sale or purchase plan you add above will show up here, with its own payment schedule.", "أي خطة بيع أو شراء بالتقسيط تضيفها من فوق هتظهر هنا مع جدول دفعاتها الخاص.")) + "</div>";
 
     return this.tabHeader(t.installments, D.plans.length + app.L(" plans · allocation handles partial, early and balloon payments", " خطة · التوزيع يعالج الدفعات الجزئية والمبكرة والدفعة الأخيرة"),
-      [[t.aSale, "UI.openModal('sale')"], [t.aPurchasePlan, "UI.openModal('purchase')"]]) + kpiRow + '<div class="card-list">' + planCards + "</div>";
+      [[t.aSale, "UI.openModal('sale')"], [t.aPurchasePlan, "UI.openModal('purchase')"]]) + kpiRow + '<div class="card-list">' + activeCards + "</div>" + completedSection + emptyPlans;
   },
 
   // ---- Card statements -------------------------------------------------
@@ -3072,7 +3143,10 @@ const UI = {
         '<div class="card-row-amt ' + (g.net >= 0 ? "tone-pos" : "tone-neg") + '">' + app.fmt(g.net) + "</div></div>" +
         '<div class="card-row-meta"><span>' + esc(t.paidIn) + ": " + app.fmt(g.paidTotal) + '</span><span>' + esc(app.L("My payout")) + ": " + app.fmt(g.payout) + "</span></div>" +
         '<div class="card-row-meta"><span>' + esc(g.taken ? app.L("Payout collected") : app.L("Payout not collected yet")) + '</span>' + (g.overdue > 0 ? '<span class="tone-neg">' + esc(app.L("Overdue: ")) + g.overdue + "</span>" : "") + "</div>" +
-        '<button class="link-btn small" onclick="UI.togglePlanRows(\'' + g.id + '\')">' + esc(app.L(open ? "Hide schedule" : "Show schedule")) + "</button>" +
+        // Same real bug fix as Installments' own card just above -- t.
+        // showSchedule/hideSchedule already carry a real Arabic
+        // translation, unlike the ARW-lookup app.L() call this replaces.
+        '<button class="link-btn small" onclick="UI.togglePlanRows(\'' + g.id + '\')">' + esc(open ? t.hideSchedule : t.showSchedule) + "</button>" +
         (open ? '<div class="sched-list">' + rowsHtml + "</div>" : "") +
         '<div class="btn-row wrap"><button class="btn btn-secondary small" onclick="UI.openModal(\'group_payment\',{groupId:\'' + g.id + '\'})">' + esc(t.gContribute) + '</button><button class="btn btn-secondary small" onclick="UI.openModal(\'group_payout\',{groupId:\'' + g.id + '\'})">' + esc(t.gCollect) + "</button>" +
         '<button class="link-btn small" onclick="UI.openModal(\'group_edit\',' + editArgs + ')">' + esc(app.L("Edit")) + "</button>" +

@@ -829,6 +829,12 @@ button.bar-row{width:100%;border:0;background:none;padding:6px 0;min-height:44px
 .cat-badge{display:inline-flex;align-items:center;justify-content:center;flex:none;
   width:20px;height:20px;border-radius:50%;color:rgba(0,0,0,.72);margin-inline-end:6px;vertical-align:middle}
 .card-row-sub{font-size:13px;color:var(--c-text-faint);margin-top:1px}
+/* A name inline in a small sub-line (Installments Recut #50/#56) doesn't
+   want .link-btn's own 44px tap target -- that's sized for a standalone
+   action, not a word inside a sentence of plain text -- so this stays
+   deliberately small, the same tradeoff any inline text link makes. */
+.inline-link{background:none;border:0;padding:0;font:inherit;color:var(--c-accent-700);cursor:pointer;text-decoration:underline;text-underline-offset:2px}
+.inline-link:hover{opacity:.8}
 .card-row-amt{font-variant-numeric:tabular-nums;font-weight:600;font-size:16.5px;white-space:nowrap}
 .card-row-meta{display:flex;gap:14px;flex-wrap:wrap;font-size:13.5px;color:var(--c-text-soft);margin-top:8px}
 /* The one row that's the earliest-ever use of its own category (see
