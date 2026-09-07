@@ -126,6 +126,22 @@ account can be deleted, a card's Available/Limit stay consistent).
   an accepted destructive `confirm()` dialog and a successful modal
   save, stays silent on a cancelled dialog or a rejected (validation
   failure) save.
+- `check_chart_scrub.js` — dragging a finger across a bar chart
+  (`.chart-cols`) live-updates the existing tap tooltip through every
+  bar it crosses, a tiny haptic tick per bar, a plain tap still works
+  as before, an ordinary vertical scroll never triggers it, and a
+  short bar right next to a tall one is still picked up correctly even
+  while the touch stays at the tall bar's own Y (a real bug caught in
+  review: finding the crossed bar via `document.elementFromPoint()`
+  only works while the touch happens to still be over that specific
+  bar's own bottom-aligned box, so a short bar next to a tall one
+  would be missed entirely — fixed by matching on each bar's column's
+  X-range instead, independent of bar height).
+- `check_card_usage_bar.js` — the thin Outstanding/Limit usage bar on
+  each credit-card tile in Accounts: present and matches the real
+  percentage on every card, entirely absent on a plain balance account
+  (wallet/bank/cash), which has no natural ceiling to show usage
+  against.
 
 ## Adding a new one
 

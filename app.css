@@ -478,6 +478,15 @@ h1,h2,h3{font-family:var(--font-head);font-weight:600;margin:0;text-wrap:balance
 @media (prefers-reduced-motion: reduce){ .cc-stmt.overdue{animation:none} }
 .cc-stmt .cc-label{opacity:.9}
 .cc-stmt-amt{font-weight:700;font-size:14.5px;white-space:nowrap}
+/* Thin Outstanding/Limit usage bar, credit-card tiles only (see the
+   comment where usageBar is built in renderAccounts()). Fixed track/fill
+   colors regardless of the card's own chosen background -- same reasoning
+   as .cc-stmt's fixed gold/red above: a color derived from the card's own
+   (arbitrary, user-picked) background couldn't guarantee staying visible
+   against it. */
+.cc-usage{margin-top:10px;height:5px;border-radius:999px;background:rgba(255,255,255,.22);overflow:hidden}
+.cc-usage-fill{height:100%;border-radius:999px;transition:width .3s ease}
+@media (prefers-reduced-motion: reduce){ .cc-usage-fill{transition:none} }
 .credit-card-tile .link-btn{color:inherit;opacity:.85}
 .credit-card-tile .link-btn:hover{opacity:1}
 

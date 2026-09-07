@@ -520,6 +520,15 @@ h1,h2,h3{font-family:var(--font-head);font-weight:600;margin:0;text-wrap:balance
 @media (prefers-reduced-motion: reduce){ .cc-stmt.overdue{animation:none} }
 .cc-stmt .cc-label{opacity:.9}
 .cc-stmt-amt{font-weight:700;font-size:14.5px;white-space:nowrap}
+/* Thin Outstanding/Limit usage bar, credit-card tiles only (see the
+   comment where usageBar is built in renderAccounts()). Fixed track/fill
+   colors regardless of the card's own chosen background -- same reasoning
+   as .cc-stmt's fixed gold/red above: a color derived from the card's own
+   (arbitrary, user-picked) background couldn't guarantee staying visible
+   against it. */
+.cc-usage{margin-top:10px;height:5px;border-radius:999px;background:rgba(255,255,255,.22);overflow:hidden}
+.cc-usage-fill{height:100%;border-radius:999px;transition:width .3s ease}
+@media (prefers-reduced-motion: reduce){ .cc-usage-fill{transition:none} }
 .credit-card-tile .link-btn{color:inherit;opacity:.85}
 .credit-card-tile .link-btn:hover{opacity:1}
 
@@ -3184,6 +3193,7 @@ const UI = {
     this.app.state.locked = this.app.hasPin();
     window.addEventListener("resize", () => {});
     this.initSwipeRows();
+    this.initChartScrub();
     this.render();
     this.maybeNotify();
   },
@@ -3239,40 +3249,15 @@ const UI = {
       if (!drag) return;
       const t = e.touches[0];
       const dx = t.clientX - drag.startX, dy = t.clientY - drag.startY;
-      const adx = Math.abs(dx), ady = Math.abs(dy);
       // Real bug reported with a screenshot: ordinary vertical scrolling
       // through the transactions list was getting misread as swipes,
       // leaving rows stuck part-open (Edit/Delete visibly showing behind
-      // the content instead of staying hidden until an actual swipe). The
-      // old rule locked in "horizontal" the instant EITHER axis passed a
-      // 6px dead zone, using a bare dx > dy -- on a real finger (never
-      // perfectly vertical), a scroll that happened to drift sideways by
-      // a single extra pixel at that exact moment would win the coin
-      // flip and hijack the whole gesture. Fixed by biasing hard toward
-      // "this is a scroll": vertical locks in as soon as it's the larger
-      // axis past a small dead zone (protecting scroll early), while
-      // horizontal only locks in once it's not just larger but clearly
-      // dominant (1.75x) past a bigger dead zone -- so an ambiguous,
-      // mostly-vertical drag reliably reads as a scroll, and only a
-      // deliberate, clearly-sideways gesture reads as a swipe. That 1.75x
-      // requirement leaves a dead band (ady/adx between 1x and 1.75x) that
-      // a perfectly diagonal drag never escapes -- caught in code review:
-      // a swipe held at a steady ~30-40deg angle would grow dx and dy in
-      // the same proportion forever, so drag.horizontal would stay null
-      // for the whole gesture and the swipe would silently do nothing (no
-      // preventDefault, no visual feedback, nothing on release). The third
-      // branch below forces a decision once a drag is unambiguously large
-      // even if it never cleared the stricter ratio, so only small,
-      // still-genuinely-ambiguous movements stay undecided.
-      if (drag.horizontal === null) {
-        if (ady > 8 && ady >= adx) {
-          drag.horizontal = false;
-        } else if (adx > 12 && adx > ady * 1.75) {
-          drag.horizontal = true;
-        } else if (adx > 24 || ady > 24) {
-          drag.horizontal = adx > ady;
-        }
-      }
+      // the content instead of staying hidden until an actual swipe). Fixed
+      // by biasing hard toward "this is a scroll" (a since-caught second bug
+      // -- a diagonal-drag dead band -- folded in too); see
+      // classifyDragAxis()'s own comment for the full story and the exact
+      // numbers, shared with initChartScrub()'s identical problem.
+      if (drag.horizontal === null) drag.horizontal = this.classifyDragAxis(dx, dy);
       if (drag.horizontal !== true) return;
       e.preventDefault();
       const lo = Math.min(0, drag.openAt), hi = Math.max(0, drag.openAt);
@@ -3473,9 +3458,18 @@ const UI = {
   // triggers a render(). Auto-hides itself; a second tap elsewhere (or a
   // real render(), e.g. switching tabs) also clears it via chartTooltipHideT.
   showChartTooltip(evt, text) {
+    this.positionChartTooltip(evt.currentTarget, text);
+    evt.stopPropagation();
+  },
+  // The actual positioning logic, factored out of showChartTooltip() (a
+  // real DOM click/keydown event, always has evt.currentTarget) so
+  // initChartScrub() below can drive the same tooltip from a touchmove --
+  // there, the bar under the finger is found via elementFromPoint(), not
+  // an event's currentTarget, since a touchmove's own target is always
+  // wherever the touch STARTED, not whatever is currently under it.
+  positionChartTooltip(bar, text) {
     const el = document.getElementById("chartTooltip");
-    if (!el) return;
-    const bar = evt.currentTarget;
+    if (!el || !bar) return;
     const r = bar.getBoundingClientRect();
     el.textContent = text;
     el.classList.add("show");
@@ -3498,7 +3492,85 @@ const UI = {
     el.style.top = top + "px";
     if (this._chartTooltipHideT) clearTimeout(this._chartTooltipHideT);
     this._chartTooltipHideT = setTimeout(() => el.classList.remove("show"), 2500);
-    evt.stopPropagation();
+  },
+  // The .chart-bar whose .chart-col contains x, regardless of the bar's
+  // own height/Y position -- see initChartScrub()'s own comment for why
+  // this can't just be document.elementFromPoint(x, y).
+  chartBarAtX(container, x) {
+    const cols = container.querySelectorAll(".chart-col");
+    for (const col of cols) {
+      const r = col.getBoundingClientRect();
+      if (x >= r.left && x <= r.right) return col.querySelector(".chart-bar");
+    }
+    return null;
+  },
+  // Shared horizontal-vs-vertical drag classification, used by both
+  // initSwipeRows() and initChartScrub() -- one source of truth for these
+  // exact numbers rather than two copies that could quietly drift apart.
+  // Arrived at through two real bug fixes on the swipe-row side (a too-
+  // eager 6px dead zone that misread ordinary scrolling as a swipe, then a
+  // too-strict ratio that left a dead band a steady diagonal drag could
+  // never cross) -- see initSwipeRows()'s own touchmove handler for the
+  // full story. Returns true (horizontal), false (vertical), or null
+  // (still ambiguous -- wait for more movement before deciding).
+  classifyDragAxis(dx, dy) {
+    const adx = Math.abs(dx), ady = Math.abs(dy);
+    if (ady > 8 && ady >= adx) return false;
+    if (adx > 12 && adx > ady * 1.75) return true;
+    if (adx > 24 || ady > 24) return adx > ady;
+    return null;
+  },
+  // Drag a finger across a bar chart (Dashboard's net-worth trend, the
+  // by-month/by-category charts) to scrub through every bar's value live,
+  // instead of having to tap each one separately -- the way a stock app's
+  // price chart works. Delegated on document (like initSwipeRows -- charts
+  // get rebuilt by every render(), so per-bar listeners would need
+  // re-attaching constantly); scoped to whichever .chart-cols the touch
+  // actually started in, so a scrub can't jump between two different
+  // charts on a long page.
+  //
+  // Reuses the exact same asymmetric, scroll-biased horizontal-vs-vertical
+  // classification as initSwipeRows() (see its own comment for the full
+  // story of the bug that shaped these numbers) rather than inventing new
+  // thresholds -- the underlying problem is identical: don't let an
+  // ordinary vertical scroll over the chart get mistaken for a deliberate
+  // sideways gesture.
+  initChartScrub() {
+    let scrub = null;
+    document.addEventListener("touchstart", (e) => {
+      const container = e.target.closest && e.target.closest(".chart-cols");
+      scrub = container ? { container, startX: e.touches[0].clientX, startY: e.touches[0].clientY, horizontal: null, lastBar: null } : null;
+    }, { passive: true });
+    document.addEventListener("touchmove", (e) => {
+      if (!scrub) return;
+      const t = e.touches[0];
+      if (scrub.horizontal === null) scrub.horizontal = this.classifyDragAxis(t.clientX - scrub.startX, t.clientY - scrub.startY);
+      if (scrub.horizontal !== true) return;
+      e.preventDefault();
+      // Real bug caught in review: finding the crossed bar via
+      // document.elementFromPoint() only works while the touch Y happens
+      // to still be over that bar's own painted box -- .chart-bar sits
+      // bottom-aligned inside its full-height .chart-col (see app.css),
+      // so a short bar's box covers only the lower slice of the chart;
+      // held at the Y of a taller neighboring bar, elementFromPoint over
+      // a short bar's column hits the empty column, not the bar, and the
+      // scrub would silently freeze instead of updating for every bar
+      // crossed -- exactly the data shape (one tall month next to a near-
+      // zero one) this feature is most useful for. Matching by X against
+      // each .chart-col's own horizontal range instead is independent of
+      // bar height/Y entirely.
+      const bar = this.chartBarAtX(scrub.container, t.clientX);
+      if (!bar || bar === scrub.lastBar) return;
+      scrub.lastBar = bar;
+      this.positionChartTooltip(bar, bar.getAttribute("aria-label") || "");
+      // A tiny tick per bar crossed -- same haptic() as everywhere else,
+      // a lighter pattern than the default confirm/save buzz since this
+      // fires many times in quick succession while dragging.
+      this.haptic(4);
+    }, { passive: false });
+    const endScrub = () => { scrub = null; };
+    document.addEventListener("touchend", endScrub);
+    document.addEventListener("touchcancel", endScrub);
   },
   // Net worth sparkline tap -> expand/collapse the full 6-month trend chart
   // inline. renderDashboard() leaves #nwTrendExpand empty; the 6-derive()
@@ -4717,6 +4789,16 @@ const UI = {
       // full list (add/edit/pay every statement, on every card) lives on
       // its own page (More -> Card statements); this is just the
       // at-a-glance "how much, how soon" the tile itself promises.
+      // Thin usage bar, credit cards only -- Outstanding/Limit is the one
+      // account type here with an unambiguous, self-contained "how full is
+      // this" percentage (matches the aggregate ccSummary tile's own "Used"
+      // %, just per-card). A plain balance account has no natural ceiling
+      // to measure against without a per-account budget this app doesn't
+      // model (budgets are per-category), so deliberately skipped there
+      // rather than inventing a shaky heuristic.
+      const usagePct = isDebt && a.limit > 0 ? Math.max(0, Math.min(100, Math.round(Math.abs(Math.min(0, bal)) / a.limit * 100))) : null;
+      const usageColor = usagePct === null ? "" : usagePct >= 90 ? "rgba(255,110,110,.9)" : usagePct >= 70 ? "rgba(233,211,138,.9)" : "rgba(255,255,255,.75)";
+      const usageBar = usagePct === null ? "" : '<div class="cc-usage" role="img" aria-label="' + esc(usagePct + app.L("% of limit used", "% من الحد مستخدم")) + '"><div class="cc-usage-fill" style="width:' + usagePct + '%;background:' + usageColor + '"></div></div>';
       const nearestStmt = isDebt ? D.cardStatements.filter(s => s.accountId === a.id && s.status !== "paid").sort((x, y) => x.due < y.due ? -1 : 1)[0] : null;
       // Its own tinted badge, not another plain cc-row -- same white text
       // as Outstanding/Available/Limit made it blend straight into the
@@ -4749,7 +4831,7 @@ const UI = {
         '<div class="cc-face cc-face-front" ' + faceStyle + '>' +
           '<div class="cc-top"><span class="cc-bank">' + esc(a.bank || typeLabel[a.type]) + '</span><span style="display:flex;align-items:center;gap:6px"><span class="' + (isDebt ? "cc-chip" : "cc-mark") + '"></span>' + flipBtn(false) + "</span></div>" +
           '<button class="link-btn cc-name" onclick="UI.viewAccountTx(\'' + a.id + '\')">' + esc(a.name) + "</button>" +
-          face + stmtLine +
+          face + usageBar + stmtLine +
           '<div class="btn-row wrap" style="margin-top:12px">' +
           moveBtns(a.id, i, arr) +
           (isDebt ? '<button class="link-btn small" onclick="UI.openModal(\'card_statement\',{accountId:\'' + a.id + '\'})">' + esc(t.aStatement) + "</button>" : "") +
