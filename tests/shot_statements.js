@@ -82,14 +82,22 @@ require("./_watchdog"); // shared pass/fail detector -- see that file
   console.log("\n=== 6) Edit a statement ===");
   await page.click(".navbtn:has-text('More')"); await page.waitForTimeout(150);
   await page.click(".sheet-item:has-text('Card statements')"); await page.waitForTimeout(200);
-  await page.locator(".card-row", { hasText: "September 2026" }).locator("button:has-text('Edit')").click(); await page.waitForTimeout(200);
+  // Edit/Delete now live behind the statement's own "..." trigger (see
+  // UI.renderStmtActionSheet()), not always-visible inline buttons.
+  await page.locator(".card-row", { hasText: "September 2026" }).locator(".stmt-more-btn").click();
+  await page.waitForTimeout(150);
+  await page.click(".sheet-action:has-text('Edit')"); await page.waitForTimeout(200);
   console.log("edit dialog title:", await page.locator(".dialog-title").innerText());
   console.log("period pre-filled:", await page.locator("#f_period").inputValue());
   await page.click("button:has-text('Cancel')"); await page.waitForTimeout(150);
 
-  console.log("\n=== 7) Delete guard: statement with a payment has no Delete button ===");
-  const sepDeleteBtn = page.locator(".card-row", { hasText: "September 2026" }).locator("button:has-text('Delete')");
-  console.log("Delete button absent (has payment):", await sepDeleteBtn.count() === 0);
+  console.log("\n=== 7) Delete guard: statement with a payment has no Delete action in its sheet ===");
+  await page.locator(".card-row", { hasText: "September 2026" }).locator(".stmt-more-btn").click();
+  await page.waitForTimeout(150);
+  const sepDeleteBtn = page.locator(".sheet-action:has-text('Delete')");
+  console.log("Delete action absent (has payment):", await sepDeleteBtn.count() === 0);
+  await page.click(".sheet-backdrop", { force: true, position: { x: 5, y: 5 } });
+  await page.waitForTimeout(150);
 
   console.log("\n=== 8) Edit dialog title says 'Edit transaction', not 'Pay statement' ===");
   await page.click(".navbtn:has-text('Transactions')"); await page.waitForTimeout(200);

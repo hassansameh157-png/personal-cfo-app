@@ -1271,6 +1271,15 @@ class Engine {
       // carry fmt()'s own <bdi> HTML wrap (see fmtPlain's own comment).
       return { v: p.id, l: p.title + " — " + dir + (isPaid ? " " + this.L("(paid)", "(متسدد)") : " — " + this.fmtPlain(st.remaining)) };
     });
+    // Same convention as planOptions just above -- group_payment's own
+    // cap check refuses any amount once remainingPay is 0, so a group
+    // that's already fully paid in gets "(paid)" instead of a remaining
+    // figure, rather than being silently dropped from the list.
+    const groupOptions = (d.groups || []).map(g => {
+      const st = this.groupState(g);
+      const isPaid = st.remainingPay <= 0.001;
+      return { v: g.id, l: g.name + (isPaid ? " " + this.L("(paid)", "(متسدد)") : " — " + this.fmtPlain(st.remainingPay)) };
+    });
     // Custom categories the user added in Settings — no ARW translation
     // exists for these (they're free text the user typed), so the language
     // pass below just leaves them as-is via its `|| o.l` fallback.
@@ -1406,9 +1415,20 @@ class Engine {
       card: { title: t.aCard, fields: [D("bank", "Bank / issuer", "text"), D("name", "Card name", "text"), D("limit", "Credit limit", "number"), D("opening", "Current outstanding", "number", { hint: "What you owe on the card today." }), D("color", this.L("Color", "اللون"), "color", { hint: this.L("Renders the card face — pick your bank's color to match.", "بيحدد شكل الكارت — اختار لون بنكك عشان يشبهه.") })].concat(cardStyleFields()).concat([D("desc", "Reference / notes", "text", { wide: true })]) },
       group: { title: this.L("+ Savings group (gam3ya)"), fields: [D("name", "Group name", "text", { wide: true }), D("amount", "Contribution per period", "number"), D("periods", "Number of periods", "number"), D("myTurn", "My turn (position)", "number"), D("freq", "Frequency", "select", { options: [{ v: "monthly", l: "Monthly" }, { v: "weekly", l: "Weekly" }] }), D("first", "First contribution date", "date"), D("accountId", "Paid from", "select", { options: accs })] },
       group_edit: { title: this.L("Edit savings group"), fields: [D("name", "Group name", "text", { wide: true }), D("amount", "Contribution per period", "number"), D("periods", "Number of periods", "number"), D("myTurn", "My turn (position)", "number"), D("freq", "Frequency", "select", { options: [{ v: "monthly", l: "Monthly" }, { v: "weekly", l: "Weekly" }] }), D("first", "First contribution date", "date")] },
-      group_payment: { title: this.L("Record contribution"), fields: [D("date", t.date, "date"), D("groupId", "Group", "select", { options: (d.groups || []).map(g => ({ v: g.id, l: g.name })) }), D("amount", t.amount, "number"), D("accountId", "Paid from", "select", { options: accs })] },
-      group_payout: { title: this.L("Record payout received"), fields: [D("date", t.date, "date"), D("groupId", "Group", "select", { options: (d.groups || []).map(g => ({ v: g.id, l: g.name })) }), D("amount", t.amount, "number"), D("accountId", "Into account", "select", { options: accs })] },
+      // Same fix as installment_payment's own planOptions just below: a
+      // bare group name gave no sense of how much was even left to pay
+      // in, and a fully-paid-in group stayed pickable with no hint that a
+      // contribution against it would be refused (group_payment's own cap
+      // check in submit()). Labelling instead of filtering keeps editing
+      // an existing payment against an already-finished group possible.
+      group_payment: { title: this.L("Record contribution"), fields: [D("date", t.date, "date"), D("groupId", "Group", "select", { options: groupOptions }), D("amount", t.amount, "number"), D("accountId", "Paid from", "select", { options: accs })] },
+      group_payout: { title: this.L("Record payout received"), fields: [D("date", t.date, "date"), D("groupId", "Group", "select", { options: groupOptions }), D("amount", t.amount, "number"), D("accountId", "Into account", "select", { options: accs })] },
       recurring: { title: t.aRecurring, fields: [D("name", t.name, "text"), D("type", t.type, "select", { options: [{ v: "income", l: "Income" }, { v: "expense", l: "Expense" }] }), D("amount", t.amount, "number"), D("accountId", t.account, "select", { options: accs }), D("category", t.category, "select", { options: inc.concat(cats) }), D("freq", t.frequency, "select", { options: [{ v: "daily", l: "Daily" }, { v: "weekly", l: "Weekly" }, { v: "monthly", l: "Monthly" }, { v: "quarterly", l: "Quarterly" }, { v: "yearly", l: "Yearly" }] }), D("day", "Day of month", "number")] },
+      // Real bug fix: a recurring rule had no edit or delete path anywhere
+      // in the app once created -- a typo'd amount/account or a cancelled
+      // subscription was permanent. Same fields as "recurring" above, just
+      // pre-filled from the existing rule.
+      recurring_edit: { title: this.L("Edit recurring rule", "تعديل القاعدة المتكررة"), fields: [D("name", t.name, "text"), D("type", t.type, "select", { options: [{ v: "income", l: "Income" }, { v: "expense", l: "Expense" }] }), D("amount", t.amount, "number"), D("accountId", t.account, "select", { options: accs }), D("category", t.category, "select", { options: inc.concat(cats) }), D("freq", t.frequency, "select", { options: [{ v: "daily", l: "Daily" }, { v: "weekly", l: "Weekly" }, { v: "monthly", l: "Monthly" }, { v: "quarterly", l: "Quarterly" }, { v: "yearly", l: "Yearly" }] }), D("day", "Day of month", "number")] },
       // Plain reminders -- no amount, no account, on purpose: see
       // submit()'s "todo"/"todo_edit" branches, which never call push(),
       // so this can never touch a balance or show up in derive() output.
@@ -1739,6 +1759,13 @@ class Engine {
       if (!need(f.name && this.n(f.amount) > 0, "Name and amount are required.")) return false;
       data.recurring.push({ id: this.uid("r"), name: f.name, type: f.type, amount: N("amount"), accountId: f.accountId, category: f.category, freq: f.freq, day: Math.max(1, Math.min(28, Math.round(N("day")) || 1)) });
       note = "Recurring rule " + f.name;
+    } else if (k === "recurring_edit") {
+      if (!need(f.name && this.n(f.amount) > 0, "Name and amount are required.")) return false;
+      const r = data.recurring.find(x => x.id === f.id);
+      if (!need(r, "Pick a recurring rule.")) return false;
+      r.name = f.name; r.type = f.type; r.amount = N("amount"); r.accountId = f.accountId; r.category = f.category; r.freq = f.freq;
+      r.day = Math.max(1, Math.min(28, Math.round(N("day")) || 1));
+      note = "Updated recurring rule " + r.name;
     } else if (k === "todo") {
       // Deliberately never calls push() (unlike almost every other kind in
       // this function) -- a to-do is a plain reminder, not a transaction,
@@ -1911,6 +1938,21 @@ class Engine {
   }
   investmentCanDelete(id) {
     return !this.state.data.tx.some(t => !t.void && t.investmentId === id);
+  }
+  // Same "has real ledger history" gate every other structural delete
+  // here already applies -- a rule that was never actually posted (see
+  // postRecurringC's own recurringId: r.id) can go outright; one that
+  // already produced real transactions has to have those reversed/deleted
+  // first, or left as-is.
+  recurringCanDelete(id) {
+    return !this.state.data.tx.some(t => !t.void && t.recurringId === id);
+  }
+  deleteRecurring(id) {
+    if (!this.recurringCanDelete(id)) return;
+    const data = JSON.parse(JSON.stringify(this.state.data));
+    const r = data.recurring.find(x => x.id === id); if (!r) return;
+    data.recurring = data.recurring.filter(x => x.id !== id);
+    this.persist(data, "Deleted recurring rule " + r.name);
   }
   deleteInvestment(id) {
     if (!this.investmentCanDelete(id)) return;

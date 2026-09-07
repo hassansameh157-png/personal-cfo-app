@@ -401,6 +401,12 @@ h1,h2,h3{font-family:var(--font-head);font-weight:600;margin:0;text-wrap:balance
 /* 41 (People Recut): same "..." trigger pattern as .tx-more-btn/
    .acct-more-btn above, opening UI.renderPersonActionSheet() instead. */
 .person-more-btn{color:var(--c-text-faint);padding-inline:10px}
+/* Savings Groups Recut: same "..." trigger pattern, opening
+   UI.renderGroupActionSheet() instead. */
+.group-more-btn{color:var(--c-text-faint);padding-inline:10px}
+/* Card statements: same "..." trigger pattern, opening
+   UI.renderStmtActionSheet() instead. */
+.stmt-more-btn{color:var(--c-text-faint);padding-inline:10px}
 /* 46 (People Recut): tel:/wa.me links next to a phone number (People
    list, Person Detail) -- small enough to sit inline right after the
    phone text itself, not a full button. */
@@ -2580,6 +2586,15 @@ class Engine {
       // carry fmt()'s own <bdi> HTML wrap (see fmtPlain's own comment).
       return { v: p.id, l: p.title + " — " + dir + (isPaid ? " " + this.L("(paid)", "(متسدد)") : " — " + this.fmtPlain(st.remaining)) };
     });
+    // Same convention as planOptions just above -- group_payment's own
+    // cap check refuses any amount once remainingPay is 0, so a group
+    // that's already fully paid in gets "(paid)" instead of a remaining
+    // figure, rather than being silently dropped from the list.
+    const groupOptions = (d.groups || []).map(g => {
+      const st = this.groupState(g);
+      const isPaid = st.remainingPay <= 0.001;
+      return { v: g.id, l: g.name + (isPaid ? " " + this.L("(paid)", "(متسدد)") : " — " + this.fmtPlain(st.remainingPay)) };
+    });
     // Custom categories the user added in Settings — no ARW translation
     // exists for these (they're free text the user typed), so the language
     // pass below just leaves them as-is via its `|| o.l` fallback.
@@ -2715,9 +2730,20 @@ class Engine {
       card: { title: t.aCard, fields: [D("bank", "Bank / issuer", "text"), D("name", "Card name", "text"), D("limit", "Credit limit", "number"), D("opening", "Current outstanding", "number", { hint: "What you owe on the card today." }), D("color", this.L("Color", "اللون"), "color", { hint: this.L("Renders the card face — pick your bank's color to match.", "بيحدد شكل الكارت — اختار لون بنكك عشان يشبهه.") })].concat(cardStyleFields()).concat([D("desc", "Reference / notes", "text", { wide: true })]) },
       group: { title: this.L("+ Savings group (gam3ya)"), fields: [D("name", "Group name", "text", { wide: true }), D("amount", "Contribution per period", "number"), D("periods", "Number of periods", "number"), D("myTurn", "My turn (position)", "number"), D("freq", "Frequency", "select", { options: [{ v: "monthly", l: "Monthly" }, { v: "weekly", l: "Weekly" }] }), D("first", "First contribution date", "date"), D("accountId", "Paid from", "select", { options: accs })] },
       group_edit: { title: this.L("Edit savings group"), fields: [D("name", "Group name", "text", { wide: true }), D("amount", "Contribution per period", "number"), D("periods", "Number of periods", "number"), D("myTurn", "My turn (position)", "number"), D("freq", "Frequency", "select", { options: [{ v: "monthly", l: "Monthly" }, { v: "weekly", l: "Weekly" }] }), D("first", "First contribution date", "date")] },
-      group_payment: { title: this.L("Record contribution"), fields: [D("date", t.date, "date"), D("groupId", "Group", "select", { options: (d.groups || []).map(g => ({ v: g.id, l: g.name })) }), D("amount", t.amount, "number"), D("accountId", "Paid from", "select", { options: accs })] },
-      group_payout: { title: this.L("Record payout received"), fields: [D("date", t.date, "date"), D("groupId", "Group", "select", { options: (d.groups || []).map(g => ({ v: g.id, l: g.name })) }), D("amount", t.amount, "number"), D("accountId", "Into account", "select", { options: accs })] },
+      // Same fix as installment_payment's own planOptions just below: a
+      // bare group name gave no sense of how much was even left to pay
+      // in, and a fully-paid-in group stayed pickable with no hint that a
+      // contribution against it would be refused (group_payment's own cap
+      // check in submit()). Labelling instead of filtering keeps editing
+      // an existing payment against an already-finished group possible.
+      group_payment: { title: this.L("Record contribution"), fields: [D("date", t.date, "date"), D("groupId", "Group", "select", { options: groupOptions }), D("amount", t.amount, "number"), D("accountId", "Paid from", "select", { options: accs })] },
+      group_payout: { title: this.L("Record payout received"), fields: [D("date", t.date, "date"), D("groupId", "Group", "select", { options: groupOptions }), D("amount", t.amount, "number"), D("accountId", "Into account", "select", { options: accs })] },
       recurring: { title: t.aRecurring, fields: [D("name", t.name, "text"), D("type", t.type, "select", { options: [{ v: "income", l: "Income" }, { v: "expense", l: "Expense" }] }), D("amount", t.amount, "number"), D("accountId", t.account, "select", { options: accs }), D("category", t.category, "select", { options: inc.concat(cats) }), D("freq", t.frequency, "select", { options: [{ v: "daily", l: "Daily" }, { v: "weekly", l: "Weekly" }, { v: "monthly", l: "Monthly" }, { v: "quarterly", l: "Quarterly" }, { v: "yearly", l: "Yearly" }] }), D("day", "Day of month", "number")] },
+      // Real bug fix: a recurring rule had no edit or delete path anywhere
+      // in the app once created -- a typo'd amount/account or a cancelled
+      // subscription was permanent. Same fields as "recurring" above, just
+      // pre-filled from the existing rule.
+      recurring_edit: { title: this.L("Edit recurring rule", "تعديل القاعدة المتكررة"), fields: [D("name", t.name, "text"), D("type", t.type, "select", { options: [{ v: "income", l: "Income" }, { v: "expense", l: "Expense" }] }), D("amount", t.amount, "number"), D("accountId", t.account, "select", { options: accs }), D("category", t.category, "select", { options: inc.concat(cats) }), D("freq", t.frequency, "select", { options: [{ v: "daily", l: "Daily" }, { v: "weekly", l: "Weekly" }, { v: "monthly", l: "Monthly" }, { v: "quarterly", l: "Quarterly" }, { v: "yearly", l: "Yearly" }] }), D("day", "Day of month", "number")] },
       // Plain reminders -- no amount, no account, on purpose: see
       // submit()'s "todo"/"todo_edit" branches, which never call push(),
       // so this can never touch a balance or show up in derive() output.
@@ -3048,6 +3074,13 @@ class Engine {
       if (!need(f.name && this.n(f.amount) > 0, "Name and amount are required.")) return false;
       data.recurring.push({ id: this.uid("r"), name: f.name, type: f.type, amount: N("amount"), accountId: f.accountId, category: f.category, freq: f.freq, day: Math.max(1, Math.min(28, Math.round(N("day")) || 1)) });
       note = "Recurring rule " + f.name;
+    } else if (k === "recurring_edit") {
+      if (!need(f.name && this.n(f.amount) > 0, "Name and amount are required.")) return false;
+      const r = data.recurring.find(x => x.id === f.id);
+      if (!need(r, "Pick a recurring rule.")) return false;
+      r.name = f.name; r.type = f.type; r.amount = N("amount"); r.accountId = f.accountId; r.category = f.category; r.freq = f.freq;
+      r.day = Math.max(1, Math.min(28, Math.round(N("day")) || 1));
+      note = "Updated recurring rule " + r.name;
     } else if (k === "todo") {
       // Deliberately never calls push() (unlike almost every other kind in
       // this function) -- a to-do is a plain reminder, not a transaction,
@@ -3220,6 +3253,21 @@ class Engine {
   }
   investmentCanDelete(id) {
     return !this.state.data.tx.some(t => !t.void && t.investmentId === id);
+  }
+  // Same "has real ledger history" gate every other structural delete
+  // here already applies -- a rule that was never actually posted (see
+  // postRecurringC's own recurringId: r.id) can go outright; one that
+  // already produced real transactions has to have those reversed/deleted
+  // first, or left as-is.
+  recurringCanDelete(id) {
+    return !this.state.data.tx.some(t => !t.void && t.recurringId === id);
+  }
+  deleteRecurring(id) {
+    if (!this.recurringCanDelete(id)) return;
+    const data = JSON.parse(JSON.stringify(this.state.data));
+    const r = data.recurring.find(x => x.id === id); if (!r) return;
+    data.recurring = data.recurring.filter(x => x.id !== id);
+    this.persist(data, "Deleted recurring rule " + r.name);
   }
   deleteInvestment(id) {
     if (!this.investmentCanDelete(id)) return;
@@ -3670,7 +3718,7 @@ const UI = {
   },
 
   // ---- generic actions ---------------------------------------------------
-  setPage(p) { this.app.state.page = p; this.app.state.moreOpen = false; this.app.state.quickAddOpen = false; this.app.state.txVisible = 25; this._needsAttentionExpanded = false; this._txActionRow = null; this._txFiltersOpen = false; this._acctActionRow = null; this._personActionRow = null; this._peopleSettledExpanded = false; this._plansCompletedExpanded = false; this.render(); window.scrollTo({ top: 0 }); },
+  setPage(p) { this.app.state.page = p; this.app.state.moreOpen = false; this.app.state.quickAddOpen = false; this.app.state.txVisible = 25; this._needsAttentionExpanded = false; this._txActionRow = null; this._txFiltersOpen = false; this._acctActionRow = null; this._personActionRow = null; this._peopleSettledExpanded = false; this._plansCompletedExpanded = false; this._groupActionRow = null; this._groupsCompletedExpanded = false; this._stmtActionRow = null; this.render(); window.scrollTo({ top: 0 }); },
   // A person's own page: every loan and installment plan tied to them (both
   // directions) in one place, instead of scattered across Receivables &
   // Payables and Installments — the gap that made juggling several loans
@@ -4258,13 +4306,31 @@ const UI = {
     const iv = this.app.state.data.investments.find(i => i.id === id); if (!iv) return;
     if (this.app.investmentCanDelete(id) && this.hapticConfirm(this.app.L("Delete ") + iv.name + "?")) { this.app.deleteInvestment(id); this.render(); }
   },
+  // Real bug fix: recurring rules had no delete path anywhere -- same
+  // shape as deleteInvestmentC just above.
+  deleteRecurringC(id) {
+    const r = this.app.state.data.recurring.find(x => x.id === id); if (!r) return;
+    if (this.app.recurringCanDelete(id) && this.hapticConfirm(this.app.L("Delete ") + r.name + "?")) { this.app.deleteRecurring(id); this.render(); }
+  },
   deleteCardStatementC(id) {
+    // Real bug fix, same class as deletePlanC/deleteGroupC's own: now that
+    // this can be invoked from the statement's action sheet, render() must
+    // run even on a cancelled confirm(), or the sheet's own backdrop is
+    // left stuck in the DOM, blocking clicks underneath it.
+    this._stmtActionRow = null;
     const s = (this.app.state.data.cardStatements || []).find(x => x.id === id); if (!s) return;
-    if (this.app.cardStatementCanDelete(id) && this.hapticConfirm(this.app.L("Delete ") + (s.period || s.due || "") + "?")) { this.app.deleteCardStatement(id); this.render(); }
+    if (this.app.cardStatementCanDelete(id) && this.hapticConfirm(this.app.L("Delete ") + (s.period || s.due || "") + "?")) { this.app.deleteCardStatement(id); }
+    this.render();
   },
   deleteGroupC(id) {
+    // Real bug fix, same class as deletePlanC/deletePersonC's own: now that
+    // this can be invoked from the group's action sheet, render() must run
+    // even on a CANCELLED confirm(), or the sheet's own backdrop is left
+    // stuck in the DOM, blocking clicks underneath it.
+    this._groupActionRow = null;
     const g = (this.app.state.data.groups || []).find(x => x.id === id); if (!g) return;
-    if (this.app.groupCanDelete(id) && this.hapticConfirm(this.app.L("Delete ") + g.name + "?")) { this.app.deleteGroup(id); this.render(); }
+    if (this.app.groupCanDelete(id) && this.hapticConfirm(this.app.L("Delete ") + g.name + "?")) { this.app.deleteGroup(id); }
+    this.render();
   },
   deleteSavingsGoalC(id) {
     const g = (this.app.state.data.savingsGoals || []).find(x => x.id === id); if (!g) return;
@@ -4423,6 +4489,8 @@ const UI = {
       this.renderTxActionSheet() +
       this.renderAcctActionSheet() +
       this.renderPersonActionSheet() +
+      this.renderGroupActionSheet() +
+      this.renderStmtActionSheet() +
       this.renderModal(t);
       // #flashStack is NOT rendered here on purpose -- see UI.flash()'s
       // comment: it lives outside #root in the static page shell so it
@@ -6326,6 +6394,34 @@ const UI = {
   },
 
   // ---- Installments (P1 KPI quirk intentionally preserved) -----------------
+  // Shared by Installments and Savings groups -- they draw the exact same
+  // "Due this month" figure (see duesThisMonth()'s own "P1 KPI quirk"
+  // comment), so fixing the breakdown on only one of them would just be a
+  // second copy of the same bug (a real gap found while touching the
+  // Groups page: its own banner was still missing the breakdown
+  // Installments Recut #56 added). Whichever page this is called from
+  // gets its own half as plain text and the *other* half as a link to
+  // where it actually lives -- linking to the page you're already on
+  // would be pointless.
+  dueThisMonthBanner(D) {
+    const app = this.app, S = app.state;
+    const due = app.duesThisMonth(D);
+    const instText = app.fmt(due.installments);
+    const instPart = S.page === "installments" ? instText : '<button class="inline-link" onclick="UI.setPage(\'installments\')">' + instText + "</button>";
+    const groupsText = app.fmt(due.groups);
+    const groupsPart = S.page === "groups" ? groupsText : '<button class="inline-link" onclick="UI.setPage(\'groups\')">' + groupsText + "</button>";
+    // Real bug caught in review: gating this on BOTH halves being nonzero
+    // reintroduced the exact "mystery total" #56 was written to fix,
+    // whenever the *other* page's share alone was the entire total (e.g.
+    // 0 installments due, 3,000 gam3eya due -- Installments' own total
+    // line would show "3,000" while its own plans list explains none of
+    // it). The breakdown only needs the *other* page's share to be
+    // nonzero -- if it's 0, this page's own number already IS the total.
+    const otherAmt = S.page === "groups" ? due.installments : due.groups;
+    const dueBreakdown = otherAmt > 0.001 ? '<div class="card-row-sub" style="margin-top:4px">' +
+      esc(app.L("Installments: ", "أقساط: ")) + instPart + esc(app.L(" · Gam3eya: ", " · جمعيات: ")) + groupsPart + "</div>" : "";
+    return '<div class="due-banner"><div class="pos-label">' + esc(app.L("Due this month (installments + gam3eya)", "المطلوب مني الشهر ده (أقساط + جمعيات)")) + '</div><div class="hero-sub-value tone-neg" style="font-size:22px">' + app.fmt(due.total) + "</div>" + dueBreakdown + "</div>";
+  },
   renderInstallments(D, t) {
     const app = this.app;
     // P1 fix: the KPI strip used to only cover plans "owed to me" and quietly
@@ -6342,17 +6438,7 @@ const UI = {
       ];
       return '<div class="tile-grid four">' + kpis.map(([l, v, tone]) => '<div class="pos-tile"><div class="pos-label">' + esc(l) + '</div><div class="pos-value tone-' + tone + '">' + v + "</div></div>").join("") + "</div>";
     };
-    const due = app.duesThisMonth(D);
-    // 56 (Installments Recut): due.total already silently folds in the
-    // gam3eya share (see duesThisMonth's own "P1 KPI quirk" comment above)
-    // -- but nothing else on this page ever explains that half, only the
-    // installment plans below it. A one-line breakdown, with a real way to
-    // reach where the gam3eya half actually lives, makes the banner's own
-    // number fully traceable from here instead of a mystery top-line total.
-    const dueBreakdown = due.groups > 0.001 ? '<div class="card-row-sub" style="margin-top:4px">' +
-      esc(app.L("Installments: ", "أقساط: ")) + app.fmt(due.installments) + esc(app.L(" · Gam3eya: ", " · جمعيات: ")) +
-      '<button class="inline-link" onclick="UI.setPage(\'groups\')">' + app.fmt(due.groups) + "</button></div>" : "";
-    const dueBanner = '<div class="due-banner"><div class="pos-label">' + esc(app.L("Due this month (installments + gam3eya)", "المطلوب مني الشهر ده (أقساط + جمعيات)")) + '</div><div class="hero-sub-value tone-neg" style="font-size:22px">' + app.fmt(due.total) + "</div>" + dueBreakdown + "</div>";
+    const dueBanner = this.dueThisMonthBanner(D);
     // 49: a direction with no plans at all used to still show a full,
     // all-zero KPI section under its own header -- pure clutter, nothing
     // to act on.
@@ -6470,10 +6556,8 @@ const UI = {
       return '<h2 class="section-title">' + esc(app.accName(accId)) + " · " + esc(app.L("statement trend", "اتجاه كشف الحساب")) + "</h2>" + chart;
     }).join("");
 
-    const editArgs = (s) => JSON.stringify({ id: s.id, period: s.period || "", amount: s.amount, due: s.due || "", desc: s.desc || "" }).replace(/"/g, "&quot;");
     const statusLabel = { paid: app.L("Fully paid", "متسدد بالكامل"), overdue: app.L("Overdue", "متأخر"), partial: app.L("Partially paid", "متسدد جزئيًا"), open: app.L("Open", "مفتوح") };
     const cards = list.map(s => {
-      const canDelete = app.cardStatementCanDelete(s.id);
       return '<div class="card-row">' +
         // Days-until only makes sense while something is still owed --
         // "31d overdue" next to a statement that's already Fully paid reads
@@ -6483,14 +6567,47 @@ const UI = {
         '<div class="card-row-meta"><span>' + esc(t.paid) + ": " + app.fmt(s.paid) + " / " + app.fmt(s.amount) + '</span><span>' + esc(statusLabel[s.status]) + "</span></div>" +
         '<div class="btn-row wrap">' +
         (s.remaining > 0.001 ? '<button class="btn btn-secondary small" onclick="UI.openModal(\'statement_payment\',{statementId:\'' + s.id + '\'})">' + esc(t.pay) + "</button>" : "") +
-        '<button class="link-btn small" onclick="UI.openModal(\'card_statement_edit\',' + editArgs(s) + ')">' + esc(app.L("Edit")) + "</button>" +
-        (canDelete ? '<button class="link-btn small danger" onclick="UI.deleteCardStatementC(\'' + s.id + '\')">' + esc(app.L("Delete")) + "</button>" : "") +
+        // Real gap fix: Edit/Delete were their own always-visible buttons
+        // here, the one remaining list-with-actions screen that hadn't
+        // moved its secondary actions off the row -- same "..." trigger
+        // pattern as every other list (Pay stays the one always-visible
+        // primary action, matching Installments' own Record payment).
+        '<button type="button" class="link-btn small stmt-more-btn" aria-haspopup="true" aria-label="' + esc(app.L("More actions", "إجراءات تانية")) + '" onclick="UI.openStmtActions(\'' + s.id + '\')">' + svgIcon("M12 6h.01M12 12h.01M12 18h.01", 18) + "</button>" +
         "</div></div>";
     }).join("");
 
     return this.tabHeader(t.statements, D.cardStatements.length + app.L(" statements · amounts are typed in by hand each month, from the real bank statement", " كشف · المبالغ بتتكتب بإيدك كل شهر، من كشف حساب البنك الحقيقي"),
       [[t.aStatement, "UI.openModal('card_statement')"]]) + kpiRow + trendSection +
       (list.length ? '<div class="card-list" style="margin-top:14px">' + cards + "</div>" : '<div style="margin-top:14px">' + this.emptyState(ICON_PLUS, app.L("No statements yet", "لسه مفيش كشوف حساب"), app.L("A statement appears once one is generated for a card account.", "الكشف بيظهر لما يتولد كشف لحساب كارت.")) + "</div>");
+  },
+  // The sheet UI.openStmtActions() opens -- same shared .sheet markup
+  // every other action sheet in the app already uses.
+  renderStmtActionSheet() {
+    const app = this.app, id = this._stmtActionRow;
+    if (!id) return "";
+    const s = (app.state.data.cardStatements || []).find(x => x.id === id);
+    if (!s) return "";
+    const canDelete = app.cardStatementCanDelete(s.id);
+    const items = [
+      ["M12 20h9M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z", app.L("Edit"), "UI.openStmtEdit('" + s.id + "')", false],
+      canDelete ? ["M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M10 11v6M14 11v6", app.L("Delete"), "UI.deleteCardStatementC('" + s.id + "')", true] : null,
+    ].filter(Boolean);
+    return '<div class="sheet-backdrop" onclick="UI.closeStmtActions()"></div>' +
+      '<div class="sheet" role="dialog" aria-modal="true" aria-label="' + esc(app.accName(s.accountId)) + '">' +
+        '<div class="sheet-handle"></div>' +
+        '<div class="sheet-title">' + esc(app.accName(s.accountId)) + (s.period ? " · " + esc(s.period) : "") + "</div>" +
+        '<div class="sheet-actions">' + items.map(([ico, label, onclick, danger]) =>
+          '<button type="button" class="sheet-action' + (danger ? " danger" : "") + '" onclick="' + onclick + '"><span class="sheet-action-ico">' + svgIcon(ico, 18) + "</span>" + esc(label) + "</button>"
+        ).join("") + "</div>" +
+      "</div>";
+  },
+  openStmtActions(id) { this._stmtActionRow = id; this.render(); },
+  closeStmtActions() { this._stmtActionRow = null; this.render(); },
+  openStmtEdit(id) {
+    this._stmtActionRow = null;
+    const s = (this.app.state.data.cardStatements || []).find(x => x.id === id);
+    if (!s) return;
+    this.openModal("card_statement_edit", { id: s.id, period: s.period || "", amount: s.amount, due: s.due || "", desc: s.desc || "" });
   },
 
   // ---- Savings goals -------------------------------------------------------
@@ -6567,33 +6684,103 @@ const UI = {
   },
 
   // ---- Savings groups (gam3eya) -----------------------------------------
+  // Savings Groups Recut: mirrors Installments Recut (its direct sibling --
+  // same openPlan/togglePlanRows, same duesThisMonth banner) on every idea
+  // that actually applied here: action-sheet consolidation (4 always-visible
+  // buttons per card down to 2 + a "..." trigger), a progress bar, a
+  // surfaced next-due line, urgency sort, a real empty state, and a
+  // completed-group collapse. #56's due-banner breakdown now lives in the
+  // shared dueThisMonthBanner() above instead of being copy-pasted, so this
+  // page gets it too instead of staying a second copy of the same gap.
   renderGroups(D, t) {
     const app = this.app;
-    const cards = D.groups.map(g => {
+    const byUrgency = (a, b) => (b.overdue > 0) - (a.overdue > 0) || (a.next ? a.next.due : "9999-99").localeCompare(b.next ? b.next.due : "9999-99");
+    const sorted = D.groups.slice().sort(byUrgency);
+    // Real bug caught in review: gating this on remainingPay alone moved a
+    // fully-paid-in group into the collapsed section even when its own
+    // payout hasn't been collected yet -- "Payout not collected yet" and
+    // the Collect button are still a live, outstanding action, not
+    // finished history, so g.taken has to hold too before it's really done.
+    const isDone = g => g.remainingPay <= 0.001 && g.taken;
+    const activeGroups = sorted.filter(g => !isDone(g));
+    const completedGroups = sorted.filter(isDone);
+    const completedCollapsed = !this._groupsCompletedExpanded && completedGroups.length > 0;
+
+    const groupCard = (g) => {
       const open = app.state.openPlan === g.id;
       const rowsHtml = g.rows.map(r => '<div class="sched-row status-' + r.status + (r.mine ? " mine" : "") + '"><span>#' + r.no + " · " + r.due + (r.mine ? " · " + esc(app.L("My turn")) : "") + '</span><span>' + app.fmt(r.amount) + '</span></div>').join("");
-      const editArgs = JSON.stringify({ id: g.id, name: g.group.name, amount: g.group.amount, periods: g.group.periods, myTurn: g.group.myTurn, freq: g.group.freq, first: g.group.first }).replace(/"/g, "&quot;");
-      const canDelete = app.groupCanDelete(g.id);
+      const nextLine = !g.next ? "" : '<span>' + esc(app.L("Next: ")) + "#" + g.next.no + " · " + g.next.due + " · " + esc(this.daysUntilText(g.next.due)) + "</span>";
+      const pct = g.payout > 0 ? Math.min(100, Math.round(g.paidTotal / g.payout * 100)) : 100;
+      const barColor = g.remainingPay <= 0.001 ? "var(--c-pos)" : g.overdue > 0 ? "var(--c-neg)" : "var(--c-accent)";
       return '<div class="card-row">' +
         '<div class="card-row-top"><div><div class="card-row-title">' + esc(g.name) + '</div><div class="card-row-sub">' + esc(app.L("Turn ") + g.group.myTurn + app.L(" of ") + g.periods) + "</div></div>" +
         '<div class="card-row-amt ' + (g.net >= 0 ? "tone-pos" : "tone-neg") + '">' + app.fmt(g.net) + "</div></div>" +
+        '<div class="bar-track thin"><div class="bar-fill" style="width:' + Math.max(2, pct) + '%;background:' + barColor + '"></div></div>' +
         '<div class="card-row-meta"><span>' + esc(t.paidIn) + ": " + app.fmt(g.paidTotal) + '</span><span>' + esc(app.L("My payout")) + ": " + app.fmt(g.payout) + "</span></div>" +
-        '<div class="card-row-meta"><span>' + esc(g.taken ? app.L("Payout collected") : app.L("Payout not collected yet")) + '</span>' + (g.overdue > 0 ? '<span class="tone-neg">' + esc(app.L("Overdue: ")) + g.overdue + "</span>" : "") + "</div>" +
-        // Same real bug fix as Installments' own card just above -- t.
-        // showSchedule/hideSchedule already carry a real Arabic
-        // translation, unlike the ARW-lookup app.L() call this replaces.
+        '<div class="card-row-meta"><span>' + esc(g.taken ? app.L("Payout collected") : app.L("Payout not collected yet")) + '</span>' + (g.overdue > 0 ? '<span class="tone-neg">' + esc(app.L("Overdue: ")) + g.overdue + "</span>" : "") + nextLine + "</div>" +
+        // Real bug fix: t.showSchedule/hideSchedule already carry a real
+        // Arabic translation, unlike the ARW-lookup app.L() call this
+        // replaces (same fix as Installments' own card).
         '<button class="link-btn small" onclick="UI.togglePlanRows(\'' + g.id + '\')">' + esc(open ? t.hideSchedule : t.showSchedule) + "</button>" +
         (open ? '<div class="sched-list">' + rowsHtml + "</div>" : "") +
-        '<div class="btn-row wrap"><button class="btn btn-secondary small" onclick="UI.openModal(\'group_payment\',{groupId:\'' + g.id + '\'})">' + esc(t.gContribute) + '</button><button class="btn btn-secondary small" onclick="UI.openModal(\'group_payout\',{groupId:\'' + g.id + '\'})">' + esc(t.gCollect) + "</button>" +
-        '<button class="link-btn small" onclick="UI.openModal(\'group_edit\',' + editArgs + ')">' + esc(app.L("Edit")) + "</button>" +
-        (canDelete ? '<button class="link-btn small danger" onclick="UI.deleteGroupC(\'' + g.id + '\')">' + esc(app.L("Delete group")) + "</button>" : "") +
+        '<div class="btn-row wrap">' +
+        // Real bug fix (same shape as Installments #48): submit()'s own
+        // cap check on group_payment refuses any amount once remainingPay
+        // is 0 -- this button used to stay regardless, a guaranteed dead
+        // end on a fully-paid-in group.
+        (g.remainingPay > 0.001 ? '<button class="btn btn-secondary small" onclick="UI.openModal(\'group_payment\',{groupId:\'' + g.id + '\'})">' + esc(t.gContribute) + "</button>" : "") +
+        '<button class="btn btn-secondary small" onclick="UI.openModal(\'group_payout\',{groupId:\'' + g.id + '\'})">' + esc(t.gCollect) + "</button>" +
+        '<button type="button" class="link-btn small group-more-btn" aria-haspopup="true" aria-label="' + esc(app.L("More actions", "إجراءات تانية")) + '" onclick="UI.openGroupActions(\'' + g.id + '\')">' + svgIcon("M12 6h.01M12 12h.01M12 18h.01", 18) + "</button>" +
         "</div>" +
       "</div>";
-    }).join("");
-    const due = app.duesThisMonth(D);
-    const dueBanner = '<div class="due-banner"><div class="pos-label">' + esc(app.L("Due this month (installments + gam3eya)", "المطلوب مني الشهر ده (أقساط + جمعيات)")) + '</div><div class="hero-sub-value tone-neg" style="font-size:22px">' + app.fmt(due.total) + "</div></div>";
-    return this.tabHeader(t.groups, app.L("Contributions out, one payout in at your turn", "أقساط تدفعها، ودفعة واحدة تقبضها في دورك"), [[t.aGroup, "UI.openModal('group')"]]) + dueBanner + '<div class="card-list">' + cards + "</div>";
+    };
+
+    const activeCards = activeGroups.map(groupCard).join("");
+    const completedSection = !completedGroups.length ? "" : (completedCollapsed ?
+      '<button class="btn btn-secondary block" onclick="UI.toggleGroupsCompleted()">' + esc(app.L(completedGroups.length + " completed", completedGroups.length + " متسدد")) + "</button>" :
+      '<h2 class="section-title">' + esc(app.L("Completed", "متسدد")) + '</h2><div class="card-list">' + completedGroups.map(groupCard).join("") + "</div>");
+    const emptyGroups = D.groups.length ? "" : '<div style="margin-top:16px">' + this.emptyState(ICON_PLUS, app.L("No savings groups yet", "لسه مفيش جمعيات"), app.L("A gam3ya you add above will show up here, with its own contribution schedule.", "أي جمعية تضيفها من فوق هتظهر هنا مع جدول أقساطها الخاص.")) + "</div>";
+
+    return this.tabHeader(t.groups, app.L("Contributions out, one payout in at your turn", "أقساط تدفعها، ودفعة واحدة تقبضها في دورك"), [[t.aGroup, "UI.openModal('group')"]]) +
+      this.dueThisMonthBanner(D) + '<div class="card-list">' + activeCards + "</div>" + completedSection + emptyGroups;
   },
+  // The sheet UI.openGroupActions() opens -- reuses the exact .sheet/
+  // .sheet-backdrop markup every other action sheet in the app already
+  // established. Contribute/Payout stay their own always-visible primary
+  // buttons (the two actual money-moving actions); only Edit/Delete move
+  // in here, the same "primary stays put, secondary moves" split
+  // Installments' own card (and People's Pay/Collect) already settled on.
+  renderGroupActionSheet() {
+    const app = this.app, id = this._groupActionRow;
+    if (!id) return "";
+    const g = (app.state.data.groups || []).find(x => x.id === id);
+    if (!g) return "";
+    const canDelete = app.groupCanDelete(g.id);
+    const items = [
+      ["M12 20h9M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z", app.L("Edit"), "UI.openGroupEdit('" + g.id + "')", false],
+      canDelete ? ["M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M10 11v6M14 11v6", app.L("Delete group"), "UI.deleteGroupC('" + g.id + "')", true] : null,
+    ].filter(Boolean);
+    return '<div class="sheet-backdrop" onclick="UI.closeGroupActions()"></div>' +
+      '<div class="sheet" role="dialog" aria-modal="true" aria-label="' + esc(g.name) + '">' +
+        '<div class="sheet-handle"></div>' +
+        '<div class="sheet-title">' + esc(g.name) + "</div>" +
+        '<div class="sheet-actions">' + items.map(([ico, label, onclick, danger]) =>
+          '<button type="button" class="sheet-action' + (danger ? " danger" : "") + '" onclick="' + onclick + '"><span class="sheet-action-ico">' + svgIcon(ico, 18) + "</span>" + esc(label) + "</button>"
+        ).join("") + "</div>" +
+      "</div>";
+  },
+  openGroupActions(id) { this._groupActionRow = id; this.render(); },
+  closeGroupActions() { this._groupActionRow = null; this.render(); },
+  openGroupEdit(id) {
+    this._groupActionRow = null;
+    // The raw stored group, not a groupState() -- same distinction the
+    // old inline editArgs (built from g.group.*, not g.*) already made,
+    // just via app.state.data directly instead of a derived D.groups row.
+    const g = this.app.state.data.groups.find(x => x.id === id);
+    if (!g) return;
+    this.openModal("group_edit", { id: g.id, name: g.name, amount: g.amount, periods: g.periods, myTurn: g.myTurn, freq: g.freq, first: g.first });
+  },
+  toggleGroupsCompleted() { this._groupsCompletedExpanded = !this._groupsCompletedExpanded; this.render(); },
 
   // ---- Receivables & Payables (ledger view over the same person data) ----
   renderLedgers(D, t) {
@@ -6622,8 +6809,11 @@ const UI = {
       const label = r.status === "overdue" ? app.L("Overdue since ") : app.L("Due ");
       return '<div class="card-row-meta"><span class="' + (r.status === "overdue" ? "tone-neg" : "") + '">' + esc(label) + r.due + "</span></div>";
     };
+    // Real gap fix: this was the one remaining list in the app showing a
+    // person's name as plain text -- People's own cards and Installments'
+    // own plan cards already make it a link via UI.viewPerson().
     const list = (arr, key, tone, kind) => '<div class="card-list">' + (arr.length ? arr.map(x =>
-      '<div class="card-row"><div class="card-row-top"><div class="card-row-title">' + esc(x.p.name) + '</div><div class="card-row-amt tone-' + tone + '">' + app.fmt(x[key]) + "</div></div>" + dueMeta(x.p.id, kind) + "</div>"
+      '<div class="card-row"><div class="card-row-top"><button class="link-btn card-row-title" onclick="UI.viewPerson(\'' + x.p.id + '\')">' + esc(x.p.name) + '</button><div class="card-row-amt tone-' + tone + '">' + app.fmt(x[key]) + "</div></div>" + dueMeta(x.p.id, kind) + "</div>"
     ).join("") : this.emptyState(ICON_CHECK, app.L("Fully settled", "متسدد بالكامل"))) + "</div>";
     const payoffToggle = iOwe.length > 1 ? '<div class="pill-row" style="margin-top:8px">' +
       '<button class="pill' + (payoffOrder === "largest" ? " on" : "") + '" onclick="UI.setPayoffOrder(\'largest\')">' + esc(app.L("Largest first", "الأكبر الأول")) + "</button>" +
@@ -6669,11 +6859,20 @@ const UI = {
     const app = this.app, d = app.state.data;
     const cards = d.investments.map(v => {
       const pnl = v.value - v.invested;
+      // Real gap fix: the P&L line showed a raw amount only -- +EGP 500
+      // reads very differently on a EGP 5,000 position than a EGP 50,000
+      // one, and telling which took reopening Edit to check the original
+      // invested amount and doing the division by hand. v.invested can be
+      // 0 for a position tracked with no cash movement -- no percentage
+      // makes sense against a 0 base, so it's left out rather than shown
+      // as a nonsensical +Infinity%.
+      const pnlPct = v.invested > 0 ? Math.round(pnl / v.invested * 1000) / 10 : null;
+      const pnlPctText = pnlPct === null ? "" : " (" + (pnlPct >= 0 ? "+" : "") + app.numStr(pnlPct) + "%)";
       const editArgs = JSON.stringify({ id: v.id, name: v.name, type: v.type, invested: v.invested }).replace(/"/g, "&quot;");
       const canDelete = app.investmentCanDelete(v.id);
       return '<div class="card-row"><div class="card-row-top"><div><div class="card-row-title">' + esc(v.name) + '</div><div class="card-row-sub">' + esc(v.type) + "</div></div>" +
         '<div class="card-row-amt">' + app.fmt(v.value) + "</div></div>" +
-        '<div class="card-row-meta"><span>' + esc(t.invested) + ": " + app.fmt(v.invested) + '</span><span class="' + (pnl >= 0 ? "tone-pos" : "tone-neg") + '">' + esc(t.pnl) + ": " + app.fmtS(pnl) + "</span></div>" +
+        '<div class="card-row-meta"><span>' + esc(t.invested) + ": " + app.fmt(v.invested) + '</span><span class="' + (pnl >= 0 ? "tone-pos" : "tone-neg") + '">' + esc(t.pnl) + ": " + app.fmtS(pnl) + esc(pnlPctText) + "</span></div>" +
         '<div class="btn-row wrap">' +
         '<button class="btn btn-secondary small" onclick="UI.openModal(\'invest_update\',{investmentId:\'' + v.id + '\'})">' + esc(t.updateValue) + "</button>" +
         '<button class="link-btn small" onclick="UI.openModal(\'investment_edit\',' + editArgs + ')">' + esc(app.L("Edit")) + "</button>" +
@@ -6689,9 +6888,25 @@ const UI = {
     const freqLabel = { daily: app.L("Daily"), weekly: app.L("Weekly"), monthly: app.L("Monthly"), quarterly: app.L("Quarterly"), yearly: app.L("Yearly") };
     const cards = d.recurring.map(r => {
       const next = app.nextOccurrence(r, new Date());
+      const editArgs = JSON.stringify({ id: r.id, name: r.name, type: r.type, amount: r.amount, accountId: r.accountId, category: r.category, freq: r.freq, day: r.day }).replace(/"/g, "&quot;");
+      const canDelete = app.recurringCanDelete(r.id);
       return '<div class="card-row"><div class="card-row-top"><div><div class="card-row-title">' + esc(r.name) + '</div><div class="card-row-sub">' + freqLabel[r.freq] + " · " + esc(t.nextDate) + " " + app.dshort(next) + "</div></div>" +
         '<div class="card-row-amt ' + (r.type === "income" ? "tone-pos" : "tone-neg") + '">' + app.fmtS(r.type === "income" ? r.amount : -r.amount) + "</div></div>" +
-        '<button class="btn btn-secondary small" onclick="UI.postRecurringC(\'' + r.id + '\')">' + esc(t.postNow) + "</button></div>";
+        // Real bug fix: the account and category a rule actually posts
+        // against used to be invisible here, findable only by opening
+        // Edit -- now a first-class part of the card, same as every
+        // other list in the app shows its own account/category.
+        '<div class="card-row-meta"><span>' + esc(app.accName(r.accountId)) + '</span><span>' + esc(r.category || "—") + "</span></div>" +
+        '<div class="btn-row wrap">' +
+        '<button class="btn btn-secondary small" onclick="UI.postRecurringC(\'' + r.id + '\')">' + esc(t.postNow) + "</button>" +
+        // Real bug fix: a recurring rule had no Edit or Delete anywhere in
+        // the app -- a typo'd amount/account, or a cancelled subscription,
+        // was permanent. Same canDelete gate every other structural
+        // record here already uses (blocked once it's actually posted a
+        // real transaction).
+        '<button class="link-btn small" onclick="UI.openModal(\'recurring_edit\',' + editArgs + ')">' + esc(app.L("Edit")) + "</button>" +
+        (canDelete ? '<button class="link-btn small danger" onclick="UI.deleteRecurringC(\'' + r.id + '\')">' + esc(app.L("Delete")) + "</button>" : "") +
+        "</div></div>";
     }).join("");
     const monthlyIncome = d.recurring.filter(r => r.type === "income" && r.freq === "monthly").reduce((s, r) => s + r.amount, 0);
     const monthlyExpense = d.recurring.filter(r => r.type === "expense" && r.freq === "monthly").reduce((s, r) => s + r.amount, 0);

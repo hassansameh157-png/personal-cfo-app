@@ -416,6 +416,64 @@ account can be deleted, a card's Available/Limit stay consistent).
   Fixed by using `fmtPlain()` instead, the same helper already documented
   for exactly this ("a chart tooltip's textContent, an onclick argument
   that can't carry HTML").
+- `check_batch8.js` -- a grab-bag batch, not a single-screen recut: a real
+  missing feature, a full Savings Groups Recut, and three smaller
+  cross-screen gaps, all spotted during the same review pass.
+
+  **Real missing feature fixed:** a recurring rule had no Edit or Delete
+  anywhere in the app once created -- a typo'd amount/account, or a
+  cancelled subscription, was permanent. Added a `recurring_edit` modal
+  kind (same fields as `recurring`) and `recurringCanDelete`/
+  `deleteRecurring()` (same "blocked once it's actually posted a real
+  transaction" gate every other structural record already uses). The
+  card also now shows its account and category, previously invisible
+  without opening Edit.
+
+  **Savings Groups Recut** (mirrors Installments Recut on its direct
+  sibling -- same `openPlan`/`togglePlanRows`, same `duesThisMonth`
+  banner): action-sheet consolidation (Edit/Delete moved into a shared
+  "..." trigger via `UI.renderGroupActionSheet()`, the same pattern every
+  other list already uses -- Contribute/Payout stay their own
+  always-visible primary buttons, the two actual money-moving actions); a
+  collected/total progress bar and a surfaced next-due line (same
+  `.bar-track`/`daysUntilText()` language Installments' own cards use);
+  urgency sort (overdue first, then soonest due date); a real empty
+  state; and a fully-settled-group collapse into its own "N completed"
+  section. `dueThisMonthBanner()` (the #56 breakdown) is now a shared
+  method both Installments and Groups call, instead of a second
+  copy-pasted banner that would have stayed missing the breakdown --
+  the real gap that started this whole batch.
+
+  Three real bugs surfaced during implementation, all fixed and
+  regression-guarded here: `deleteGroupC()` only called `render()` on a
+  *confirmed* delete (same class as `deletePlanC`/`deletePersonC`'s own
+  fixes, now that delete lives behind the new sheet); "Record
+  contribution" stayed visible on a group that's already fully paid in,
+  a guaranteed dead end since `group_payment`'s own cap check in
+  submit() refuses it (same shape as Installments' #48); and the
+  `group_payment`/`group_payout` plan-pickers named a group by a bare
+  title, with no sense of how much was left to pay in or whether it was
+  already settled (same fix as #54, via a new shared `groupOptions`).
+
+  Two more real bugs caught in code review (not by any test failure):
+  the completed-group split used `remainingPay` alone, silently
+  collapsing a group whose payout genuinely hadn't been collected yet
+  ("Payout not collected yet" is still a live task, not finished
+  history) -- fixed by requiring `g.taken` too. And the shared due-banner
+  breakdown's first draft only showed when *both* halves were nonzero,
+  reintroducing the exact "mystery total" #56 fixed whenever one half
+  was entirely zero (e.g. 0 installments due, gam3eya due > 0 -- the
+  Installments page would show a bare total explained by nothing on it)
+  -- fixed by keying the breakdown on the *other* page's own share alone.
+
+  **Smaller cross-screen gaps:** Ledgers' own person names are now a
+  tappable link (`UI.viewPerson()`) -- the one remaining list in the app
+  that hadn't already made that switch. Investments' P&L line now shows
+  a percentage return alongside the raw amount (skipped when nothing was
+  invested, since a percentage against a 0 base is meaningless). Card
+  statements' Edit/Delete moved off two more always-visible inline
+  buttons into a shared "..." sheet (`UI.renderStmtActionSheet()`), Pay
+  staying primary -- `shot_statements.js` updated for the new trigger.
 
 ## Adding a new one
 
