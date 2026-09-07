@@ -288,6 +288,24 @@ const UI = {
   // exclusive with it for the same reason openModal() above clears both.
   toggleQuickAdd() { this.app.state.quickAddOpen = !this.app.state.quickAddOpen; this.app.state.moreOpen = false; this.render(); },
   setLang(l) { this.app.state.lang = l; this.render(); },
+  // Short physical buzz for a real moment -- currently every destructive
+  // confirm() dialog (see hapticConfirm() below), the instant the user
+  // actually accepts it. Feature-detected: navigator.vibrate doesn't exist
+  // on desktop browsers or Safari/iOS at all, and the try/catch also
+  // covers a real-world case seen on some Android builds where it exists
+  // but throws when called outside a user gesture -- either way this is
+  // purely an enhancement, never something anything else depends on.
+  haptic(pattern) {
+    try { if (navigator.vibrate) navigator.vibrate(pattern || 15); } catch (e) {}
+  },
+  // Wraps the native confirm() (same synchronous dialog, same boolean
+  // return every call site already depends on) with a haptic() on accept
+  // only -- cancelling a destructive action shouldn't buzz.
+  hapticConfirm(msg) {
+    const ok = confirm(msg);
+    if (ok) this.haptic();
+    return ok;
+  },
   togglePrivacy() { this.app.state.privacy = !this.app.state.privacy; this.render(); },
   toggleArabicNumerals() { this.app.state.arabicNumerals = !this.app.state.arabicNumerals; this.render(); },
   setPayoffOrder(v) { this.app.state.payoffOrder = v; this.render(); },
@@ -477,7 +495,11 @@ const UI = {
     }
     const ok = this.app.submit();
     this.render();
-    if (ok) this.flash();
+    // Single choke point every modal save funnels through (add/edit a
+    // transaction, an account, a person, a budget...), so this is also the
+    // one place a "you just confirmed something" haptic belongs, rather
+    // than scattering it across every individual submit path.
+    if (ok) { this.flash(); this.haptic(); }
   },
   // #flashStack lives outside #root in the static page shell (see
   // index.html/personal_cfo_app_final.html), not inside anything render()
@@ -597,34 +619,34 @@ const UI = {
   },
   deleteTxC(id) {
     const app = this.app, t = app.state.data.tx.find(x => x.id === id);
-    if (app.txEditable(t) && confirm(app.L("Delete this transaction? This cannot be undone.", "مسح الحركة دي؟ الإجراء ده لا يمكن التراجع عنه."))) { app.deleteTx(id); this.render(); }
+    if (app.txEditable(t) && this.hapticConfirm(app.L("Delete this transaction? This cannot be undone.", "مسح الحركة دي؟ الإجراء ده لا يمكن التراجع عنه."))) { app.deleteTx(id); this.render(); }
   },
   deleteAccountC(id) {
     const a = this.app.state.data.accounts.find(x => x.id === id); if (!a) return;
-    if (this.app.accountCanDelete(id) && confirm(this.app.L("Delete ") + a.name + "?")) { this.app.deleteAccount(id); this.render(); }
+    if (this.app.accountCanDelete(id) && this.hapticConfirm(this.app.L("Delete ") + a.name + "?")) { this.app.deleteAccount(id); this.render(); }
   },
   deletePersonC(id) {
-    if (!this.app.personHasRecords(id) && confirm(this.app.L("Delete ") + this.app.personName(id) + "?")) { this.app.deletePerson(id); this.render(); }
+    if (!this.app.personHasRecords(id) && this.hapticConfirm(this.app.L("Delete ") + this.app.personName(id) + "?")) { this.app.deletePerson(id); this.render(); }
   },
   deletePlanC(id) {
     const plan = this.app.state.data.plans.find(p => p.id === id); if (!plan) return;
-    if (this.app.planCanDelete(id) && confirm(this.app.L("Delete ") + plan.title + "?")) { this.app.deletePlan(id); this.render(); }
+    if (this.app.planCanDelete(id) && this.hapticConfirm(this.app.L("Delete ") + plan.title + "?")) { this.app.deletePlan(id); this.render(); }
   },
   deleteInvestmentC(id) {
     const iv = this.app.state.data.investments.find(i => i.id === id); if (!iv) return;
-    if (this.app.investmentCanDelete(id) && confirm(this.app.L("Delete ") + iv.name + "?")) { this.app.deleteInvestment(id); this.render(); }
+    if (this.app.investmentCanDelete(id) && this.hapticConfirm(this.app.L("Delete ") + iv.name + "?")) { this.app.deleteInvestment(id); this.render(); }
   },
   deleteCardStatementC(id) {
     const s = (this.app.state.data.cardStatements || []).find(x => x.id === id); if (!s) return;
-    if (this.app.cardStatementCanDelete(id) && confirm(this.app.L("Delete ") + (s.period || s.due || "") + "?")) { this.app.deleteCardStatement(id); this.render(); }
+    if (this.app.cardStatementCanDelete(id) && this.hapticConfirm(this.app.L("Delete ") + (s.period || s.due || "") + "?")) { this.app.deleteCardStatement(id); this.render(); }
   },
   deleteGroupC(id) {
     const g = (this.app.state.data.groups || []).find(x => x.id === id); if (!g) return;
-    if (this.app.groupCanDelete(id) && confirm(this.app.L("Delete ") + g.name + "?")) { this.app.deleteGroup(id); this.render(); }
+    if (this.app.groupCanDelete(id) && this.hapticConfirm(this.app.L("Delete ") + g.name + "?")) { this.app.deleteGroup(id); this.render(); }
   },
   deleteSavingsGoalC(id) {
     const g = (this.app.state.data.savingsGoals || []).find(x => x.id === id); if (!g) return;
-    if (confirm(this.app.L("Delete ") + g.name + "?")) { this.app.deleteSavingsGoal(id); this.render(); }
+    if (this.hapticConfirm(this.app.L("Delete ") + g.name + "?")) { this.app.deleteSavingsGoal(id); this.render(); }
   },
   setBudgetC() {
     const cat = document.getElementById("budgetCat").value;
@@ -648,7 +670,7 @@ const UI = {
     this.render();
   },
   deleteCategoryC(kind, name) {
-    if (confirm(this.app.L("Delete ") + name + "?")) { this.app.deleteCategory(kind, name); this.render(); }
+    if (this.hapticConfirm(this.app.L("Delete ") + name + "?")) { this.app.deleteCategory(kind, name); this.render(); }
   },
   postRecurringC(id) {
     const r = this.app.state.data.recurring.find(x => x.id === id); if (!r) return;
@@ -667,7 +689,7 @@ const UI = {
   },
   restoreJsonFile(input) {
     const file = input.files && input.files[0]; if (!file) return;
-    if (!confirm(this.app.L("Restore from this backup? This replaces everything currently stored.", "الاستعادة من النسخة دي؟ هيستبدل كل البيانات المحفوظة حالياً."))) { input.value = ""; return; }
+    if (!this.hapticConfirm(this.app.L("Restore from this backup? This replaces everything currently stored.", "الاستعادة من النسخة دي؟ هيستبدل كل البيانات المحفوظة حالياً."))) { input.value = ""; return; }
     const reader = new FileReader();
     reader.onload = () => {
       const res = this.app.restoreFromJson(String(reader.result));
@@ -685,9 +707,9 @@ const UI = {
     const csv = rows.map(r => r.map(c => '"' + String(c) + '"').join(",")).join("\n");
     this.app.download("personal-cfo-transactions.csv", csv, "text/csv");
   },
-  reseed() { if (confirm(this.app.L("Reload demo data? This replaces everything currently stored.", "تحميل البيانات التجريبية؟ ده هيستبدل كل البيانات المحفوظة حالياً."))) { this.app.persist(this.app.seed(), "Demo data reloaded"); this.render(); } },
+  reseed() { if (this.hapticConfirm(this.app.L("Reload demo data? This replaces everything currently stored.", "تحميل البيانات التجريبية؟ ده هيستبدل كل البيانات المحفوظة حالياً."))) { this.app.persist(this.app.seed(), "Demo data reloaded"); this.render(); } },
   wipe() {
-    if (confirm(this.app.L("Erase all data? This cannot be undone.", "حذف كل البيانات؟ الإجراء ده لا يمكن التراجع عنه."))) {
+    if (this.hapticConfirm(this.app.L("Erase all data? This cannot be undone.", "حذف كل البيانات؟ الإجراء ده لا يمكن التراجع عنه."))) {
       const empty = { accounts: [], people: [], tx: [], plans: [], groups: [], cardStatements: [], savingsGoals: [], investments: [], recurring: [], audit: [{ at: new Date().toISOString().slice(0, 16).replace("T", " "), what: "Wiped all data" }] };
       this.app.persist(empty, null); this.render();
     }
@@ -735,13 +757,25 @@ const UI = {
       return;
     }
 
+    // A page switch gets a light enter animation (see .page-enter in
+    // app.css); every OTHER render() call (a keystroke in the transaction
+    // search, a filter change, opening a modal...) must NOT replay it --
+    // render() replaces this whole subtree with fresh DOM every single
+    // time, so a class present unconditionally would restart the
+    // animation on every one of those too, not just real navigation.
+    // Comparing S.page against what the last render() actually painted is
+    // what limits it to genuine page changes, whatever triggered them
+    // (setPage(), viewPerson(), a modal closing back to the previous
+    // page...) without needing to touch every one of those call sites.
+    const pageChanged = this._lastRenderedPage !== S.page;
+    this._lastRenderedPage = S.page;
     root.innerHTML =
       '<div class="shell">' +
         this.renderPrimaryNav(t) +
         '<div class="main-col">' +
           this.renderTopbar(D, t) +
           this.renderMetricsRow(D, t) +
-          '<main class="page">' + this.renderPage(D, t) + "</main>" +
+          '<main class="page' + (pageChanged ? " page-enter" : "") + '">' + this.renderPage(D, t) + "</main>" +
         "</div>" +
       "</div>" +
       this.renderQuickAddFab(t) +
@@ -2640,7 +2674,7 @@ const UI = {
   },
   forgotPinC() {
     const app = this.app;
-    if (confirm(app.L("This only removes the screen lock — none of your financial data is affected. Continue?", "ده هيشيل قفل الشاشة بس — بياناتك المالية مش هتتأثر. تكمل؟"))) {
+    if (this.hapticConfirm(app.L("This only removes the screen lock — none of your financial data is affected. Continue?", "ده هيشيل قفل الشاشة بس — بياناتك المالية مش هتتأثر. تكمل؟"))) {
       app.removePin(); app.state.locked = false; app.state.lockErr = ""; this.render(); this.maybeNotify();
     }
   },

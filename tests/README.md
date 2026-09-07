@@ -117,6 +117,15 @@ account can be deleted, a card's Available/Limit stay consistent).
   "hide the 4th/5th tile on mobile" CSS rule matched by nth-child
   position alone, so it would have silently swallowed the scoped row's
   4th tile too without its own `.scoped` modifier class).
+- `check_page_transition.js` — the light slide+fade on a real page
+  switch: fires exactly once on genuine navigation, never on a same-page
+  re-render (typing in the transaction search, opening a modal), fires
+  again on the next real nav after that, and `prefers-reduced-motion`
+  disables the animation itself.
+- `check_haptic_feedback.js` — `navigator.vibrate()` feedback: fires on
+  an accepted destructive `confirm()` dialog and a successful modal
+  save, stays silent on a cancelled dialog or a rejected (validation
+  failure) save.
 
 ## Adding a new one
 

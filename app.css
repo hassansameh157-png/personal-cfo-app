@@ -343,6 +343,15 @@ h1,h2,h3{font-family:var(--font-head);font-weight:600;margin:0;text-wrap:balance
 
 /* ---- page / tab header ---- */
 .page{padding:18px 16px 90px;max-width:960px;margin:0 auto}
+/* .page-enter: added only on a real page switch (UI.render() compares the
+   page id against what it last painted -- see its own comment), never on
+   every render(), so a keystroke in the transaction search or opening a
+   modal doesn't replay it. A light slide-up + fade, not a full-screen
+   transform -- the topbar/metrics-row/nav above and below the <main> stay
+   put, only the page content itself animates in. */
+.page-enter{animation:pageEnter .22s ease}
+@keyframes pageEnter{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+@media (prefers-reduced-motion: reduce){ .page-enter{animation:none} }
 .tab-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;margin-bottom:16px}
 .tab-title{font-size:24px}
 .tab-sub{font-size:14px;color:var(--c-text-faint);margin-top:2px}
