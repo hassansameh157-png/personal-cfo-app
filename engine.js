@@ -23,6 +23,17 @@ class Engine {
       // transaction whose description happened to mention the name, and
       // under-matched a real transaction of theirs whose description didn't).
       horizon: 30, filt: { q: "", type: "all", account: "all", preset: "all", category: "all", categoryKind: "", person: "all" }, openPlan: null, saved: "",
+      // Real gap fix: Reports' own category/source breakdown used to sum
+      // every transaction ever recorded, with no way to scope it down --
+      // a real problem after a year or two of use, when "biggest expense
+      // category" quietly means "biggest since the account was created."
+      // Same "view filter, not app data" category as horizon/payoffOrder
+      // above -- resets to this default on reload, never persisted.
+      reportsPreset: "6m",
+      // Cash Flow's own month being shown -- "YYYY-MM-01" of the first day
+      // of that month, defaulting to the current month. Same transient
+      // view-state category as reportsPreset just above.
+      cashFlowMonth: null,
       // "Group similar" toggle on Transactions (mobile only) -- see
       // UI.toggleGroupTx()'s own comment. Not part of `filt` above: it's a
       // display option, not a filter narrowing which rows match.
@@ -102,6 +113,22 @@ class Engine {
   }
   setNotifEnabled(v) {
     try { localStorage.setItem("pcfo.notif.v1", v ? "1" : "0"); } catch (e) {}
+  }
+  // ---- theme (Settings -> Display) -------------------------------------
+  // Real gap fix: app.css already carries a full :root[data-theme="dark"]/
+  // ="light" override (every color token redefined both ways, guarded
+  // against the OS-driven @media query) -- but nothing in the app ever SET
+  // that attribute, so a user stuck with the OS's own choice had no way to
+  // override it in either direction. "system" (the default) means exactly
+  // that: no attribute at all, letting prefers-color-scheme decide, same
+  // as before this existed. Persisted in localStorage (not state.data),
+  // same reasoning as the PIN/notif preference just above -- a per-device
+  // display choice, not app data.
+  getTheme() {
+    try { const v = localStorage.getItem("pcfo.theme.v1"); return (v === "light" || v === "dark") ? v : "system"; } catch (e) { return "system"; }
+  }
+  setTheme(v) {
+    try { localStorage.setItem("pcfo.theme.v1", v); } catch (e) {}
   }
   // How many things currently need attention — the same conditions the
   // Dashboard's Needs Attention alerts check (overdue plans/loans, a

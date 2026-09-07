@@ -474,6 +474,58 @@ account can be deleted, a card's Available/Limit stay consistent).
   statements' Edit/Delete moved off two more always-visible inline
   buttons into a shared "..." sheet (`UI.renderStmtActionSheet()`), Pay
   staying primary -- `shot_statements.js` updated for the new trigger.
+- `check_batch9.js` -- a second grab-bag batch: a real missing feature and
+  two real gaps, spotted while reviewing Settings/Reports/Cash Flow.
+
+  **Real missing feature fixed:** `app.css` already carried a complete
+  `:root[data-theme="dark"]`/`="light"` override (every color token
+  redefined both ways, guarded against the OS-driven `@media` query) --
+  but nothing in the app ever set that attribute, so a user stuck with
+  whatever their OS/browser preferred had no way to override it in
+  either direction. Added `getTheme()`/`setTheme()` (localStorage-backed,
+  same per-device-preference pattern as the PIN/notification toggle, not
+  `state.data`) and a System/Light/Dark segmented control in Settings ->
+  Display. "System" (the default) means genuinely no attribute at all --
+  identical behavior to before this existed.
+
+  **Real gap fixed -- Reports had no period control:** `D.live` sums
+  *every* transaction ever recorded with no way to scope it down --
+  harmless on a new account, but after a year or two "biggest expense
+  category" quietly meant "biggest since the account was created," not
+  anything close to current spending. Every other page with real numbers
+  has some period control (Transactions' own preset filter, Forecast's
+  horizon pills) -- Reports had none. Added period pills (This month / 3
+  / 6 / 12 months / All time, defaulting to 6 months) that scope the
+  category/source breakdown; the net worth trend chart above stays its
+  own fixed 6-month view on purpose -- it's a real historical
+  trajectory, not a summable total, so a period selector over it
+  wouldn't mean the same thing.
+
+  **Real gap fixed -- Cash Flow was locked to the current month:** no way
+  to check how last month actually broke down. Added prev/next month
+  navigation (`S.cashFlowMonth`, the same transient view-state category
+  as `reportsPreset`/`horizon` -- resets on reload, never persisted) with
+  a "Today" shortcut back to the current month once you've navigated
+  away from it.
+
+  **Real bug caught in code review, not by any test failure:**
+  `new Date("2026-09-01")` parses as UTC midnight; reading it back with
+  local-time getters (`getFullYear`/`getMonth`) in a timezone west of UTC
+  returns the *previous* day, silently shifting the whole month
+  computation back by one -- `mEnd` could even land before `mStart`,
+  making `cashFlowStatement`'s own `date >= from && date <= to` filter
+  match nothing and the entire previous-month view go quietly blank.
+  Fixed by building the `Date` from its Y/M/D parts directly instead of
+  parsing the ISO string, the same way `new Date()` itself is used
+  everywhere else in this file. Regression-guarded here by actually
+  launching a page with `timezoneId: "America/New_York"` and checking a
+  past month's figures are real, not a suspicious 0/0.
+
+  **Smaller polish:** an existing budget can now be edited in place --
+  `setBudget()` itself already overwrote on a repeat call (there was
+  never a technical need to Remove first), just no shortcut existed to
+  pre-fill the category/amount instead of re-finding the category in the
+  dropdown and retyping the number from scratch.
 
 ## Adding a new one
 

@@ -872,6 +872,16 @@ const UI = {
     this.render();
   },
   clearBudgetC(cat) { this.app.setBudget(cat, 0); this.render(); },
+  // Real gap fix: no code change needed in setBudget() itself (a repeat
+  // call with the same category already overwrites, never required
+  // clearing first) -- just pre-fill the existing category/amount and
+  // focus the amount field, instead of making the user re-find the
+  // category in the dropdown and retype the number from scratch.
+  editBudgetC(cat, amt) {
+    const sel = document.getElementById("budgetCat"), inp = document.getElementById("budgetAmt");
+    if (sel) sel.value = cat;
+    if (inp) { inp.value = amt; inp.focus(); inp.scrollIntoView({ behavior: "smooth", block: "center" }); }
+  },
   setOverallBudgetC() {
     const amt = document.getElementById("overallBudgetAmt").value;
     if (this.app.n(amt) <= 0) return;
@@ -956,6 +966,13 @@ const UI = {
     const dir = S.lang === "ar" ? "rtl" : "ltr";
     document.documentElement.setAttribute("dir", dir);
     document.documentElement.setAttribute("lang", S.lang);
+    // Real gap fix: app.css's own :root[data-theme] override had no code
+    // path that ever set the attribute -- "system" means genuinely no
+    // attribute (prefers-color-scheme alone decides, exactly like before
+    // this existed), not a third value the CSS has to handle.
+    const theme = this.app.getTheme();
+    if (theme === "system") document.documentElement.removeAttribute("data-theme");
+    else document.documentElement.setAttribute("data-theme", theme);
 
     if (!S.data) { root.innerHTML = "<p>Loading…</p>"; return; }
     const D = this.app.derive();
@@ -3476,24 +3493,45 @@ const UI = {
 
   // ---- Reports (uses derive(asOf) to build a real 6-month trend) --------
   renderReports(D, t) {
-    const app = this.app;
+    const app = this.app, S = app.state;
     const nwChart = this.barChart(this.nwTrendMonths(), (i) => i.value >= 0 ? "var(--c-pos)" : "var(--c-neg)");
 
-    const catMap = {}; D.live.filter(x => x.type === "expense").forEach(x => catMap[x.category || "Other"] = (catMap[x.category || "Other"] || 0) + x.amount);
+    // Real gap fix: "By category"/"By source" used to sum D.live outright
+    // -- every transaction ever recorded, with no way to scope it down.
+    // Fine for a brand-new account, but after a year or two "biggest
+    // expense category" quietly meant "biggest since the account was
+    // created," not anything close to current spending -- the one page in
+    // the app with genuinely no period control at all (Transactions has
+    // its own preset filter, Forecast its horizon pills). The net worth
+    // trend above stays its own fixed 6-month chart -- it's a real
+    // historical trajectory, not a summable total, so a period selector
+    // over it wouldn't mean the same thing.
+    const reportsPresets = [["1m", app.L("This month", "الشهر ده")], ["3m", app.L("3 months", "3 شهور")], ["6m", app.L("6 months", "6 شهور")], ["12m", app.L("12 months", "12 شهر")], ["all", app.L("All time")]];
+    const rp = S.reportsPreset || "6m";
+    const monthsBack = { "1m": 1, "3m": 3, "6m": 6, "12m": 12 }[rp];
+    const sinceDate = monthsBack ? app.iso(app.addMonths(new Date(), -monthsBack)) : null;
+    const liveScoped = sinceDate ? D.live.filter(x => x.date >= sinceDate) : D.live;
+    const periodPills = '<div class="pill-row">' + reportsPresets.map(([v, l]) =>
+      '<button class="pill' + (rp === v ? " on" : "") + '" onclick="UI.setReportsPreset(\'' + v + '\')">' + esc(l) + "</button>"
+    ).join("") + "</div>";
+
+    const catMap = {}; liveScoped.filter(x => x.type === "expense").forEach(x => catMap[x.category || "Other"] = (catMap[x.category || "Other"] || 0) + x.amount);
     const catArr = Object.entries(catMap).sort((a, b) => b[1] - a[1]).slice(0, 8);
     const maxCat = Math.max(1, ...catArr.map(c => c[1]));
 
-    const srcMap = {}; D.live.filter(x => ["income", "refund", "investment_return"].includes(x.type)).forEach(x => srcMap[x.category || "Other"] = (srcMap[x.category || "Other"] || 0) + x.amount);
+    const srcMap = {}; liveScoped.filter(x => ["income", "refund", "investment_return"].includes(x.type)).forEach(x => srcMap[x.category || "Other"] = (srcMap[x.category || "Other"] || 0) + x.amount);
     const srcArr = Object.entries(srcMap).sort((a, b) => b[1] - a[1]).slice(0, 8);
     const maxSrc = Math.max(1, ...srcArr.map(c => c[1]));
 
     const barList = (arr, max, kind) => '<div class="bar-list">' + arr.map(([name, v]) => this.catBar(name, v, max, kind, false)).join("") + "</div>";
 
-    return this.tabHeader(t.reports, app.L("Six-month history plus aging and category analysis"), []) +
+    return this.tabHeader(t.reports, app.L("Net worth trend plus category and source analysis for the period below", "اتجاه صافي الثروة وتحليل الفئات والمصادر للفترة تحت"), []) +
       '<h2 class="section-title">' + esc(t.netWorthTrend) + "</h2>" + nwChart +
+      periodPills +
       '<h2 class="section-title">' + esc(t.byCategory) + "</h2>" + (catArr.length ? barList(catArr, maxCat, "expense") : '<p class="muted">—</p>') +
       '<h2 class="section-title">' + esc(t.bySource) + "</h2>" + (srcArr.length ? barList(srcArr, maxSrc, "income") : '<p class="muted">—</p>');
   },
+  setReportsPreset(v) { this.app.state.reportsPreset = v; this.render(); },
 
   // ---- Cash Flow Statement --------------------------------------------------
   // Operating / Investing / Financing, the standard three-bucket structure --
@@ -3503,9 +3541,37 @@ const UI = {
   // or out of a card does -- paying one down is a real outflow, same as any
   // other debt repayment. See Engine.cashFlowBucket for the exact rule.
   renderCashFlow(D, t) {
-    const app = this.app;
-    const today = app.today(), mStart = today.slice(0, 8) + "01";
-    const cur = app.cashFlowStatement(mStart, today);
+    const app = this.app, S = app.state;
+    const today = app.today(), curMonthStart = today.slice(0, 8) + "01";
+    // Real gap fix: this page used to be hard-locked to the current
+    // month, with no way to check "how did last month actually break
+    // down" -- S.cashFlowMonth (null = current month) is the same
+    // transient view-state category as reportsPreset/horizon above.
+    const viewMonth = S.cashFlowMonth || curMonthStart;
+    const isCurrentMonth = viewMonth === curMonthStart;
+    // Real bug caught in code review: new Date("2026-09-01") parses as UTC
+    // midnight, but the local-time getters below (getFullYear/getMonth)
+    // read it back in the viewer's own timezone -- west of UTC that's
+    // still Aug 31 locally, so the month label and mEnd/prevMonth/
+    // nextMonth all silently computed one month off (mEnd could even land
+    // before mStart, making cashFlowStatement's date>=from&&date<=to match
+    // nothing). Building the Date from its Y/M/D parts directly, the same
+    // way `new Date()` itself always has been used elsewhere in this file,
+    // sidesteps the UTC-string-parsing pitfall entirely.
+    const [vy, vm] = viewMonth.split("-").map(Number);
+    const vDate = new Date(vy, vm - 1, 1);
+    const mStart = viewMonth;
+    const mEnd = isCurrentMonth ? today : app.iso(new Date(vDate.getFullYear(), vDate.getMonth() + 1, 0));
+    const monthLabel = vDate.toLocaleDateString(S.lang === "ar" ? "ar-EG" : "en-GB", { month: "long", year: "numeric" });
+    const prevMonth = app.iso(new Date(vDate.getFullYear(), vDate.getMonth() - 1, 1));
+    const nextMonth = app.iso(new Date(vDate.getFullYear(), vDate.getMonth() + 1, 1));
+    const monthNav = '<div class="btn-row" style="align-items:center;gap:4px">' +
+      '<button class="link-btn small" onclick="UI.setCashFlowMonth(\'' + prevMonth + '\')" aria-label="' + esc(app.L("Previous month", "الشهر السابق")) + '">' + svgIcon("M15 18l-6-6 6-6", 18) + "</button>" +
+      '<strong>' + esc(monthLabel) + "</strong>" +
+      (isCurrentMonth ? "" : '<button class="link-btn small" onclick="UI.setCashFlowMonth(\'' + nextMonth + '\')" aria-label="' + esc(app.L("Next month", "الشهر الجاي")) + '">' + svgIcon("M9 18l6-6-6-6", 18) + "</button>" +
+        '<button class="link-btn small" onclick="UI.setCashFlowMonth(null)">' + esc(app.L("Today", "النهاردة")) + "</button>") +
+    "</div>";
+    const cur = app.cashFlowStatement(mStart, mEnd);
     const rows = [
       [app.L("Operating", "التشغيلي"), cur.operating, app.L("Everyday income and spending.", "الإيرادات والمصروفات اليومية.")],
       [app.L("Investing", "الاستثماري"), cur.investing, app.L("Money placed into investments.", "أموال موجهة للاستثمار.")],
@@ -3531,12 +3597,14 @@ const UI = {
     }
     const trendChart = this.barChart(months.map(m => ({ label: m.label, value: m.net })), (i) => i.value >= 0 ? "var(--c-pos)" : "var(--c-neg)");
 
-    return this.tabHeader(t.cashflow, app.L("Where cash actually came from and went, this month", "من فين جت الفلوس وراحت فين، الشهر ده"), []) +
-      '<div class="hero-card alt"><div class="hero-label">' + esc(app.L("Net cash change this month", "صافي التغير النقدي الشهر ده")) + '</div><div class="hero-value">' + app.fmtS(cur.netChange) + "</div></div>" +
+    return this.tabHeader(t.cashflow, app.L("Where cash actually came from and went", "من فين جت الفلوس وراحت فين"), []) +
+      monthNav +
+      '<div class="hero-card alt"><div class="hero-label">' + esc(app.L("Net cash change", "صافي التغير النقدي")) + '</div><div class="hero-value">' + app.fmtS(cur.netChange) + "</div></div>" +
       '<div class="card-list" style="margin-top:14px">' + bucketCards + "</div>" +
       '<h2 class="section-title">' + esc(app.L("Operating cash flow — 6 months", "التدفق النقدي التشغيلي — 6 أشهر")) + "</h2>" + trendChart +
       '<p class="muted small">' + esc(app.L("Transfers between your own cash, bank and wallet accounts are excluded — they never change your total spendable money. Paying down a card does count, the same as any other debt repayment.", "التحويلات بين حساباتك الكاش والبنك والمحافظ مش محسوبة — هي مبتغيرش إجمالي فلوسك المتاحة. سداد كارت بيتحسب، زي أي سداد دين تاني.")) + "</p>";
   },
+  setCashFlowMonth(v) { this.app.state.cashFlowMonth = v; this.render(); },
 
   // ---- Settings --------------------------------------------------------------
   renderSettings(D, t) {
@@ -3566,11 +3634,18 @@ const UI = {
     // "which budget is this" cue in a list that's otherwise just names.
     const budgetRows = Object.keys(budgets).length ? '<div class="card-list">' + Object.entries(budgets).sort((a, b) => b[1] - a[1]).map(([cat, amt]) =>
       '<div class="card-row" style="border-inline-start:4px solid ' + app.categoryColor(cat, "expense") + '"><div class="card-row-top"><div class="card-row-title">' + esc(cat) + '</div><div class="card-row-amt">' + app.fmt(amt) + "/" + esc(app.L("mo", "شهر")) + "</div></div>" +
+      // Real gap fix: changing an existing budget's amount used to mean
+      // re-finding its category in the dropdown above and retyping the
+      // number from scratch (setBudget() itself already overwrites on a
+      // repeat call -- there was never a technical need to Remove first,
+      // just no shortcut to it). Edit pre-fills both fields and focuses
+      // the amount for an immediate retype.
       // Real bug, found while auditing every onclick arg for this same
       // class of bug: this one was missing esc() entirely (not just the
       // backslash-before-quote fix escJsArg() applies everywhere else) --
       // a budget category name containing '<', '>', '"' or '&' would have
       // reached the page as raw, unescaped HTML.
+      '<button class="link-btn small" onclick="UI.editBudgetC(\'' + escJsArg(cat) + '\',' + amt + ')">' + esc(app.L("Edit")) + "</button>" +
       '<button class="link-btn small" onclick="UI.clearBudgetC(\'' + escJsArg(cat) + '\')">' + esc(app.L("Remove")) + "</button></div>"
     ).join("") + "</div>" : this.emptyState(ICON_PLUS, app.L("No budgets set yet", "لسه مفيش ميزانيات متحددة"));
     const budgetsSection = '<section class="dash-section"><h2 class="section-title">' + esc(app.L("Budgets")) + '</h2><p class="muted small">' + esc(app.L("Set a monthly limit per expense category — the Dashboard flags it once you're near or over.", "حدد سقف شهري لكل فئة مصروف — الداشبورد هينبهك لما تقرب أو تتخطاه.")) + '</p>' +
@@ -3609,6 +3684,26 @@ const UI = {
     "</section>";
     const notifSection = '<section class="dash-section"><h2 class="section-title">' + esc(app.L("Notifications")) + '</h2><p class="muted small">' + esc(app.L("Only fires while the app is open in a tab — this is a browser page, not an installed app with background push, so nothing arrives while it's closed.", "بيشتغل بس والأبلكيشن مفتوح في تاب — دي صفحة متصفح مش أبلكيشن مثبت بإشعارات في الخلفية، فمفيش حاجة توصل وهو مقفول.")) + "</p>" +
       '<label style="display:flex;align-items:center;gap:8px;cursor:pointer;min-height:44px"><input type="checkbox" id="notifToggle" ' + (app.notifEnabled() ? "checked" : "") + ' onchange="UI.toggleNotifC()"><span>' + esc(app.L("Notify me about overdue items when I open the app", "نبهني بالبنود المتأخرة لما أفتح الأبلكيشن")) + "</span></label>" +
+    "</section>";
+    // Real gap fix: app.css already carries a full manual dark/light
+    // override, but nothing ever exposed it -- the app was OS-preference
+    // only. "System" (the default) genuinely means no override, matching
+    // the exact behavior before this control existed -- see getTheme()'s
+    // own comment.
+    const curTheme = app.getTheme();
+    const themeOpts = [["system", app.L("System", "النظام")], ["light", app.L("Light", "فاتح")], ["dark", app.L("Dark", "غامق")]];
+    const themeSeg = '<div class="seg">' + themeOpts.map(([v, l]) =>
+      '<label class="seg-opt"><input type="radio" name="theme" ' + (curTheme === v ? "checked" : "") + ' onchange="UI.setThemeC(\'' + v + '\')"><span>' + esc(l) + "</span></label>"
+    ).join("") + "</div>";
+    const displaySection = '<section class="dash-section"><h2 class="section-title">' + esc(app.L("Display")) + '</h2>' +
+      '<p class="muted small">' + esc(app.L("\"System\" follows this device's own light/dark setting.", "\"النظام\" بيتبع إعداد الجهاز الفاتح/الغامق.")) + "</p>" +
+      themeSeg +
+      (app.state.lang === "ar" ?
+        '<label style="display:flex;align-items:center;gap:8px;cursor:pointer;min-height:44px;margin-top:10px">' +
+          '<input type="checkbox" id="arabicNumToggle" ' + (app.state.arabicNumerals ? "checked" : "") + ' onchange="UI.toggleArabicNumerals()">' +
+          "<span>" + esc(app.L("Use Arabic-Indic numerals (١٢٣) for amounts", "استخدم الأرقام العربية (١٢٣) في المبالغ")) + "</span>" +
+        "</label>"
+        : "") +
     "</section>";
     // A true OS home-screen "widget" (a live glanceable block, not just an
     // icon) isn't something a web app can do without native wrapping -- out
@@ -3657,13 +3752,7 @@ const UI = {
       appLockSection +
       notifSection +
       shortcutsSection +
-      (app.state.lang === "ar" ?
-        '<section class="dash-section"><h2 class="section-title">' + esc(app.L("Display")) + "</h2>" +
-        '<label style="display:flex;align-items:center;gap:8px;cursor:pointer;min-height:44px">' +
-          '<input type="checkbox" id="arabicNumToggle" ' + (app.state.arabicNumerals ? "checked" : "") + ' onchange="UI.toggleArabicNumerals()">' +
-          "<span>" + esc(app.L("Use Arabic-Indic numerals (١٢٣) for amounts", "استخدم الأرقام العربية (١٢٣) في المبالغ")) + "</span>" +
-        "</label></section>"
-        : "") +
+      displaySection +
       categoriesSection +
       overallSection +
       budgetsSection +
@@ -3741,6 +3830,7 @@ const UI = {
     app.setNotifEnabled(next);
     this.render();
   },
+  setThemeC(v) { this.app.setTheme(v); this.render(); },
   // ---- modal ---------------------------------------------------------------
   renderModal(t) {
     const app = this.app, S = app.state;
