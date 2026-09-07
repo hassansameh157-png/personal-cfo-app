@@ -166,6 +166,15 @@ account can be deleted, a card's Available/Limit stay consistent).
   depends on the specific plan, not the type alone, so the type is
   excluded from grouping entirely rather than risk netting unrelated
   debts into one misleading figure).
+- `check_account_timeline.js` — the vertical Account Timeline shown only
+  while Transactions is filtered to exactly one account: absent
+  everywhere else, newest-first, each dot's color genuinely tracks its
+  own transaction's sign, reflects every other active filter too (not
+  just the account), and disappears again once the account filter
+  clears. A real bug caught in review is folded into this file rather
+  than a separate one: a reversed/voided transaction used to render
+  with a full-color dot like a live one, unlike its own muted/
+  strikethrough treatment everywhere else in this same page.
 
 ## Adding a new one
 

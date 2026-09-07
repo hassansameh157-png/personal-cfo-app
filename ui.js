@@ -2019,6 +2019,44 @@ const UI = {
     const memberRows = expanded ? '<div class="tx-group-members">' + members.map(cardRow).join("") + "</div>" : "";
     return '<div class="tx-group">' + header + memberRows + "</div>";
   },
+  // A vertical timeline (colored dot per transaction, green in / red out)
+  // for one account -- shown only while Transactions is scoped to exactly
+  // that one account (same trigger as the scoped metrics row), giving a
+  // fast visual read of the account's recent trend before scrolling the
+  // full searchable/filterable list below it. `rows` is this page's own
+  // already-filtered set (type/date/search too, so the timeline always
+  // agrees with what's actually listed below it), newest first; capped to
+  // the most recent 20 regardless of how many total match, since a
+  // vertical dot-per-row timeline stops being a fast visual read well
+  // before a long history would make it one giant scrolling column.
+  renderAccountTimeline(rows, accountId) {
+    const app = this.app;
+    if (!rows.length) return "";
+    const shown = rows.slice(0, 20);
+    const items = shown.map(r => {
+      const { signed, amtTxt, tone } = this.txSign(r);
+      // Real bug caught in review: a reversed/voided row was still
+      // rendered with a full-color pos/neg dot, unlike every other view
+      // of a void row in the app (the Transactions table itself gives it
+      // opacity+strikethrough) -- misrepresenting a reversed transaction
+      // as a live, still-counting one in what's meant to be a fast visual
+      // read.
+      const dotColor = r.void ? "var(--c-text-faint)" : signed > 0 ? "var(--c-pos)" : signed < 0 ? "var(--c-neg)" : "var(--c-text-faint)";
+      return '<li class="acc-timeline-item">' +
+        '<span class="acc-timeline-dot" style="background:' + dotColor + '"></span>' +
+        '<div class="acc-timeline-body">' +
+          '<div class="acc-timeline-desc">' + esc(r.desc || this.txTypeLabels()[r.type] || r.type) + "</div>" +
+          '<div class="acc-timeline-meta">' + r.date + '</div>' +
+        "</div>" +
+        '<div class="acc-timeline-amt ' + tone + '">' + amtTxt + "</div>" +
+      "</li>";
+    }).join("");
+    const truncNote = rows.length > shown.length ? '<div class="acc-timeline-more">' + esc(app.L("+ " + (rows.length - shown.length) + " more below", "+ " + (rows.length - shown.length) + " تاني تحت")) + "</div>" : "";
+    return '<section class="acc-timeline-wrap">' +
+      '<h2 class="section-title">' + esc(app.L("Account Timeline", "الخط الزمني للحساب")) + "</h2>" +
+      '<ul class="acc-timeline">' + items + "</ul>" + truncNote +
+    "</section>";
+  },
   // ---- Transactions (fix #2 cards, fix #4 pagination) -------------------
   renderTransactions(D, t) {
     const app = this.app, S = app.state, d = app.state.data;
@@ -2156,10 +2194,16 @@ const UI = {
     // checkbox doesn't touch `filt` at all, so it survives a filter change
     // that would otherwise reset an unrelated view option along with it.
     const groupToggle = '<label class="group-tx-toggle mobile-only"><input type="checkbox" ' + (S.groupTx ? "checked" : "") + ' onchange="UI.toggleGroupTx()"><span>' + esc(app.L("Group similar", "تجميع المتشابه")) + "</span></label>";
+    // Same trigger as the scoped metrics row (UI.renderMetricsRow) --
+    // filtered down to exactly one account. `rows` here (not `visible`) is
+    // this page's own already-filtered set before pagination slicing, so
+    // the timeline reflects every active filter (type/date/search), same
+    // as the count in "N records match your filters" below.
+    const timeline = F.account !== "all" ? this.renderAccountTimeline(rows, F.account) : "";
 
     return this.tabHeader(t.transactions, total + app.L(" records match your filters", " حركة مطابقة للفلاتر"),
       [[t.aIncome, "UI.openModal('income')"], [t.aTransfer, "UI.openModal('transfer')"]]) +
-      filters + groupToggle + (total ? table + cards + loadMore : this.emptyState(ICON_SEARCH, t.noMatches, app.L("Try a different search or clear a filter above.", "جرب بحث تاني أو امسح فلتر من فوق.")));
+      timeline + filters + groupToggle + (total ? table + cards + loadMore : this.emptyState(ICON_SEARCH, t.noMatches, app.L("Try a different search or clear a filter above.", "جرب بحث تاني أو امسح فلتر من فوق.")));
   },
 
   // ---- People ----------------------------------------------------------------
