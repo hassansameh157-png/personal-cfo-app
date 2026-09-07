@@ -76,8 +76,16 @@ account can be deleted, a card's Available/Limit stay consistent).
   opens/closes its quick-add sheet, is mutually exclusive with the More
   sheet, and each of its three items opens the right modal.
 - `check_swipe_actions.js` — swipe-to-reveal Edit/Delete on transaction
-  rows: only an `app.txEditable()` row gets the swipe wrapper at all, a
-  drag past halfway snaps open and a short one snaps back closed, opening
+  rows: only an `app.txEditable()` row gets the swipe wrapper at all, at
+  rest (no swipe at all) Edit/Delete never visually bleed through the row
+  (a real bug reported by the user with a screenshot, and the actual root
+  cause behind it: `.swipe-content` used the same translucent "glass"
+  background token every other card uses, invisible against the app's own
+  muted background but sitting here directly over `.swipe-actions`'
+  saturated Edit/purple and Delete/red buttons instead, so the same
+  translucency let a real chunk of that color show straight through with
+  no swipe needed at all -- fixed with a dedicated fully-opaque surface
+  token used only here), a drag past halfway snaps open and a short one snaps back closed, opening
   one row closes any other, RTL (Arabic) reveals on the correct physical
   side (a real bug: `translateX` is a physical property, `.swipe-actions`
   is positioned with a logical one), tapping a revealed button doesn't

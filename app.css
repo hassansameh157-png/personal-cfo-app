@@ -14,6 +14,15 @@
     radial-gradient(520px 400px at 100% 12%, rgba(34,211,238,.05), transparent 55%),
     #f3f2f2;
   --c-surface:rgba(255,255,255,.72); --c-surface-2:rgba(248,244,244,.72); --c-surface-3:rgba(234,231,231,.72);
+  /* Same color as --c-surface, alpha 1 -- for the one spot (.swipe-content)
+     that isn't sitting over the muted --c-bg like every other glass card,
+     but directly over a saturated color panel (.swipe-actions' Edit/Delete
+     buttons) it must fully hide until swiped. --c-surface's translucency is
+     invisible against --c-bg's soft gradient, which is the whole point of
+     the glass look, but the same .72/.6 alpha lets 28-40% of a vivid
+     purple/red button show straight through -- a real bug reported by the
+     user with a screenshot, seen even at rest with no swipe at all. */
+  --c-surface-opaque:#fff;
   --glow-1:none;
   /* P1 fix: was #7d7979, which measures 3.55–3.94:1 on white/bg — fails
      WCAG AA (4.5:1) for the small caption/label text it's used on
@@ -115,6 +124,7 @@
       radial-gradient(560px 480px at 12% 104%, rgba(244,114,182,.13), transparent 58%),
       #06060a;
     --c-surface:rgba(24,23,38,.6); --c-surface-2:rgba(32,31,50,.55); --c-surface-3:rgba(41,40,62,.55);
+    --c-surface-opaque:#181726;
     --c-text:#f3f1fb; --c-text-soft:#bab6d6; --c-text-faint:#8f8bb0;
     --c-line:rgba(165,180,255,.22);
     --c-accent:#67e8f9; --c-accent-700:#a5f3fc; --c-accent-800:#cffafe; --c-accent-900:rgba(18,12,36,.92);
@@ -152,6 +162,7 @@
     radial-gradient(560px 480px at 12% 104%, rgba(244,114,182,.13), transparent 58%),
     #06060a;
   --c-surface:rgba(24,23,38,.6); --c-surface-2:rgba(32,31,50,.55); --c-surface-3:rgba(41,40,62,.55);
+  --c-surface-opaque:#181726;
   --c-text:#f3f1fb; --c-text-soft:#bab6d6; --c-text-faint:#8f8bb0;
   --c-line:rgba(165,180,255,.22);
   --c-accent:#67e8f9; --c-accent-700:#a5f3fc; --c-accent-800:#cffafe; --c-accent-900:rgba(18,12,36,.92);
@@ -642,7 +653,7 @@ button.bar-row{width:100%;border:0;background:none;padding:6px 0;min-height:44px
 .swipe-act{flex:1;border:0;color:#fff;font-size:13.5px;font-weight:600;cursor:pointer;font-family:inherit}
 .swipe-edit{background:var(--c-accent-fill)}
 .swipe-delete{background:var(--c-neg)}
-.swipe-content{position:relative;background:var(--c-surface);padding:12px 14px;
+.swipe-content{position:relative;background:var(--c-surface-opaque);padding:12px 14px;
   transition:transform .2s ease;touch-action:pan-y}
 @media (prefers-reduced-motion:reduce){ .swipe-content{transition:none} }
 /* Swipe is a touch gesture -- on a mouse+keyboard desktop the two-button

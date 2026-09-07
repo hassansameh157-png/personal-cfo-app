@@ -30,6 +30,39 @@ require("./_watchdog"); // shared pass/fail detector -- see that file
   console.log("has Edit + Delete swipe buttons:", await firstRow.locator(".swipe-act").count() === 2);
   console.log("still has the full rowActions link row underneath (additive, not replacing):", await firstRow.locator(".btn-row.wrap button").count() >= 3);
 
+  console.log("\n=== 1b) At rest (no swipe), Edit/Delete never visually bleed through the row ===");
+  // Real bug reported by the user with a screenshot, TWICE: Edit/Delete
+  // showing behind every row's content even with no swipe gesture at all.
+  // The first fix (test 10/11 below) addressed a real but separate JS bug
+  // (scroll misclassified as swipe); this one is the actual root cause the
+  // screenshot showed. .swipe-content used var(--c-surface), the same
+  // translucent "glass" token every other card uses -- invisible against
+  // the app's own muted background, but .swipe-content sits directly over
+  // .swipe-actions' saturated purple/red buttons, not the app background,
+  // so that same translucency let 28-40% of the button color bleed
+  // straight through even at rest. Assert what a screenshot can't: the
+  // background is actually opaque -- this alpha check is the real guard
+  // against the bug regressing (a plain elementFromPoint hit-test alone
+  // would NOT catch it: paint/DOM order already put .swipe-content above
+  // .swipe-actions before this fix too, so hit-testing was never the
+  // problem -- only the visible color bleeding through an on-top-but-
+  // translucent layer was).
+  const alpha = await firstRow.locator(".swipe-content").evaluate(el => {
+    const m = getComputedStyle(el).backgroundColor.match(/rgba?\(([^)]+)\)/);
+    const parts = m[1].split(",").map(s => s.trim());
+    return parts.length === 4 ? parseFloat(parts[3]) : 1; // rgb() with no 4th part is fully opaque
+  });
+  console.log(".swipe-content's background is fully opaque (alpha 1), not the translucent glass token:", alpha === 1);
+  // Separate, unrelated sanity check (not a regression guard for the bug
+  // above): confirms pointer routing genuinely lands on the content layer,
+  // not the actions underneath it, regardless of visual opacity.
+  const actionsBox = await firstRow.locator(".swipe-actions").boundingBox();
+  const hitsContentNotActions = await firstRow.evaluate((row, [x, y]) => {
+    const hit = document.elementFromPoint(x, y);
+    return !!hit && row.querySelector(".swipe-content").contains(hit) && !row.querySelector(".swipe-actions").contains(hit);
+  }, [actionsBox.x + actionsBox.width / 2, actionsBox.y + actionsBox.height / 2]);
+  console.log("a real point over the actions area hit-tests to the content layer (pointer routing sanity check):", hitsContentNotActions);
+
   console.log("\n=== 2) A reversed (non-editable) transaction gets NO swipe wrapper ===");
   const rowId = await firstRow.evaluate(el => el.querySelector(".swipe-edit").getAttribute("onclick").match(/openTxEdit\('([^']+)'\)/)[1]);
   await page.evaluate((id) => UI.reverseTx(id), rowId);
