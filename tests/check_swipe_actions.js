@@ -132,6 +132,58 @@ require("./_watchdog"); // shared pass/fail detector -- see that file
   console.log("RTL swipe snaps open with a POSITIVE translateX (144px, not -144):", rtlTransform.includes("144") && !rtlTransform.includes("-144"));
   console.log("RTL row has swipe-open class:", await contentRtl.evaluate(el => el.classList.contains("swipe-open")));
 
+  console.log("\n=== 10) Ordinary vertical scrolling (with natural sideways jitter) never opens the row ===");
+  // Real bug reported by the user with a screenshot: scrolling the list on
+  // a real phone was leaving rows stuck open, Edit/Delete visibly showing
+  // behind the content. Root cause: the old horizontal-vs-vertical decision
+  // locked in the instant EITHER axis crossed a 6px dead zone, using a bare
+  // dx > dy tiebreak -- the very first touchmove of a real finger scroll is
+  // rarely perfectly vertical, so a slightly-larger-than-dy sideways nudge
+  // right at the start would win that coin flip, lock the gesture in as a
+  // "swipe" for its entire remaining duration, and once locked,
+  // e.preventDefault() blocks the page from ever scrolling -- so the
+  // finger's continued vertical travel just keeps accumulating as raw dx
+  // instead, eventually crossing the open threshold and leaving the row
+  // stuck open. Simulate exactly that: an ambiguous first nudge (dx
+  // slightly exceeds dy), then a long, clearly-vertical scroll (dy
+  // massively dominates every later step) -- a real scroll gesture from a
+  // person's thumb, start to finish.
+  await page.evaluate(() => { UI.setLang("en"); });
+  await page.waitForTimeout(150);
+  const scrollContent = page.locator(".swipe-content").first();
+  const scrollBox = await scrollContent.boundingBox();
+  const scx = scrollBox.x + scrollBox.width / 2, scy = scrollBox.y + scrollBox.height / 2;
+  await scrollContent.evaluate((el, [x, y]) => window.__dispatchTouch(el, "touchstart", x, y), [scx, scy]);
+  for (const [ddx, ddy] of [[-8, -5], [-15, -40], [-25, -90], [-40, -160], [-80, -250]]) {
+    await scrollContent.evaluate((el, [x, y]) => window.__dispatchTouch(el, "touchmove", x, y), [scx + ddx, scy + ddy]);
+  }
+  await scrollContent.evaluate(el => window.__dispatchTouch(el, "touchend", 0, 0));
+  await page.waitForTimeout(200);
+  console.log("row did NOT open from a mostly-vertical scroll gesture:", !(await scrollContent.evaluate(el => el.classList.contains("swipe-open"))));
+  console.log("transform stayed at rest (no leftover partial slide):", !(await scrollContent.evaluate(el => el.style.transform)).includes("translateX(-"));
+
+  console.log("\n=== 11) A steady diagonal swipe (dx clearly bigger than dy, but under the 1.75x bar) still opens the row ===");
+  // Found in code review while fixing #10 above: making "horizontal" require
+  // dx > dy*1.75 to lock in protects real scrolls, but a drag held at a
+  // constant angle whose dx/dy ratio sits between 1x and 1.75x (a real,
+  // fairly steady diagonal swipe -- not a scroll) would grow both axes in
+  // that same proportion forever and NEVER cross either bar, leaving
+  // drag.horizontal stuck at null for the whole gesture: no preventDefault,
+  // no transform update, nothing on release -- a deliberate swipe silently
+  // doing nothing. Simulate exactly that (ratio ~1.25 throughout) and
+  // confirm it still resolves once the drag is unambiguously large.
+  await scrollContent.evaluate(el => { el.style.transition = ""; el.style.transform = "translateX(0)"; el.classList.remove("swipe-open"); });
+  await page.waitForTimeout(100);
+  const diagBox = await scrollContent.boundingBox();
+  const dgx = diagBox.x + diagBox.width - 20, dgy = diagBox.y + diagBox.height / 2;
+  await scrollContent.evaluate((el, [x, y]) => window.__dispatchTouch(el, "touchstart", x, y), [dgx, dgy]);
+  for (const [ddx, ddy] of [[-10, -8], [-20, -16], [-31, -25], [-60, -48], [-90, -72]]) {
+    await scrollContent.evaluate((el, [x, y]) => window.__dispatchTouch(el, "touchmove", x, y), [dgx + ddx, dgy + ddy]);
+  }
+  await scrollContent.evaluate(el => window.__dispatchTouch(el, "touchend", 0, 0));
+  await page.waitForTimeout(200);
+  console.log("a steady diagonal swipe (never crosses the 1.75x bar) still snaps the row open:", await scrollContent.evaluate(el => el.classList.contains("swipe-open")));
+
   console.log("\nerrors:", errors.length ? errors : "none");
   console.log("no unexpected JS errors:", errors.length === 0);
   await browser.close();

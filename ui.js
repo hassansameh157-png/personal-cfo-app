@@ -172,14 +172,41 @@ const UI = {
       if (!drag) return;
       const t = e.touches[0];
       const dx = t.clientX - drag.startX, dy = t.clientY - drag.startY;
-      // Undecided until the drag clears a small dead zone -- otherwise an
-      // almost-vertical scroll gesture that happens to start with a
-      // pixel or two of horizontal jitter would get mistaken for a swipe
-      // and hijack the page's own vertical scrolling.
-      if (drag.horizontal === null && (Math.abs(dx) > 6 || Math.abs(dy) > 6)) {
-        drag.horizontal = Math.abs(dx) > Math.abs(dy);
+      const adx = Math.abs(dx), ady = Math.abs(dy);
+      // Real bug reported with a screenshot: ordinary vertical scrolling
+      // through the transactions list was getting misread as swipes,
+      // leaving rows stuck part-open (Edit/Delete visibly showing behind
+      // the content instead of staying hidden until an actual swipe). The
+      // old rule locked in "horizontal" the instant EITHER axis passed a
+      // 6px dead zone, using a bare dx > dy -- on a real finger (never
+      // perfectly vertical), a scroll that happened to drift sideways by
+      // a single extra pixel at that exact moment would win the coin
+      // flip and hijack the whole gesture. Fixed by biasing hard toward
+      // "this is a scroll": vertical locks in as soon as it's the larger
+      // axis past a small dead zone (protecting scroll early), while
+      // horizontal only locks in once it's not just larger but clearly
+      // dominant (1.75x) past a bigger dead zone -- so an ambiguous,
+      // mostly-vertical drag reliably reads as a scroll, and only a
+      // deliberate, clearly-sideways gesture reads as a swipe. That 1.75x
+      // requirement leaves a dead band (ady/adx between 1x and 1.75x) that
+      // a perfectly diagonal drag never escapes -- caught in code review:
+      // a swipe held at a steady ~30-40deg angle would grow dx and dy in
+      // the same proportion forever, so drag.horizontal would stay null
+      // for the whole gesture and the swipe would silently do nothing (no
+      // preventDefault, no visual feedback, nothing on release). The third
+      // branch below forces a decision once a drag is unambiguously large
+      // even if it never cleared the stricter ratio, so only small,
+      // still-genuinely-ambiguous movements stay undecided.
+      if (drag.horizontal === null) {
+        if (ady > 8 && ady >= adx) {
+          drag.horizontal = false;
+        } else if (adx > 12 && adx > ady * 1.75) {
+          drag.horizontal = true;
+        } else if (adx > 24 || ady > 24) {
+          drag.horizontal = adx > ady;
+        }
       }
-      if (!drag.horizontal) return;
+      if (drag.horizontal !== true) return;
       e.preventDefault();
       const lo = Math.min(0, drag.openAt), hi = Math.max(0, drag.openAt);
       drag.lastX = Math.max(lo, Math.min(hi, drag.base + dx));

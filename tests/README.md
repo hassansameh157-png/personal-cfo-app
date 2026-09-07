@@ -80,9 +80,17 @@ account can be deleted, a card's Available/Limit stay consistent).
   drag past halfway snaps open and a short one snaps back closed, opening
   one row closes any other, RTL (Arabic) reveals on the correct physical
   side (a real bug: `translateX` is a physical property, `.swipe-actions`
-  is positioned with a logical one), and tapping a revealed button doesn't
+  is positioned with a logical one), tapping a revealed button doesn't
   slide the row shut under the tap (a real bug: the buttons live in
-  `.swipe-actions`, a sibling of `.swipe-content`, not inside it).
+  `.swipe-actions`, a sibling of `.swipe-content`, not inside it), an
+  ordinary vertical scroll through the list never gets mistaken for a
+  swipe (a real bug reported by the user with a screenshot: a bare
+  `dx > dy` tiebreak past a tiny 6px dead zone let a scroll's very first,
+  barely-sideways pixel decide the whole gesture, leaving rows stuck open
+  in production), and a steady diagonal swipe still opens the row despite
+  that fix's stronger scroll bias (a real bug caught in code review: the
+  fix's `dx > dy*1.75` bar left a dead band a proportional diagonal drag
+  could never cross, so the swipe would silently do nothing).
 - `check_budget_ring.js` — the circular progress ring for the overall
   monthly budget: appears only once a budget is set, tracks
   normal/near/over color state, the label reads the true percentage even
