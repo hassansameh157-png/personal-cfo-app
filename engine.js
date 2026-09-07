@@ -10,6 +10,10 @@ class Engine {
       // UI.viewCategoryTx() to disambiguate an "Other" tap (see there),
       // and ignored for any real, named category.
       horizon: 30, filt: { q: "", type: "all", account: "all", preset: "all", category: "all", categoryKind: "" }, openPlan: null, saved: "",
+      // "Group similar" toggle on Transactions (mobile only) -- see
+      // UI.toggleGroupTx()'s own comment. Not part of `filt` above: it's a
+      // display option, not a filter narrowing which rows match.
+      groupTx: false,
       // Set the instant a persist() actually fails to reach localStorage --
       // see persist() itself -- and cleared the instant one succeeds again.
       // Not persisted itself for the obvious reason: if storage is what's

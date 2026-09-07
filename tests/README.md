@@ -150,6 +150,22 @@ account can be deleted, a card's Available/Limit stay consistent).
   earlier `created` timestamp, and both the mobile card and desktop
   table render it consistently (one shared helper, not two copies that
   could drift — a real duplication caught in review).
+- `check_group_similar_tx.js` — the opt-in, mobile-only "Group similar"
+  toggle on Transactions: off by default with every row still plain,
+  turning it on collapses rows sharing type + category + description
+  into one expandable summary (correct occurrence count and aggregate
+  total), a same-text description under a different category or with
+  no repeat stays ungrouped, expanding reveals every real member with
+  its full normal Edit/Delete/Duplicate actions intact, and the
+  desktop table is completely untouched by the toggle. Also covers two
+  real bugs caught in review before shipping: a voided/reversed row
+  matching an otherwise-groupable description never joins the group
+  (its amount previously inflated the total with no visual sign once
+  merged in), and two `installment_payment` rows from economically
+  opposite-direction plans never group together (that type's sign
+  depends on the specific plan, not the type alone, so the type is
+  excluded from grouping entirely rather than risk netting unrelated
+  debts into one misleading figure).
 
 ## Adding a new one
 

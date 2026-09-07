@@ -626,6 +626,17 @@ button.bar-row{width:100%;border:0;background:none;padding:6px 0;min-height:44px
    grid leaves a lone last item -- give it the full row instead of
    stranding it in the first (narrower) column. */
 @media (max-width:640px){ .filter-row{grid-template-columns:1fr 1fr} .filter-row>:last-child{grid-column:1/-1} }
+/* "Group similar" checkbox (mobile-only, see UI.toggleGroupTx()) and the
+   collapsible group row it turns on. */
+.group-tx-toggle{display:flex;align-items:center;gap:8px;font-size:14px;color:var(--c-text-soft);margin:-4px 0 14px;cursor:pointer}
+.group-tx-toggle input{width:18px;height:18px;accent-color:var(--c-accent-fill);cursor:pointer}
+.tx-group{margin-bottom:8px}
+.tx-group-head{display:block;width:100%;text-align:inherit;font:inherit;color:inherit;
+  background:var(--c-surface);border:1px solid var(--c-line);border-radius:10px;padding:12px 14px;cursor:pointer;position:relative}
+.tx-group-head[aria-expanded="true"]{border-color:var(--c-accent-fill)}
+.tx-group-toggle{position:absolute;inset-inline-end:12px;top:12px;font-size:11px;color:var(--c-text-faint)}
+.tx-group-members{margin-top:8px;padding-inline-start:14px;border-inline-start:2px solid var(--c-line);
+  display:flex;flex-direction:column;gap:8px}
 .input{border:1px solid var(--c-line);border-radius:8px;padding:9px 11px;background:var(--c-surface);min-height:44px;width:100%}
 /* Every .input (text/number/date/select) relied on the browser's own
    default focus ring -- functional, but the one interactive state in the

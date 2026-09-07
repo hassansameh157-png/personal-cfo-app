@@ -264,6 +264,22 @@ const UI = {
   // exclusive with it for the same reason openModal() above clears both.
   toggleQuickAdd() { this.app.state.quickAddOpen = !this.app.state.quickAddOpen; this.app.state.moreOpen = false; this.render(); },
   setLang(l) { this.app.state.lang = l; this.render(); },
+  // Off by default -- the plain flat Transactions list is unchanged unless
+  // the user turns this on. Mobile-only (see groupTxItems()'s own comment
+  // for why): the desktop table is already a denser, all-columns-visible
+  // view where a repeated row is easy to spot on its own, and keeping this
+  // to one layout means only one grouping/pagination interaction to reason
+  // about.
+  toggleGroupTx() { this.app.state.groupTx = !this.app.state.groupTx; this.render(); },
+  // Expand/collapse one "similar transactions" group -- transient view
+  // state, not app data, so it lives on the UI object (this._expandedTxGroups,
+  // lazily created) rather than app.state, same reasoning flipCardC's own
+  // per-tile flip state already establishes.
+  toggleTxGroup(id) {
+    this._expandedTxGroups = this._expandedTxGroups || new Set();
+    if (this._expandedTxGroups.has(id)) this._expandedTxGroups.delete(id); else this._expandedTxGroups.add(id);
+    this.render();
+  },
   // Short physical buzz for a real moment -- currently every destructive
   // confirm() dialog (see hapticConfirm() below), the instant the user
   // actually accepts it. Feature-detected: navigator.vibrate doesn't exist
@@ -1883,6 +1899,126 @@ const UI = {
     if (!r.category || !firstCatIds.has(r.id)) return "";
     return ' <span class="first-cat-badge">✦ ' + esc(this.app.L("First", "أول")) + " " + esc(r.category) + "</span>";
   },
+  // One mobile transaction card's markup -- item is the same {r, isIn,
+  // amtTxt, acc, tone} shape txSign() + the row itself already produce.
+  // Extracted out of renderTransactions()'s cards builder unchanged (byte-
+  // identical output to before) so txGroupRowHtml() below can render a
+  // group's individual members with it too, instead of a second near-
+  // duplicate copy of this markup.
+  txCardRowHtml(item, firstCatIds, typeLabels, t) {
+    const { r, isIn, amtTxt, acc, tone } = item;
+    const app = this.app;
+    const editable = app.txEditable(r);
+    const inner = '<div class="card-row-top"><div><div class="card-row-title">' + (r.category ? '<span class="cat-badge" style="background:' + app.categoryColor(r.category, r.type) + '">' + svgIcon(categoryIcon(r.category), 12) + "</span>" : "") + esc(r.desc || "—") + '</div><div class="card-row-sub">' + r.date + " · " + esc(typeLabels[r.type] || r.type) + "</div></div>" +
+      '<div class="card-row-amt ' + tone + '">' + amtTxt + "</div></div>" +
+      '<div class="card-row-meta">' +
+        (r.personId ? '<span>' + esc(app.personName(r.personId)) + "</span>" : "") +
+        '<span>' + esc(acc) + "</span>" +
+        this.firstCatBadgeHtml(r, firstCatIds) +
+      "</div>" +
+      this.txTagChips(r) +
+      this.txRowActions(r);
+    const rowStyle = r.category ? ' style="border-inline-start:4px solid ' + app.categoryColor(r.category, r.type) + '"' : "";
+    if (!editable) return '<div class="card-row' + (r.void ? " voided" : "") + '"' + rowStyle + ">" + inner + "</div>";
+    return '<div class="card-row swipe-row' + (r.void ? " voided" : "") + '"' + rowStyle + ">" +
+      '<div class="swipe-actions">' +
+        '<button class="swipe-act swipe-edit" onclick="UI.openTxEdit(\'' + r.id + '\')">' + esc(t.edit) + "</button>" +
+        '<button class="swipe-act swipe-delete" onclick="UI.deleteTxC(\'' + r.id + '\')">' + esc(t.delete) + "</button>" +
+      "</div>" +
+      '<div class="swipe-content">' + inner + "</div>" +
+    "</div>";
+  },
+  // "Group similar": collapses transactions sharing the same type,
+  // category, and (trimmed, case-insensitive) description -- a recurring
+  // bill, a repeated merchant -- into one row, only among what's ALREADY
+  // on screen (this page's `items`, already filtered and paginated the
+  // normal way), not a second, wider pass over the whole ledger. Keeps
+  // this purely a display transform layered on top of the existing
+  // pagination/total-count logic rather than a second one that would need
+  // to agree with it -- deliberately mobile-only (see toggleGroupTx()) so
+  // there's only one grouping/pagination interaction to reason about, not
+  // two independent ones for two different layouts. A description-less
+  // row (transfers, statement payments, plain reversals -- desc can be
+  // empty) never groups, even with another equally-blank one; blank
+  // isn't a real repeated merchant.
+  //
+  // Real bugs caught in review, both fixed by being conservative about
+  // what's even eligible to group:
+  // - Only expense/income/refund/investment_return participate -- every
+  //   other type either has no fixed sign of its own (installment_payment's
+  //   sign depends on that specific plan's direction, not the type alone;
+  //   two payments from economically OPPOSITE plans could otherwise net
+  //   together into one misleading group total) or has no category to
+  //   begin with, so grouping them by blank category + coincidentally
+  //   similar desc text risked folding unrelated things together.
+  // - A void/reversed row is excluded from grouping entirely -- it's
+  //   already shown individually with its own muted/strikethrough
+  //   treatment elsewhere in this same page; silently folding its amount
+  //   into a live group's total (with no visual distinction once merged)
+  //   would misstate that total.
+  // JSON.stringify(...) for the key itself, not a hand-joined string with
+  // "|" as a delimiter -- a category or description containing a literal
+  // "|" could otherwise collide with a different category/desc split that
+  // happens to produce the same joined string.
+  groupTxItems(items) {
+    const eligibleTypes = ["expense", "income", "refund", "investment_return"];
+    const keyOf = (r) => (!r.void && eligibleTypes.includes(r.type) && r.desc && r.desc.trim())
+      ? JSON.stringify([r.type, r.category || "", r.desc.trim().toLowerCase()]) : null;
+    const groups = {};
+    items.forEach(item => {
+      const k = keyOf(item.r);
+      if (k) (groups[k] = groups[k] || []).push(item);
+    });
+    const seen = new Set();
+    const out = [];
+    items.forEach(item => {
+      const k = keyOf(item.r);
+      if (!k) { out.push({ single: item }); return; }
+      if (seen.has(k)) return;
+      seen.add(k);
+      const members = groups[k];
+      out.push(members.length > 1 ? { group: members } : { single: item });
+    });
+    return out;
+  },
+  // A collapsible summary row for one "similar transactions" group --
+  // total (signed sum, same convention txSign()'s own amtTxt uses),
+  // occurrence count, tap/Enter to expand and reveal each real member
+  // (rendered via cardRow, the exact same fully-editable/swipeable markup
+  // an ungrouped row gets -- a group is just a folder around normal rows,
+  // never a second, lesser representation of them). Content-based id (not
+  // an array index) so which group is expanded survives a re-render
+  // triggered by something else (a save, a filter tweak) instead of
+  // silently pointing at whatever now sits at that same position.
+  txGroupRowHtml(members, cardRow) {
+    const app = this.app;
+    const first = members[0].r;
+    const signedSum = members.reduce((s, m) => s + m.signed, 0);
+    // Same zero-suppression convention txSign()'s own amtTxt uses -- real
+    // bug caught in review: app.fmtS() always prepends a +/- sign, which
+    // for an exact-zero net (e.g. a group whose members happen to cancel
+    // out) would show a misleading "+0.00" instead of the plain, sign-less
+    // amount every other zero-value row in the app displays.
+    const amtTxt = signedSum === 0 ? app.fmt(0) : app.fmtS(signedSum);
+    const tone = signedSum > 0 ? "tone-pos" : signedSum < 0 ? "tone-neg" : "";
+    // Content-based, NOT truncated -- real bug caught in review: an
+    // earlier version capped the sanitized description at 40 characters,
+    // so two distinct groups whose descriptions merely agreed on their
+    // first 40 sanitized characters would collide on the same groupId and
+    // share expand/collapse state. An HTML id has no meaningful length
+    // limit, so there's no reason to cap it just for tidiness.
+    const groupId = "grp-" + first.type + "-" + (first.category || "none").replace(/[^a-zA-Z0-9]/g, "_") + "-" + first.desc.trim().toLowerCase().replace(/[^a-zA-Z0-9]/g, "_");
+    this._expandedTxGroups = this._expandedTxGroups || new Set();
+    const expanded = this._expandedTxGroups.has(groupId);
+    const rowStyle = first.category ? ' style="border-inline-start:4px solid ' + app.categoryColor(first.category, first.type) + '"' : "";
+    const header = '<button class="card-row tx-group-head" type="button"' + rowStyle + ' aria-expanded="' + (expanded ? "true" : "false") + '" onclick="UI.toggleTxGroup(\'' + groupId + '\')">' +
+      '<div class="card-row-top"><div><div class="card-row-title">' + (first.category ? '<span class="cat-badge" style="background:' + app.categoryColor(first.category, first.type) + '">' + svgIcon(categoryIcon(first.category), 12) + "</span>" : "") + esc(first.desc) + '</div><div class="card-row-sub">' + esc(app.L(members.length + " similar transactions", members.length + " حركة متشابهة")) + "</div></div>" +
+        '<div class="card-row-amt ' + tone + '">' + amtTxt + "</div></div>" +
+      '<div class="tx-group-toggle">' + (expanded ? "▲" : "▼") + "</div>" +
+    "</button>";
+    const memberRows = expanded ? '<div class="tx-group-members">' + members.map(cardRow).join("") + "</div>" : "";
+    return '<div class="tx-group">' + header + memberRows + "</div>";
+  },
   // ---- Transactions (fix #2 cards, fix #4 pagination) -------------------
   renderTransactions(D, t) {
     const app = this.app, S = app.state, d = app.state.data;
@@ -1966,27 +2102,18 @@ const UI = {
     // was. Only a row app.txEditable() actually allows editing/deleting
     // gets the swipe wrapper at all -- one that doesn't (already reversed,
     // or a kind with no edit form) would reveal actions that do nothing.
-    const cards = '<div class="card-list mobile-only">' + items.map(({ r, isIn, amtTxt, acc, tone }) => {
-      const editable = app.txEditable(r);
-      const inner = '<div class="card-row-top"><div><div class="card-row-title">' + (r.category ? '<span class="cat-badge" style="background:' + app.categoryColor(r.category, r.type) + '">' + svgIcon(categoryIcon(r.category), 12) + "</span>" : "") + esc(r.desc || "—") + '</div><div class="card-row-sub">' + r.date + " · " + esc(typeLabels[r.type] || r.type) + "</div></div>" +
-        '<div class="card-row-amt ' + tone + '">' + amtTxt + "</div></div>" +
-        '<div class="card-row-meta">' +
-          (r.personId ? '<span>' + esc(app.personName(r.personId)) + "</span>" : "") +
-          '<span>' + esc(acc) + "</span>" +
-          this.firstCatBadgeHtml(r, firstCatIds) +
-        "</div>" +
-        tagChips(r) +
-        rowActions(r);
-      const rowStyle = r.category ? ' style="border-inline-start:4px solid ' + app.categoryColor(r.category, r.type) + '"' : "";
-      if (!editable) return '<div class="card-row' + (r.void ? " voided" : "") + '"' + rowStyle + ">" + inner + "</div>";
-      return '<div class="card-row swipe-row' + (r.void ? " voided" : "") + '"' + rowStyle + ">" +
-        '<div class="swipe-actions">' +
-          '<button class="swipe-act swipe-edit" onclick="UI.openTxEdit(\'' + r.id + '\')">' + esc(t.edit) + "</button>" +
-          '<button class="swipe-act swipe-delete" onclick="UI.deleteTxC(\'' + r.id + '\')">' + esc(t.delete) + "</button>" +
-        "</div>" +
-        '<div class="swipe-content">' + inner + "</div>" +
-      "</div>";
-    }).join("") + "</div>";
+    // Extracted into its own method (real behavior preserved exactly, same
+    // output) so txGroupRowHtml() below can render each member of an
+    // expanded "similar transactions" group with the identical markup a
+    // plain ungrouped row gets, instead of a second near-duplicate copy.
+    const cardRow = (item) => this.txCardRowHtml(item, firstCatIds, typeLabels, t);
+    // "Group similar" (mobile only -- see toggleGroupTx()'s own comment for
+    // why): off by default, so the plain flat list below is completely
+    // unchanged unless the user turns it on.
+    const cardItems = S.groupTx ? this.groupTxItems(items) : items.map(item => ({ single: item }));
+    const cards = '<div class="card-list mobile-only">' + cardItems.map(entry =>
+      entry.single ? cardRow(entry.single) : this.txGroupRowHtml(entry.group, cardRow)
+    ).join("") + "</div>";
 
     const loadMore = total > S.txVisible ? '<button class="btn btn-secondary block" onclick="UI.loadMoreTx()">' + esc(t.loadMore) + " (" + (total - S.txVisible) + ")</button>" : "";
 
@@ -2025,10 +2152,14 @@ const UI = {
       // bar tap (see viewCategoryTx()/the "Other" scoping above).
       '<select class="input" onchange="UI.setFilters({categoryKind:\'\',category:this.value})">' + catOptions + "</select>" +
     "</div>";
+    // Mobile-only (see toggleGroupTx()'s own comment for why); this
+    // checkbox doesn't touch `filt` at all, so it survives a filter change
+    // that would otherwise reset an unrelated view option along with it.
+    const groupToggle = '<label class="group-tx-toggle mobile-only"><input type="checkbox" ' + (S.groupTx ? "checked" : "") + ' onchange="UI.toggleGroupTx()"><span>' + esc(app.L("Group similar", "تجميع المتشابه")) + "</span></label>";
 
     return this.tabHeader(t.transactions, total + app.L(" records match your filters", " حركة مطابقة للفلاتر"),
       [[t.aIncome, "UI.openModal('income')"], [t.aTransfer, "UI.openModal('transfer')"]]) +
-      filters + (total ? table + cards + loadMore : this.emptyState(ICON_SEARCH, t.noMatches, app.L("Try a different search or clear a filter above.", "جرب بحث تاني أو امسح فلتر من فوق.")));
+      filters + groupToggle + (total ? table + cards + loadMore : this.emptyState(ICON_SEARCH, t.noMatches, app.L("Try a different search or clear a filter above.", "جرب بحث تاني أو امسح فلتر من فوق.")));
   },
 
   // ---- People ----------------------------------------------------------------
