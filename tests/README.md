@@ -142,6 +142,14 @@ account can be deleted, a card's Available/Limit stay consistent).
   percentage on every card, entirely absent on a plain balance account
   (wallet/bank/cash), which has no natural ceiling to show usage
   against.
+- `check_first_category_badge.js` — the "First <category>" badge on
+  the one transaction that's the true earliest use of its own category:
+  shows on the earliest, not on a later one in the same category, moves
+  with the badge-worthy transaction when it's edited to an earlier
+  date (date-driven, not entry-order), a same-date tie goes to the
+  earlier `created` timestamp, and both the mobile card and desktop
+  table render it consistently (one shared helper, not two copies that
+  could drift — a real duplication caught in review).
 
 ## Adding a new one
 

@@ -1869,6 +1869,40 @@ class Engine {
     matches.forEach(t => { counts[t.category] = (counts[t.category] || 0) + 1; });
     return Object.keys(counts).sort((a, b) => counts[b] - counts[a])[0];
   }
+  // Which transaction is the FIRST-ever use of its own category (earliest
+  // by date, tied-broken by `created` for two on the same date) -- one id
+  // per distinct kind|category, among live categorized transactions.
+  // Powers a small "first time" badge on that one row in Transactions
+  // (UI.renderTransactions()), a light way to notice a spending/income
+  // habit actually starting, not recomputed per row -- one pass over the
+  // ledger, same idiom as monthCategorySpend(). By design, the badge sits
+  // on whichever transaction is truly earliest, which for an
+  // account/category with real history usually falls outside the default
+  // 25-most-recent page (Transactions sorts newest-first) -- browsing that
+  // category specifically (a bar tap, the category filter) or paging back
+  // through history is how it's meant to be found, the same way a photo
+  // app's "on this day" only shows up once you look; it's not meant to be
+  // an always-visible indicator on the default view. "income" here folds in
+  // refund/investment_return too -- real bug caught in review: an earlier
+  // version only recognized the literal "income" type, so a
+  // refund/investment_return that happened to be the true first use of a
+  // category was invisible to this, and a later plain "income" row could
+  // wrongly claim the badge instead. Matches the same income-side bucket
+  // categoryMonthStats()/monthCategorySpend()'s callers already treat as
+  // one kind everywhere else in the app.
+  firstCategoryUseIds() {
+    const byKey = {};
+    const incomeTypes = ["income", "refund", "investment_return"];
+    for (const t of this.state.data.tx) {
+      if (t.void || !t.category) continue;
+      const kind = t.type === "expense" ? "expense" : incomeTypes.includes(t.type) ? "income" : null;
+      if (!kind) continue;
+      const key = kind + "|" + t.category;
+      const cur = byKey[key];
+      if (!cur || t.date < cur.date || (t.date === cur.date && (t.created || "") < (cur.created || ""))) byKey[key] = t;
+    }
+    return new Set(Object.values(byKey).map(t => t.id));
+  }
   deleteCategory(kind, name) {
     const data = JSON.parse(JSON.stringify(this.state.data));
     data.customCategories = data.customCategories || { income: [], expense: [] };

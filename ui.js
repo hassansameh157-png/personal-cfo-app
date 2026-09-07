@@ -1875,10 +1875,19 @@ const UI = {
       "</div>";
   },
 
+  // Shared by both the mobile card and desktop table row in
+  // renderTransactions() below -- was written out twice inline, a real
+  // maintenance risk caught in review (a future wording/icon change made
+  // to one copy and not the other would silently drift).
+  firstCatBadgeHtml(r, firstCatIds) {
+    if (!r.category || !firstCatIds.has(r.id)) return "";
+    return ' <span class="first-cat-badge">✦ ' + esc(this.app.L("First", "أول")) + " " + esc(r.category) + "</span>";
+  },
   // ---- Transactions (fix #2 cards, fix #4 pagination) -------------------
   renderTransactions(D, t) {
     const app = this.app, S = app.state, d = app.state.data;
     const typeLabels = this.txTypeLabels();
+    const firstCatIds = app.firstCategoryUseIds();
     const presetStart = { today: 0, week: 7, month: 30, quarter: 90, year: 365 };
     let rows = d.tx.slice().sort((a, b) => a.date < b.date ? 1 : (a.date > b.date ? -1 : 0));
     const F = S.filt;
@@ -1937,7 +1946,7 @@ const UI = {
         '<tr style="' + (r.void ? "opacity:.45;text-decoration:line-through" : "") + '">' +
           "<td>" + r.date + "</td>" +
           '<td><span class="tag ' + (isIn ? "tag-pos" : isTransferLike ? "tag-neu" : "tag-neg") + '">' + esc(typeLabels[r.type] || r.type) + "</span></td>" +
-          "<td>" + esc(r.desc || "—") + tagChips(r) + "</td>" +
+          "<td>" + esc(r.desc || "—") + this.firstCatBadgeHtml(r, firstCatIds) + tagChips(r) + "</td>" +
           "<td>" + esc(r.personId ? app.personName(r.personId) : "—") + "</td>" +
           "<td>" + esc(acc) + "</td>" +
           '<td class="num ' + tone + '">' + amtTxt + "</td>" +
@@ -1964,6 +1973,7 @@ const UI = {
         '<div class="card-row-meta">' +
           (r.personId ? '<span>' + esc(app.personName(r.personId)) + "</span>" : "") +
           '<span>' + esc(acc) + "</span>" +
+          this.firstCatBadgeHtml(r, firstCatIds) +
         "</div>" +
         tagChips(r) +
         rowActions(r);

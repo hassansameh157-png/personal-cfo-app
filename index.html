@@ -748,6 +748,15 @@ button.bar-row{width:100%;border:0;background:none;padding:6px 0;min-height:44px
 .card-row-sub{font-size:13px;color:var(--c-text-faint);margin-top:1px}
 .card-row-amt{font-variant-numeric:tabular-nums;font-weight:600;font-size:16.5px;white-space:nowrap}
 .card-row-meta{display:flex;gap:14px;flex-wrap:wrap;font-size:13.5px;color:var(--c-text-soft);margin-top:8px}
+/* The one row that's the earliest-ever use of its own category (see
+   Engine.firstCategoryUseIds()) -- a light way to notice a spending/
+   income habit actually starting. Tinted with the accent color rather
+   than the category's own (which .cat-badge/the row's own left-accent
+   already carry) -- this badge is about the MOMENT, not the category
+   identity, so it reads as its own distinct signal next to those. */
+.first-cat-badge{display:inline-flex;align-items:center;gap:3px;padding:2px 8px;border-radius:999px;
+  background:color-mix(in srgb, var(--c-accent-fill) 14%, transparent);
+  color:var(--c-accent-fill);font-size:12px;font-weight:600;white-space:nowrap}
 .acc-swatch{width:11px;height:11px;border-radius:999px;flex:none;margin-top:3px}
 .acc-sub{font-size:13px;color:var(--c-text-faint);margin-top:6px}
 /* Person avatar/color — same idea as an account's color+card-face swatch,
@@ -2990,6 +2999,40 @@ class Engine {
     matches.forEach(t => { counts[t.category] = (counts[t.category] || 0) + 1; });
     return Object.keys(counts).sort((a, b) => counts[b] - counts[a])[0];
   }
+  // Which transaction is the FIRST-ever use of its own category (earliest
+  // by date, tied-broken by `created` for two on the same date) -- one id
+  // per distinct kind|category, among live categorized transactions.
+  // Powers a small "first time" badge on that one row in Transactions
+  // (UI.renderTransactions()), a light way to notice a spending/income
+  // habit actually starting, not recomputed per row -- one pass over the
+  // ledger, same idiom as monthCategorySpend(). By design, the badge sits
+  // on whichever transaction is truly earliest, which for an
+  // account/category with real history usually falls outside the default
+  // 25-most-recent page (Transactions sorts newest-first) -- browsing that
+  // category specifically (a bar tap, the category filter) or paging back
+  // through history is how it's meant to be found, the same way a photo
+  // app's "on this day" only shows up once you look; it's not meant to be
+  // an always-visible indicator on the default view. "income" here folds in
+  // refund/investment_return too -- real bug caught in review: an earlier
+  // version only recognized the literal "income" type, so a
+  // refund/investment_return that happened to be the true first use of a
+  // category was invisible to this, and a later plain "income" row could
+  // wrongly claim the badge instead. Matches the same income-side bucket
+  // categoryMonthStats()/monthCategorySpend()'s callers already treat as
+  // one kind everywhere else in the app.
+  firstCategoryUseIds() {
+    const byKey = {};
+    const incomeTypes = ["income", "refund", "investment_return"];
+    for (const t of this.state.data.tx) {
+      if (t.void || !t.category) continue;
+      const kind = t.type === "expense" ? "expense" : incomeTypes.includes(t.type) ? "income" : null;
+      if (!kind) continue;
+      const key = kind + "|" + t.category;
+      const cur = byKey[key];
+      if (!cur || t.date < cur.date || (t.date === cur.date && (t.created || "") < (cur.created || ""))) byKey[key] = t;
+    }
+    return new Set(Object.values(byKey).map(t => t.id));
+  }
   deleteCategory(kind, name) {
     const data = JSON.parse(JSON.stringify(this.state.data));
     data.customCategories = data.customCategories || { income: [], expense: [] };
@@ -4951,10 +4994,19 @@ const UI = {
       "</div>";
   },
 
+  // Shared by both the mobile card and desktop table row in
+  // renderTransactions() below -- was written out twice inline, a real
+  // maintenance risk caught in review (a future wording/icon change made
+  // to one copy and not the other would silently drift).
+  firstCatBadgeHtml(r, firstCatIds) {
+    if (!r.category || !firstCatIds.has(r.id)) return "";
+    return ' <span class="first-cat-badge">✦ ' + esc(this.app.L("First", "أول")) + " " + esc(r.category) + "</span>";
+  },
   // ---- Transactions (fix #2 cards, fix #4 pagination) -------------------
   renderTransactions(D, t) {
     const app = this.app, S = app.state, d = app.state.data;
     const typeLabels = this.txTypeLabels();
+    const firstCatIds = app.firstCategoryUseIds();
     const presetStart = { today: 0, week: 7, month: 30, quarter: 90, year: 365 };
     let rows = d.tx.slice().sort((a, b) => a.date < b.date ? 1 : (a.date > b.date ? -1 : 0));
     const F = S.filt;
@@ -5013,7 +5065,7 @@ const UI = {
         '<tr style="' + (r.void ? "opacity:.45;text-decoration:line-through" : "") + '">' +
           "<td>" + r.date + "</td>" +
           '<td><span class="tag ' + (isIn ? "tag-pos" : isTransferLike ? "tag-neu" : "tag-neg") + '">' + esc(typeLabels[r.type] || r.type) + "</span></td>" +
-          "<td>" + esc(r.desc || "—") + tagChips(r) + "</td>" +
+          "<td>" + esc(r.desc || "—") + this.firstCatBadgeHtml(r, firstCatIds) + tagChips(r) + "</td>" +
           "<td>" + esc(r.personId ? app.personName(r.personId) : "—") + "</td>" +
           "<td>" + esc(acc) + "</td>" +
           '<td class="num ' + tone + '">' + amtTxt + "</td>" +
@@ -5040,6 +5092,7 @@ const UI = {
         '<div class="card-row-meta">' +
           (r.personId ? '<span>' + esc(app.personName(r.personId)) + "</span>" : "") +
           '<span>' + esc(acc) + "</span>" +
+          this.firstCatBadgeHtml(r, firstCatIds) +
         "</div>" +
         tagChips(r) +
         rowActions(r);

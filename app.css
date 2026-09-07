@@ -706,6 +706,15 @@ button.bar-row{width:100%;border:0;background:none;padding:6px 0;min-height:44px
 .card-row-sub{font-size:13px;color:var(--c-text-faint);margin-top:1px}
 .card-row-amt{font-variant-numeric:tabular-nums;font-weight:600;font-size:16.5px;white-space:nowrap}
 .card-row-meta{display:flex;gap:14px;flex-wrap:wrap;font-size:13.5px;color:var(--c-text-soft);margin-top:8px}
+/* The one row that's the earliest-ever use of its own category (see
+   Engine.firstCategoryUseIds()) -- a light way to notice a spending/
+   income habit actually starting. Tinted with the accent color rather
+   than the category's own (which .cat-badge/the row's own left-accent
+   already carry) -- this badge is about the MOMENT, not the category
+   identity, so it reads as its own distinct signal next to those. */
+.first-cat-badge{display:inline-flex;align-items:center;gap:3px;padding:2px 8px;border-radius:999px;
+  background:color-mix(in srgb, var(--c-accent-fill) 14%, transparent);
+  color:var(--c-accent-fill);font-size:12px;font-weight:600;white-space:nowrap}
 .acc-swatch{width:11px;height:11px;border-radius:999px;flex:none;margin-top:3px}
 .acc-sub{font-size:13px;color:var(--c-text-faint);margin-top:6px}
 /* Person avatar/color — same idea as an account's color+card-face swatch,
