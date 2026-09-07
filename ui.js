@@ -727,6 +727,18 @@ const UI = {
     const g = (this.app.state.data.savingsGoals || []).find(x => x.id === id); if (!g) return;
     if (this.hapticConfirm(this.app.L("Delete ") + g.name + "?")) { this.app.deleteSavingsGoal(id); this.render(); }
   },
+  // No confirm() here (unlike delete below) -- checking a to-do off, or
+  // reopening one, is never destructive: nothing is lost, and the same
+  // checkbox undoes it. A short haptic tick on the action itself (not
+  // hapticConfirm, there's no dialog to accept) gives the same tactile
+  // "done" feedback as the confirm-and-save moments elsewhere.
+  toggleTodoDoneC(id) {
+    this.haptic(); this.app.toggleTodoDone(id); this.render();
+  },
+  deleteTodoC(id) {
+    const td = (this.app.state.data.todos || []).find(x => x.id === id); if (!td) return;
+    if (this.hapticConfirm(this.app.L("Delete ") + td.title + "?")) { this.app.deleteTodo(id); this.render(); }
+  },
   setBudgetC() {
     const cat = document.getElementById("budgetCat").value;
     const amt = document.getElementById("budgetAmt").value;
@@ -1061,6 +1073,7 @@ const UI = {
       case "reports": return this.renderReports(D, t);
       case "cashflow": return this.renderCashFlow(D, t);
       case "settings": return this.renderSettings(D, t);
+      case "todos": return this.renderTodos(D, t);
       default: return "";
     }
   },
@@ -1453,6 +1466,21 @@ const UI = {
       // real possibility -- see the "|| Other" fallback there) needs the
       // same scoping viewCategoryTx() gives a real bar tap.
       cta: t.transactions + " →", act: "UI.setPage('transactions');UI.setFilters({categoryKind:'expense',category:'" + escJsArg(u.category) + "'})", sev: "info"
+    }));
+    // Plain to-do reminders due within 3 days (including already-overdue
+    // ones) -- app.dueSoonTodos() already sorts soonest-first, so slice(0,2)
+    // matches every other alert type's own display cap here. No "act": a
+    // to-do carries no financial fields to prefill a modal with, so the CTA
+    // just goes to the To-do list page itself, like the plain "go" alerts
+    // above (Credit card balance, Savings goal behind).
+    app.dueSoonTodos().slice(0, 2).forEach(td => alerts.push({
+      title: app.L("To-do due — ", "مهمة مستحقة — ") + td.title,
+      // esc(td.due): body is inserted as raw HTML below (title isn't --
+      // it's esc()'d as a whole at render time), and a to-do's due date can
+      // arrive unvalidated via Settings -> Restore from JSON, same as any
+      // other free-text field on a to-do.
+      body: (td.overdue ? app.L("Was due ", "كان مستحق ") : app.L("Due ", "مستحق ")) + esc(td.due),
+      cta: t.todos + " →", go: "todos", sev: td.overdue ? "neg" : "warn"
     }));
 
     const needsAttention = '<section class="dash-section">' +
@@ -2525,6 +2553,49 @@ const UI = {
     return this.tabHeader(t.goals, goals.length + app.L(" goal(s) · progress follows the linked account's own balance since the goal was set", " هدف · التقدم بيتابع رصيد الحساب المرتبط من وقت ما اتحدد الهدف"),
       [[t.aGoal, "UI.openModal('goal')"]]) +
       (goals.length ? '<div class="card-list" style="margin-top:14px">' + cards + "</div>" : '<div style="margin-top:14px">' + this.emptyState(ICON_PLUS, app.L("No savings goals yet", "لسه مفيش أهداف ادخار"), app.L("Add one above to start tracking progress toward it.", "ضيف هدف من فوق تبدأ تتابع تقدمك فيه.")) + "</div>");
+  },
+
+  // ---- To-do list (plain reminders -- zero financial effect) ------------
+  // Reads straight from d.todos, never from D (the derived financial
+  // snapshot) -- see Engine.submit()'s "todo"/"todo_edit" branches, which
+  // deliberately never call push(): a to-do can never appear in derive()
+  // output because nothing here ever asks it to. Not-done items first
+  // (soonest due date first among those, no-due-date last), done items at
+  // the bottom -- so a finished to-do doesn't crowd out what's still open.
+  renderTodos(D, t) {
+    const app = this.app, d = app.state.data;
+    const todos = (d.todos || []).slice().sort((a, b) => {
+      if (!!a.done !== !!b.done) return a.done ? 1 : -1;
+      if (!!a.due !== !!b.due) return a.due ? -1 : 1;
+      if (a.due !== b.due) return a.due < b.due ? -1 : 1;
+      return 0;
+    });
+    const rows = todos.map(td => {
+      const editArgs = JSON.stringify({ id: td.id, title: td.title, due: td.due || "", notes: td.notes || "" }).replace(/"/g, "&quot;");
+      // app.isTodoOverdue(), not a re-derived local check -- same shared
+      // definition dueSoonTodos() (Dashboard reminder + attentionCount
+      // badge) uses, so this page can never disagree with those about
+      // which row counts as overdue.
+      const overdue = app.isTodoOverdue(td);
+      return '<div class="card-row todo-row' + (td.done ? " todo-done" : "") + '">' +
+        '<div class="card-row-top">' +
+          '<label class="todo-check"><input type="checkbox"' + (td.done ? " checked" : "") + ' onchange="UI.toggleTodoDoneC(\'' + td.id + '\')" aria-label="' + esc(app.L("Mark done", "علّم كمنتهية")) + '"><span class="card-row-title">' + esc(td.title) + "</span></label>" +
+          // esc(td.due): a to-do's due date normally only ever comes from
+          // a <input type=date>, but a restored JSON backup (Settings ->
+          // Restore from JSON) writes this field back verbatim with no
+          // format check -- same treatment title/notes already get.
+          (td.due ? '<div class="card-row-amt' + (overdue ? " tone-neg" : "") + '">' + esc(t.dueDate) + " " + esc(td.due) + "</div>" : "") +
+        "</div>" +
+        (td.notes ? '<div class="card-row-sub">' + esc(td.notes) + "</div>" : "") +
+        (overdue ? '<div class="card-row-meta"><span class="tone-neg">' + esc(app.L("Overdue", "متأخر")) + "</span></div>" : "") +
+        '<div class="btn-row wrap">' +
+          '<button class="link-btn small" onclick="UI.openModal(\'todo_edit\',' + editArgs + ')">' + esc(app.L("Edit")) + "</button>" +
+          '<button class="link-btn small danger" onclick="UI.deleteTodoC(\'' + td.id + '\')">' + esc(app.L("Delete")) + "</button>" +
+        "</div></div>";
+    }).join("");
+    const openCount = todos.filter(td => !td.done).length;
+    return this.tabHeader(t.todos, openCount + app.L(" open · a reminder only, no financial effect", " مفتوحة · للتذكير بس، من غير أي أثر مالي"), [[app.L("+ To-do", "+ مهمة"), "UI.openModal('todo')"]]) +
+      (todos.length ? '<div class="card-list" style="margin-top:14px">' + rows + "</div>" : '<div style="margin-top:14px">' + this.emptyState(ICON_PLUS, app.L("No to-dos yet", "لسه مفيش مهام"), app.L("Add one above to get a reminder before its due date.", "ضيف مهمة من فوق وهتفكرك قبل ميعادها.")) + "</div>");
   },
 
   // ---- Savings groups (gam3eya) -----------------------------------------

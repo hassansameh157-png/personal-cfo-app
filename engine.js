@@ -118,6 +118,10 @@ class Engine {
       if (totalSpend >= overallBudget * 0.9) n += 1;
     }
     n += this.unusualSpending(monthSpend).length;
+    // Matches the Dashboard's own to-do reminder (renderDashboard) -- same
+    // reasoning as every other alert type counted above: the badge must
+    // never stay silent while a real Needs Attention card is showing.
+    n += this.dueSoonTodos().length;
     return n;
   }
 
@@ -364,7 +368,7 @@ class Engine {
 
   // ---- translations ------------------------------------------------------
   T = {
-    en: { brand: "Personal CFO", brandSub: "Financial control", dashboard: "Dashboard", accounts: "Accounts", transactions: "Transactions", people: "People", installments: "Installments", statements: "Card statements", goals: "Savings goals", ledgers: "Receivables & Payables", investments: "Investments", recurring: "Recurring", forecast: "Forecast", reports: "Reports", cashflow: "Cash flow", settings: "Settings",
+    en: { brand: "Personal CFO", brandSub: "Financial control", dashboard: "Dashboard", accounts: "Accounts", transactions: "Transactions", people: "People", installments: "Installments", statements: "Card statements", goals: "Savings goals", ledgers: "Receivables & Payables", investments: "Investments", recurring: "Recurring", forecast: "Forecast", reports: "Reports", cashflow: "Cash flow", settings: "Settings", todos: "To-do list",
       availableBalance: "Available balance", availableNote: "Spendable right now — cash, bank and wallets. Receivables, investments and credit lines are excluded.", netWorth: "Net worth", receivables: "Owed to me", payables: "I owe", investmentsShort: "Invested", available: "Available",
       position: "Current financial position", whereMoney: "Where my money is", upcoming30: "Next 30 days", seeForecast: "Forecast →", thisMonth: "This month", income: "Income", expenses: "Expenses", topCategories: "Top spend categories", needsAttention: "Needs attention",
       cash: "Cash", bank: "Bank accounts", wallets: "Smart wallets", other: "Other / cards", totalAssets: "Total assets", liabilities: "Liabilities",
@@ -380,7 +384,7 @@ class Engine {
       creditCards: "Credit cards", payCard: "Pay card", aCard: "+ Credit card", limitLabel: "Total limit", owedLabel: "Outstanding", availLabel: "Available to spend",
       edit: "Edit", delete: "Delete", loadMore: "Load more", noMatches: "No records match your filters.", more: "More", primaryNav: "Sections",
       cur: "EGP" },
-    ar: { brand: "المدير المالي", brandSub: "تحكم مالي", dashboard: "الرئيسية", accounts: "الحسابات", transactions: "الحركات", people: "الأشخاص", installments: "الأقساط", statements: "كشوف حساب الكروت", goals: "أهداف الادخار", ledgers: "لي وعليّ", investments: "الاستثمارات", recurring: "المتكررة", forecast: "التوقعات", reports: "التقارير", cashflow: "التدفقات النقدية", settings: "الإعدادات",
+    ar: { brand: "المدير المالي", brandSub: "تحكم مالي", dashboard: "الرئيسية", accounts: "الحسابات", transactions: "الحركات", people: "الأشخاص", installments: "الأقساط", statements: "كشوف حساب الكروت", goals: "أهداف الادخار", ledgers: "لي وعليّ", investments: "الاستثمارات", recurring: "المتكررة", forecast: "التوقعات", reports: "التقارير", cashflow: "التدفقات النقدية", settings: "الإعدادات", todos: "قائمة المهام",
       availableBalance: "الرصيد المتاح", availableNote: "المتاح للصرف الآن — كاش وبنك ومحافظ. لا يشمل المستحقات ولا الاستثمارات ولا حدود الكريدت.", netWorth: "صافي الثروة", receivables: "لي عند الناس", payables: "عليّ للناس", investmentsShort: "مستثمر", available: "المتاح",
       position: "الموقف المالي الحالي", whereMoney: "أين أموالي", upcoming30: "الـ 30 يوم القادمة", seeForecast: "التوقعات →", thisMonth: "هذا الشهر", income: "الإيرادات", expenses: "المصروفات", topCategories: "أكبر بنود الصرف", needsAttention: "يحتاج انتباه",
       cash: "كاش", bank: "حسابات بنكية", wallets: "محافظ إلكترونية", other: "أخرى / بطاقات", totalAssets: "إجمالي الأصول", liabilities: "الالتزامات",
@@ -502,7 +506,8 @@ class Engine {
     ["forecast", "M3 17l5-6 4 3 5-8 4 5"],
     ["reports", "M6 20V10M12 20V4M18 20v-8"],
     ["cashflow", "M3 7h12l-3-3M21 17H9l3 3M3 12h18"],
-    ["settings", "M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6M19 12l2-1-2-4-2 .6-2-1.2L14.6 4h-5.2L9 6.4 7 7.6 5 7 3 11l2 1-2 1 2 4 2-.6 2 1.2.4 2.4h5.2l.4-2.4 2-1.2 2 .6 2-4z"]
+    ["settings", "M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6M19 12l2-1-2-4-2 .6-2-1.2L14.6 4h-5.2L9 6.4 7 7.6 5 7 3 11l2 1-2 1 2 4 2-.6 2 1.2.4 2.4h5.2l.4-2.4 2-1.2 2 .6 2-4z"],
+    ["todos", "M9 11l3 3L22 4M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"]
   ];
   // primary tabs shown at all times; the rest live under "More"
   PRIMARY = ["dashboard", "transactions", "accounts", "people", "installments"];
@@ -643,7 +648,7 @@ class Engine {
       { id: "r4", name: "Mobile line", type: "expense", amount: 250, accountId: "vf", category: "Mobile", freq: "monthly", day: 15 },
       { id: "r5", name: "Streaming bundle", type: "expense", amount: 300, accountId: "card", category: "Subscriptions", freq: "yearly", day: 8 }
     ];
-    return { accounts, people, tx, plans, groups, cardStatements, savingsGoals, investments, recurring, customCategories: { income: [], expense: [] }, budgets: {}, audit: [{ at: new Date().toISOString().slice(0, 16).replace("T", " "), what: "Demo data seeded" }] };
+    return { accounts, people, tx, plans, groups, cardStatements, savingsGoals, investments, recurring, todos: [], customCategories: { income: [], expense: [] }, budgets: {}, audit: [{ at: new Date().toISOString().slice(0, 16).replace("T", " "), what: "Demo data seeded" }] };
   }
 
   // ---- engine: single source of truth ------------------------------------
@@ -1371,7 +1376,18 @@ class Engine {
       group_edit: { title: this.L("Edit savings group"), fields: [D("name", "Group name", "text", { wide: true }), D("amount", "Contribution per period", "number"), D("periods", "Number of periods", "number"), D("myTurn", "My turn (position)", "number"), D("freq", "Frequency", "select", { options: [{ v: "monthly", l: "Monthly" }, { v: "weekly", l: "Weekly" }] }), D("first", "First contribution date", "date")] },
       group_payment: { title: this.L("Record contribution"), fields: [D("date", t.date, "date"), D("groupId", "Group", "select", { options: (d.groups || []).map(g => ({ v: g.id, l: g.name })) }), D("amount", t.amount, "number"), D("accountId", "Paid from", "select", { options: accs })] },
       group_payout: { title: this.L("Record payout received"), fields: [D("date", t.date, "date"), D("groupId", "Group", "select", { options: (d.groups || []).map(g => ({ v: g.id, l: g.name })) }), D("amount", t.amount, "number"), D("accountId", "Into account", "select", { options: accs })] },
-      recurring: { title: t.aRecurring, fields: [D("name", t.name, "text"), D("type", t.type, "select", { options: [{ v: "income", l: "Income" }, { v: "expense", l: "Expense" }] }), D("amount", t.amount, "number"), D("accountId", t.account, "select", { options: accs }), D("category", t.category, "select", { options: inc.concat(cats) }), D("freq", t.frequency, "select", { options: [{ v: "daily", l: "Daily" }, { v: "weekly", l: "Weekly" }, { v: "monthly", l: "Monthly" }, { v: "quarterly", l: "Quarterly" }, { v: "yearly", l: "Yearly" }] }), D("day", "Day of month", "number")] }
+      recurring: { title: t.aRecurring, fields: [D("name", t.name, "text"), D("type", t.type, "select", { options: [{ v: "income", l: "Income" }, { v: "expense", l: "Expense" }] }), D("amount", t.amount, "number"), D("accountId", t.account, "select", { options: accs }), D("category", t.category, "select", { options: inc.concat(cats) }), D("freq", t.frequency, "select", { options: [{ v: "daily", l: "Daily" }, { v: "weekly", l: "Weekly" }, { v: "monthly", l: "Monthly" }, { v: "quarterly", l: "Quarterly" }, { v: "yearly", l: "Yearly" }] }), D("day", "Day of month", "number")] },
+      // Plain reminders -- no amount, no account, on purpose: see
+      // submit()'s "todo"/"todo_edit" branches, which never call push(),
+      // so this can never touch a balance or show up in derive() output.
+      todo: { title: this.L("+ To-do", "+ مهمة"), fields: [
+        D("title", this.L("Task", "المهمة"), "text", { wide: true }),
+        D("due", this.L("Due date (optional)", "تاريخ الاستحقاق (اختياري)"), "date"),
+        D("notes", this.L("Notes (optional)", "ملاحظات (اختياري)"), "text", { wide: true })] },
+      todo_edit: { title: this.L("Edit to-do", "تعديل المهمة"), fields: [
+        D("title", this.L("Task", "المهمة"), "text", { wide: true }),
+        D("due", this.L("Due date (optional)", "تاريخ الاستحقاق (اختياري)"), "date"),
+        D("notes", this.L("Notes (optional)", "ملاحظات (اختياري)"), "text", { wide: true })] }
     };
     if (this.state.lang === "ar") {
       Object.keys(F).forEach(k => {
@@ -1686,6 +1702,20 @@ class Engine {
       if (!need(f.name && this.n(f.amount) > 0, "Name and amount are required.")) return false;
       data.recurring.push({ id: this.uid("r"), name: f.name, type: f.type, amount: N("amount"), accountId: f.accountId, category: f.category, freq: f.freq, day: Math.max(1, Math.min(28, Math.round(N("day")) || 1)) });
       note = "Recurring rule " + f.name;
+    } else if (k === "todo") {
+      // Deliberately never calls push() (unlike almost every other kind in
+      // this function) -- a to-do is a plain reminder, not a transaction,
+      // and must have zero financial effect: no account touched, no
+      // balance/net-worth impact, nothing derive() ever sees.
+      if (!need(f.title && f.title.trim(), this.L("Give the to-do a title.", "اكتب اسم للمهمة."))) return false;
+      data.todos = (data.todos || []).concat([{ id: this.uid("td"), title: f.title.trim(), due: f.due || null, notes: (f.notes || "").trim(), done: false, created: this.today() }]);
+      note = this.L("To-do added", "اتضافت المهمة") + ": " + f.title.trim();
+    } else if (k === "todo_edit") {
+      const td = (data.todos || []).find(x => x.id === f.id);
+      if (!need(td, this.L("Pick a to-do.", "اختار مهمة."))) return false;
+      if (!need(f.title && f.title.trim(), this.L("Give the to-do a title.", "اكتب اسم للمهمة."))) return false;
+      td.title = f.title.trim(); td.due = f.due || null; td.notes = (f.notes || "").trim();
+      note = this.L("Updated to-do", "اتعدلت المهمة") + " " + td.title;
     }
     this.state.modal = null; this.state.err = "";
     this.persist(data, note);
@@ -1839,6 +1869,42 @@ class Engine {
     const g = (data.savingsGoals || []).find(x => x.id === id); if (!g) return;
     data.savingsGoals = data.savingsGoals.filter(x => x.id !== id);
     this.persist(data, "Deleted goal " + g.name);
+  }
+  // Same no-dependent-records reasoning as deleteSavingsGoal above -- a
+  // to-do is never referenced by anything else, always deletable.
+  deleteTodo(id) {
+    const data = JSON.parse(JSON.stringify(this.state.data));
+    const td = (data.todos || []).find(x => x.id === id); if (!td) return;
+    data.todos = data.todos.filter(x => x.id !== id);
+    this.persist(data, this.L("Deleted to-do ", "اتمسحت المهمة ") + td.title);
+  }
+  toggleTodoDone(id) {
+    const data = JSON.parse(JSON.stringify(this.state.data));
+    const td = (data.todos || []).find(x => x.id === id); if (!td) return;
+    td.done = !td.done;
+    this.persist(data, (td.done ? this.L("Checked off ", "اتعلّمت خلاص ") : this.L("Reopened ", "اترجعت ")) + td.title);
+  }
+  // One definition of "is this to-do overdue", shared by dueSoonTodos()
+  // below (Dashboard reminder + attentionCount badge) AND UI.renderTodos()
+  // (the To-do list page itself) -- a real duplication-drift bug class this
+  // codebase's tests/README already calls out repeatedly (e.g. the
+  // first-category-badge fix consolidating two copies that could disagree):
+  // without this, the list page and the Dashboard could each grow their own
+  // "overdue" definition and quietly stop agreeing on the same row.
+  isTodoOverdue(td) {
+    return !td.done && !!td.due && td.due < this.today();
+  }
+  // Not-done to-dos due within the next 3 days (including already-overdue
+  // ones), soonest first -- what UI.renderDashboard's Needs Attention
+  // section actually shows. 3 days, not "due today only": a reminder that
+  // only ever appears the morning it's due is easy to miss entirely if
+  // that happens to be a day the app isn't opened.
+  dueSoonTodos() {
+    const horizon = this.iso(this.addDays(new Date(), 3));
+    return (this.state.data.todos || [])
+      .filter(td => !td.done && td.due && td.due <= horizon)
+      .sort((a, b) => a.due < b.due ? -1 : (a.due > b.due ? 1 : 0))
+      .map(td => Object.assign({ overdue: this.isTodoOverdue(td) }, td));
   }
   // Custom income/expense categories — added from Settings, then show up
   // in every category dropdown (FORMS()) right alongside the built-in ones.

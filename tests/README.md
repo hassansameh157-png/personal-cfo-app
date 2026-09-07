@@ -175,6 +175,25 @@ account can be deleted, a card's Available/Limit stay consistent).
   than a separate one: a reversed/voided transaction used to render
   with a full-color dot like a live one, unlike its own muted/
   strikethrough treatment everywhere else in this same page.
+- `check_todos.js` — the To-do list: adding, editing, checking off and
+  deleting a to-do never creates a transaction and never moves available
+  balance, net worth, or the transaction count by even one (verified
+  before and after the whole flow) — Engine.submit()'s "todo"/"todo_edit"
+  branches deliberately never call the `push()` closure every other kind
+  in that function uses. A due-soon (within 3 days) or overdue to-do
+  surfaces as its own "To-do due —" card in the Dashboard's Needs
+  Attention section and in the attentionCount badge; one with no due date,
+  or one due more than 3 days out, never does; editing a to-do's due date
+  into the past re-surfaces it worded as overdue ("Was due", negative
+  tone) instead of upcoming; checking it off drops it from both the
+  Dashboard and the badge without deleting the row. Also covers a real XSS
+  finding from code review: a to-do's `due` field can arrive unvalidated
+  via Settings → Restore from JSON (same as title/notes), and an
+  HTML-bearing value used to render unescaped on both the To-do list row
+  and the Dashboard reminder card's body — fixed by escaping it on both
+  sites, and by extracting one shared `Engine.isTodoOverdue()` so the list
+  page and the Dashboard/badge can never quietly disagree about which row
+  counts as overdue.
 
 ## Adding a new one
 
