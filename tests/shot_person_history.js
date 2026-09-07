@@ -37,9 +37,14 @@ require("./_watchdog"); // shared pass/fail detector -- see that file
   }
 
   console.log("\n=== 4) Edit/Delete/Duplicate/Reverse wired from History ===");
-  const editBtn = collectionRow.first().locator("button:has-text('Edit')");
-  console.log("Edit button present on history row:", await editBtn.count() > 0);
-  await editBtn.click(); await page.waitForTimeout(200);
+  // txRowActions() -- shared with Transactions -- puts Edit/Delete/
+  // Duplicate/Reverse behind the "..." trigger's action sheet now (see
+  // UI.renderTxActionSheet()), not always-visible inline links.
+  const moreBtn = collectionRow.first().locator(".tx-more-btn");
+  console.log("'...' actions trigger present on history row:", await moreBtn.count() > 0);
+  await moreBtn.click(); await page.waitForTimeout(150);
+  console.log("Edit action present in the sheet:", await page.locator(".sheet-action:has-text('Edit')").count() > 0);
+  await page.click(".sheet-action:has-text('Edit')"); await page.waitForTimeout(200);
   console.log("edit dialog title:", await page.locator(".dialog-title").innerText());
   console.log("amount pre-filled:", await page.locator("#f_amount").inputValue());
   await page.click("button:has-text('Cancel')"); await page.waitForTimeout(150);

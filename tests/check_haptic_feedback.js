@@ -30,16 +30,22 @@ require("./_watchdog"); // shared pass/fail detector -- see that file
   console.log("=== 1) Accepting a destructive delete confirm() vibrates ===");
   await page.click(".navbtn:has-text('Transactions')");
   await page.waitForTimeout(200);
+  // Delete lives behind the "..." trigger's shared action sheet now (see
+  // UI.renderTxActionSheet()), not an always-visible inline link.
   page.once("dialog", (d) => d.accept());
   const before1 = await vibrateCount();
-  await page.locator(".card-row").first().locator("button.link-btn:has-text('Delete')").click();
+  await page.locator(".card-row").first().locator(".tx-more-btn").click();
+  await page.waitForTimeout(150);
+  await page.click(".sheet-action:has-text('Delete')");
   await page.waitForTimeout(150);
   console.log("vibrate called on accepted delete:", await vibrateCount() > before1);
 
   console.log("\n=== 2) Cancelling that same dialog does NOT vibrate ===");
   page.once("dialog", (d) => d.dismiss());
   const before2 = await vibrateCount();
-  await page.locator(".card-row").first().locator("button.link-btn:has-text('Delete')").click();
+  await page.locator(".card-row").first().locator(".tx-more-btn").click();
+  await page.waitForTimeout(150);
+  await page.click(".sheet-action:has-text('Delete')");
   await page.waitForTimeout(150);
   console.log("vibrate NOT called on a cancelled delete:", await vibrateCount() === before2);
 

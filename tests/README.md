@@ -216,6 +216,50 @@ account can be deleted, a card's Available/Limit stay consistent).
   asserting on a specific card, and `check_category_icons.js`'s Dashboard
   section was updated for the new `.cat-badge` markup in place of the old
   `.bar-name-ico` (removed entirely, no longer referenced anywhere).
+- `check_transactions_recut.js` — a real charset/doctype bug fix plus four
+  mobile-focused changes to Transactions (#33's desktop table row-height
+  was explicitly out of scope -- this user's own usage is 100% mobile).
+  `index.html` had neither a `<meta charset>` nor a `<!DOCTYPE html>`,
+  relying entirely on the browser's own charset-sniffing and quirks-mode
+  fallback -- confirmed for real via mangled `—`/`→` bytes in one browser
+  context and not another with nothing else about the page changed; both
+  are now declared explicitly, first thing in the file. #31: Edit/Reverse/
+  Duplicate/Delete moved off up to 4 always-visible inline links per row
+  into one shared "..." trigger opening `UI.renderTxActionSheet()`, reusing
+  the exact `.sheet`/`.sheet-backdrop` markup (and desktop popover
+  treatment) `renderMoreSheet()`/`renderQuickAddSheet()` already
+  established. #32: the 4 structural filter dropdowns (type/account/
+  period/category) now collapse behind a `.filters-toggle` (badged with
+  how many are active); search stays in its own always-visible row --
+  first built collapsing all 5 filters together including search, which
+  broke both real usage and every test reaching straight for `#txSearch`,
+  so it was redesigned to this split instead of patched around. #34: a
+  small color dot per real account (2 for a transfer-like row) now sits
+  ahead of the account name in every transaction row, Transactions and
+  Person Detail's History both. #35: a plain date-section header ("Today"/
+  "Yesterday"/weekday/short-date) now precedes the first card of each new
+  calendar day in the mobile list, skipped while "Group similar" is on
+  (a group can legitimately span several real dates). Two real bugs
+  surfaced by the full suite, not by ad-hoc checking, both regression-
+  guarded here: `deleteTxC()` only called `render()` on a *confirmed*
+  delete, so cancelling left the action-sheet's `.sheet-backdrop` stuck in
+  the DOM, silently intercepting the next click anywhere else on the page;
+  and `txDateGroupLabel()`'s weekday name was computed by re-parsing the
+  date-only string with the viewer's own local timezone instead of UTC,
+  rolling the displayed weekday back a day for anyone west of UTC. A third
+  bug caught in code review (not by any test failure): Person Detail's
+  History shares `txSign()` with Transactions and so already computed
+  `accColors` for #34's dots, but its own row markup never read them --
+  fixed alongside the others. Rewriting `txRowActions()` around the new
+  sheet broke a second, larger wave of tests across 9 other files that
+  clicked the old always-visible `button.link-btn:has-text('Edit'/'Delete'/
+  'Duplicate')` inline links directly (`check_category_filter.js`,
+  `smoke_batch5.js`, `check_other_kind_scoping.js`, `smoke_batch3.js`,
+  `shot_statements.js`, `check_haptic_feedback.js`, `smoke_tx_edit.js`,
+  `check_category_bug.js`, `shot_person_history.js`) -- each updated to
+  open the row's `.tx-more-btn` sheet first, and `check_swipe_actions.js`/
+  `check_group_similar_tx.js` updated their own row-actions assertions the
+  same way.
 
 ## Adding a new one
 

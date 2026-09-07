@@ -28,7 +28,12 @@ require("./_watchdog"); // shared pass/fail detector -- see that file
   console.log("first row is a swipe-row:", await firstRow.evaluate(el => el.classList.contains("swipe-row")));
   console.log("has a swipe-content child:", await firstRow.locator(".swipe-content").count() === 1);
   console.log("has Edit + Delete swipe buttons:", await firstRow.locator(".swipe-act").count() === 2);
-  console.log("still has the full rowActions link row underneath (additive, not replacing):", await firstRow.locator(".btn-row.wrap button").count() >= 3);
+  // txRowActions() now renders a single "..." trigger (opening the shared
+  // action sheet -- see UI.renderTxActionSheet()) instead of the four
+  // always-visible links this used to check for; the point being verified
+  // is unchanged though -- swipe is still additive, not a replacement, so
+  // that trigger must still be there underneath, not swapped out by swipe.
+  console.log("still has the rowActions '...' trigger underneath (additive, not replacing):", await firstRow.locator(".tx-more-btn").count() === 1);
 
   console.log("\n=== 1b) At rest (no swipe), Edit/Delete never visually bleed through the row ===");
   // Real bug reported by the user with a screenshot, TWICE: Edit/Delete

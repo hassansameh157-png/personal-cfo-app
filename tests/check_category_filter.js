@@ -40,11 +40,13 @@ require("./_watchdog"); // shared pass/fail detector -- see that file
 
   await page.click(".navbtn:has-text('Transactions')"); await page.waitForTimeout(200);
   await page.fill("#txSearch", "Work food -Talabat"); await page.waitForTimeout(200);
-  // button.link-btn -- a transaction row now offers Edit two ways (swipe
-  // panel + the always-visible rowActions link), both calling the same
-  // openTxEdit(id); the swipe one only becomes clickable once the row is
-  // actually swiped open, so target the always-visible one by class.
-  await page.locator(".card-row", { hasText: "Work food -Talabat" }).first().locator("button.link-btn:has-text('Edit')").click();
+  // A transaction row offers Edit two ways: the swipe panel, and the
+  // "..." trigger opening the shared action sheet (see
+  // UI.renderTxActionSheet()) -- the swipe one only becomes clickable
+  // once the row is actually swiped open, so use the sheet here.
+  await page.locator(".card-row", { hasText: "Work food -Talabat" }).first().locator(".tx-more-btn").click();
+  await page.waitForTimeout(150);
+  await page.click(".sheet-action:has-text('Edit')");
   await page.waitForTimeout(200);
   console.log("category before re-categorizing:", await page.locator("#f_category").inputValue());
   await page.selectOption("#f_category", "Shopping"); // this app's built-in list has no literal "Personal Expense" -- Shopping is the closest stand-in for "not Food"
@@ -67,6 +69,9 @@ require("./_watchdog"); // shared pass/fail detector -- see that file
   console.log("\n=== 3) Category filter dropdown: picking 'Shopping' shows the row; 'Food' does not ===");
   await page.click(".navbtn:has-text('Transactions')"); await page.waitForTimeout(200);
   await page.fill("#txSearch", ""); await page.waitForTimeout(150);
+  // The 4 structural dropdowns collapse behind "Filters" by default (see
+  // UI.toggleTxFilters()) -- expand before reaching one directly.
+  await page.click(".filters-toggle"); await page.waitForTimeout(150);
   const catSelect = page.locator(".filter-row select").nth(3);
   await catSelect.selectOption("Shopping"); await page.waitForTimeout(200);
   console.log("under Shopping filter, row present:", await page.locator(".card-row", { hasText: "Work food -Talabat" }).count() > 0);

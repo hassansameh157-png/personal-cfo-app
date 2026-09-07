@@ -35,6 +35,9 @@ require("./_watchdog"); // shared pass/fail detector -- see that file
 
   console.log("\n=== Manually picking 'Other' from the dropdown (no kind context) shows BOTH ===");
   await page.evaluate(() => { UI.app.state.filt.category = "all"; UI.app.state.filt.categoryKind = ""; UI.render(); });
+  // The 4 structural dropdowns collapse behind "Filters" by default (see
+  // UI.toggleTxFilters()) -- expand before reaching one directly.
+  await page.click(".filters-toggle"); await page.waitForTimeout(150);
   const catSelect = page.locator(".filter-row select").nth(3);
   await catSelect.selectOption("Other"); await page.waitForTimeout(200);
   console.log("shows uncategorized EXPENSE:", await page.locator(".card-row", { hasText: "Uncategorized EXPENSE" }).count() > 0);
@@ -43,6 +46,9 @@ require("./_watchdog"); // shared pass/fail detector -- see that file
   console.log("\n=== A stale categoryKind from an earlier bar tap doesn't leak into a fresh manual pick ===");
   await page.evaluate(() => UI.viewCategoryTx("Other", "expense")); // sets categoryKind='expense'
   await page.waitForTimeout(150);
+  // viewCategoryTx() navigates via setPage(), which resets the filters
+  // toggle back to collapsed -- re-expand before the next dropdown pick.
+  await page.click(".filters-toggle"); await page.waitForTimeout(150);
   await catSelect.selectOption("all"); await page.waitForTimeout(150);
   await catSelect.selectOption("Other"); await page.waitForTimeout(200); // manual re-pick
   console.log("categoryKind reset by the manual pick:", await page.evaluate(() => UI.app.state.filt.categoryKind) === "");

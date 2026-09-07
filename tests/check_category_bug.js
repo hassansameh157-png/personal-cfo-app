@@ -27,12 +27,12 @@ require("./_watchdog"); // shared pass/fail detector -- see that file
   await page.click(".navbtn:has-text('Transactions')"); await page.waitForTimeout(200);
   await page.fill("#txSearch", "Car — day to day"); await page.waitForTimeout(200);
   const carRow = page.locator(".card-row", { hasText: "Car — day to day" }).first();
-  // button.link-btn -- a transaction row now offers Edit two ways (the
-  // swipe panel's own button, plus the always-visible rowActions link
-  // below it, both calling the exact same openTxEdit(id)); the swipe
-  // one only becomes clickable once the row is actually swiped open, so
-  // target the always-visible one by class rather than by DOM order.
-  await carRow.locator("button.link-btn:has-text('Edit')").click(); await page.waitForTimeout(200);
+  // A transaction row offers Edit two ways: the swipe panel, and the
+  // "..." trigger opening the shared action sheet (see
+  // UI.renderTxActionSheet()) -- the swipe one only becomes clickable
+  // once the row is actually swiped open, so use the sheet here.
+  await carRow.locator(".tx-more-btn").click(); await page.waitForTimeout(150);
+  await page.click(".sheet-action:has-text('Edit')"); await page.waitForTimeout(200);
   const catBefore = await page.locator("#f_category").inputValue();
   console.log("category before any edit:", catBefore);
   await page.fill("#f_desc", "Car — day to day (toll)");
@@ -43,7 +43,10 @@ require("./_watchdog"); // shared pass/fail detector -- see that file
   console.log("\n=== 3) Duplicate: copied category survives editing the description ===");
   await page.fill("#txSearch", "Car — day to day"); await page.waitForTimeout(200);
   const carRow2 = page.locator(".card-row", { hasText: "Car — day to day" }).first();
-  await carRow2.locator("button:has-text('Duplicate')").click(); await page.waitForTimeout(200);
+  // Duplicate lives behind the "..." trigger's shared action sheet now
+  // (see UI.renderTxActionSheet()), not an always-visible inline link.
+  await carRow2.locator(".tx-more-btn").click(); await page.waitForTimeout(150);
+  await page.click(".sheet-action:has-text('Duplicate')"); await page.waitForTimeout(200);
   const dupCatBefore = await page.locator("#f_category").inputValue();
   console.log("duplicated category:", dupCatBefore);
   await page.fill("#f_desc", "Car — day to day, again");

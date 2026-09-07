@@ -320,6 +320,14 @@ h1,h2,h3{font-family:var(--font-head);font-weight:600;margin:0;text-wrap:balance
    opens, rather than only after. */
 .link-btn.danger{color:var(--c-neg)}
 .link-btn.danger:hover, .link-btn.danger:focus-visible{box-shadow:var(--glow-neg);border-radius:6px}
+/* 31 (Transactions Recut): the "..." trigger UI.txRowActions() renders
+   now, in place of the four permanent link-buttons it used to always
+   show -- muted like a plain affordance (not var(--c-accent-700), which
+   reads as "this IS the action" the way Edit/Delete used to) since
+   opening the sheet isn't itself the destination, and padded on both
+   sides (unlike .link-btn's own padding:12px 0) so the tap target is
+   more than just the three dots' own width. */
+.tx-more-btn{color:var(--c-text-faint);padding-inline:10px}
 
 /* ---- metrics row (single instance, header context) ---- */
 .metrics-row{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px;padding:10px 16px;background:var(--c-surface-2);border-bottom:1px solid var(--c-line)}
@@ -652,11 +660,28 @@ button.bar-row{width:100%;border:0;background:none;padding:6px 0;min-height:44px
 .event-amt{font-variant-numeric:tabular-nums;font-weight:600;font-size:14px;white-space:nowrap}
 
 /* ---- filters ---- */
-.filter-row{display:grid;grid-template-columns:1.4fr 1fr 1fr 1fr 1fr;gap:8px;margin-bottom:14px}
-/* 5 filters (search, type, account, preset, category) on a 2-col mobile
-   grid leaves a lone last item -- give it the full row instead of
-   stranding it in the first (narrower) column. */
-@media (max-width:640px){ .filter-row{grid-template-columns:1fr 1fr} .filter-row>:last-child{grid-column:1/-1} }
+/* 32 (Transactions Recut): search is its own always-visible row -- the one
+   filter reached for without first deciding to "go filter something", so
+   it never hides behind the toggle below the way the 4 structural
+   dropdowns do. .filters-toggle sits right next to it, not on its own
+   line, so reaching either costs the same one glance. */
+.tx-search-row{display:flex;gap:8px;margin-bottom:12px}
+.tx-search-row .input{flex:1;min-width:0}
+.filters-toggle{flex:none;position:relative}
+.filter-count{display:inline-flex;align-items:center;justify-content:center;min-width:17px;height:17px;
+  border-radius:999px;background:var(--c-accent-fill);color:#fff;font-size:10.5px;font-weight:700;
+  padding:0 4px;margin-inline-start:4px;vertical-align:middle}
+/* The 4 structural dropdowns (type/account/period/category) -- collapsed
+   behind .filters-toggle by default (see UI.toggleTxFilters()) -- on
+   mobile's narrower 2-col grid these used to sit open, taking 2 full rows
+   before a single real transaction was visible. .filters-toggle is itself
+   .mobile-only, and this override forces the row back open on desktop
+   regardless of the collapsed class, since all 4 already fit in one row
+   there and this was never the problem being fixed. */
+.filter-row{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:14px}
+@media (max-width:640px){ .filter-row{grid-template-columns:1fr 1fr} }
+.filter-row.collapsed{display:none}
+@media (min-width:781px){ .filter-row.collapsed{display:grid} }
 /* "Group similar" checkbox (mobile-only, see UI.toggleGroupTx()) and the
    collapsible group row it turns on. */
 .group-tx-toggle{display:flex;align-items:center;gap:8px;font-size:14px;color:var(--c-text-soft);margin:-4px 0 14px;cursor:pointer}
@@ -740,6 +765,14 @@ button.bar-row{width:100%;border:0;background:none;padding:6px 0;min-height:44px
 .tag-neu{background:var(--c-surface-3);color:var(--c-text-soft)}
 
 .card-list{display:flex;flex-direction:column;gap:8px}
+/* 35 (Transactions Recut): the date-section header UI.txDateGroupLabel()
+   builds -- a plain sibling of .card-row inside the same flex .card-list
+   (not a wrapper around groups of rows), so the list's own 8px gap already
+   spaces it from what's above/below; :first-child drops the extra top
+   padding since the very first header IS the list's first child. */
+.tx-date-header{font-family:var(--font-head);font-size:12.5px;font-weight:600;color:var(--c-text-faint);
+  padding:8px 2px 0;text-transform:uppercase;letter-spacing:.04em}
+.tx-date-header:first-child{padding-top:0}
 .card-row{border:1px solid var(--c-line);border-radius:10px;padding:12px 14px;background:var(--c-surface)}
 .card-row.voided{opacity:.5}
 /* ---- swipe-to-reveal (Edit/Delete) -- see initSwipeRows() in ui.js ----
@@ -789,6 +822,12 @@ button.bar-row{width:100%;border:0;background:none;padding:6px 0;min-height:44px
   background:color-mix(in srgb, var(--c-accent-fill) 14%, transparent);
   color:var(--c-accent-fill);font-size:12px;font-weight:600;white-space:nowrap}
 .acc-swatch{width:11px;height:11px;border-radius:999px;flex:none;margin-top:3px}
+/* 34 (Transactions Recut): one dot per real account behind a transaction
+   row (see UI.txSign()'s accColors), inline before the account name in
+   .card-row-meta -- a smaller, plain-inline sibling of .acc-swatch above
+   rather than that class itself, since .acc-swatch's own margin-top:3px
+   is tuned for Accounts' own flex row, not this inline-text context. */
+.tx-acc-dot{display:inline-block;width:8px;height:8px;border-radius:999px;margin-inline-end:4px;vertical-align:middle}
 .acc-sub{font-size:13px;color:var(--c-text-faint);margin-top:6px}
 /* Person avatar/color — same idea as an account's color+card-face swatch,
    just a circle with an initial instead of a card gradient (a person isn't
@@ -1013,6 +1052,27 @@ button.bar-row{width:100%;border:0;background:none;padding:6px 0;min-height:44px
   border:1px solid var(--c-line);background:var(--c-surface-2);color:var(--c-text-soft);cursor:pointer;min-height:76px}
 .sheet-item.on{color:var(--c-accent-fill);border-color:var(--c-accent-fill)}
 .sheet-item span{font-size:12.5px;text-align:center}
+/* 31 (Transactions Recut): a vertical list variant of the sheet's own
+   items, for UI.renderTxActionSheet() -- a row of icon+label per action
+   (Edit/reverse/Duplicate/Delete) rather than .sheet-grid's 3-across tile
+   layout, which reads as "pick one of several destinations" and isn't
+   right for "pick one thing to do to the row you were just looking at". */
+.sheet-actions{display:flex;flex-direction:column;gap:2px}
+.sheet-action{display:flex;align-items:center;gap:12px;width:100%;text-align:start;background:none;border:0;
+  padding:11px 4px;border-radius:10px;font:inherit;font-size:15px;color:inherit;cursor:pointer;min-height:44px;
+  /* "reverse"/"reversed" (see app.L() calls -- their EN default text is
+     lowercase to match the existing plain-link convention this replaces),
+     sitting next to "Edit"/"Duplicate"/"Delete" here, read inconsistent in
+     a proper action-sheet list the way they didn't as small inline links.
+     text-transform, not touching the JS strings or the Arabic ARW entries
+     this reads through app.L(): capitalize() has no effect on Arabic
+     script (no case concept) and is a no-op on the already-capitalized
+     English labels. */
+  text-transform:capitalize}
+.sheet-action:disabled{color:var(--c-text-faint);cursor:default}
+.sheet-action.danger{color:var(--c-neg)}
+.sheet-action-ico{flex:none;display:flex;color:var(--c-text-faint)}
+.sheet-action.danger .sheet-action-ico{color:var(--c-neg)}
 @media (min-width:900px) and (pointer:fine){
   .sheet{inset-inline:auto;bottom:auto;top:60px;inset-inline-start:210px;width:280px;border-radius:12px;max-height:80vh}
 }

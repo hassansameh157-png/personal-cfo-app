@@ -234,7 +234,7 @@ const UI = {
   },
 
   // ---- generic actions ---------------------------------------------------
-  setPage(p) { this.app.state.page = p; this.app.state.moreOpen = false; this.app.state.quickAddOpen = false; this.app.state.txVisible = 25; this._needsAttentionExpanded = false; this.render(); window.scrollTo({ top: 0 }); },
+  setPage(p) { this.app.state.page = p; this.app.state.moreOpen = false; this.app.state.quickAddOpen = false; this.app.state.txVisible = 25; this._needsAttentionExpanded = false; this._txActionRow = null; this._txFiltersOpen = false; this.render(); window.scrollTo({ top: 0 }); },
   // A person's own page: every loan and installment plan tied to them (both
   // directions) in one place, instead of scattered across Receivables &
   // Payables and Installments — the gap that made juggling several loans
@@ -284,6 +284,12 @@ const UI = {
   // to one layout means only one grouping/pagination interaction to reason
   // about.
   toggleGroupTx() { this.app.state.groupTx = !this.app.state.groupTx; this.render(); },
+  // 32 (Transactions Recut): mobile-only -- the 4 structural filter
+  // dropdowns start collapsed behind this toggle (search itself stays
+  // always visible, see renderTransactions()'s own comment on that split);
+  // purely a UI convenience flag, not persisted app state, so it's reset
+  // (collapsed again) by setPage() the same way _needsAttentionExpanded is.
+  toggleTxFilters() { this._txFiltersOpen = !this._txFiltersOpen; this.render(); },
   // Expand/collapse one "similar transactions" group -- transient view
   // state, not app data, so it lives on the UI object (this._expandedTxGroups,
   // lazily created) rather than app.state, same reasoning flipCardC's own
@@ -661,13 +667,14 @@ const UI = {
   // already in place before rendering -- both land in state before the
   // one render() call reads either).
   setFilters(obj) { Object.assign(this.app.state.filt, obj); this.app.state.txVisible = 25; this.render(true); },
-  reverseTx(id) { this.app.reverse(id); this.render(); },
+  reverseTx(id) { this._txActionRow = null; this.app.reverse(id); this.render(); },
   // Opens the same add-modal a plain entry was created from (income,
   // expense, transfer, a loan or a payment against it, an installment or a
   // gam3ya installment), pre-filled from the transaction itself — submit()
   // recognizes the carried-over `id` and updates that row in place instead
   // of posting a new one.
   openTxEdit(id) {
+    this._txActionRow = null;
     const t = this.app.state.data.tx.find(x => x.id === id);
     if (!this.app.txEditable(t)) return;
     this.openModal(this.app.txEditKind(t), Object.assign({}, t));
@@ -712,14 +719,21 @@ const UI = {
   // row — but with `id` stripped and the date reset to today, so submit()
   // posts it as a brand-new transaction instead of updating the original.
   duplicateTxC(id) {
+    this._txActionRow = null;
     const t = this.app.state.data.tx.find((x) => x.id === id);
     if (!this.app.txEditable(t)) return;
     const pre = Object.assign({}, t, { id: undefined, date: this.app.today(), created: undefined });
     this.openModal(this.app.txEditKind(t), pre);
   },
   deleteTxC(id) {
+    this._txActionRow = null;
     const app = this.app, t = app.state.data.tx.find(x => x.id === id);
-    if (app.txEditable(t) && this.hapticConfirm(app.L("Delete this transaction? This cannot be undone.", "مسح الحركة دي؟ الإجراء ده لا يمكن التراجع عنه."))) { app.deleteTx(id); this.render(); }
+    // render() must fire unconditionally, even when hapticConfirm() is
+    // cancelled -- otherwise _txActionRow's reset above never reaches the
+    // DOM and the stale .sheet-backdrop stays live, intercepting every
+    // click underneath it (real bug caught by the full test suite).
+    if (app.txEditable(t) && this.hapticConfirm(app.L("Delete this transaction? This cannot be undone.", "مسح الحركة دي؟ الإجراء ده لا يمكن التراجع عنه."))) { app.deleteTx(id); }
+    this.render();
   },
   deleteAccountC(id) {
     const a = this.app.state.data.accounts.find(x => x.id === id); if (!a) return;
@@ -893,6 +907,7 @@ const UI = {
       this.renderQuickAddFab(t) +
       this.renderMoreSheet(t) +
       this.renderQuickAddSheet(t) +
+      this.renderTxActionSheet() +
       this.renderModal(t);
       // #flashStack is NOT rendered here on purpose -- see UI.flash()'s
       // comment: it lives outside #root in the static page shell so it
@@ -1146,6 +1161,26 @@ const UI = {
     if (days < 0) return app.L(Math.abs(days) + "d overdue", "متأخر " + Math.abs(days) + " يوم");
     if (days === 0) return app.L("due today", "مستحق النهارده");
     return app.L("in " + days + "d", "خلال " + days + " يوم");
+  },
+  // 35 (Transactions Recut): the label for the plain date-section header
+  // above the first card of each new calendar day in Transactions' mobile
+  // list. A future-dated row (e.g. a recurring rule posted ahead of today)
+  // falls straight through to the same short-date fallback every other
+  // date past a week already gets; there's no real need for its own
+  // "in Nd" phrasing here the way daysUntilText() above has for a due date
+  // specifically.
+  txDateGroupLabel(dateStr) {
+    const app = this.app, today = app.today();
+    if (dateStr === today) return app.L("Today", "اليوم");
+    if (dateStr === app.iso(app.addDays(new Date(), -1))) return app.L("Yesterday", "إمبارح");
+    const daysAgo = Math.round((new Date(today) - new Date(dateStr)) / 86400000);
+    // timeZone:"UTC" is required here: dateStr is a date-only "YYYY-MM-DD"
+    // string, which Date parses as UTC midnight -- without pinning the
+    // formatter to UTC too, toLocaleDateString renders that instant in the
+    // viewer's own local zone, rolling the displayed weekday back by one
+    // for anyone west of UTC (real bug: caught for e.g. America/Los_Angeles).
+    if (daysAgo > 0 && daysAgo < 7) return new Date(dateStr).toLocaleDateString(app.state.lang === "ar" ? "ar" : "en-GB", { weekday: "long", timeZone: "UTC" });
+    return app.dshort(dateStr);
   },
 
   // Six-month net worth series, one derive(cutoff) per month-end -- shared
@@ -1927,6 +1962,14 @@ const UI = {
       ? { income: "إيراد", expense: "مصروف", transfer: "تحويل", receivable: "سلفة لي", receivable_payment: "تحصيل", payable: "دين عليّ", debt_payment: "سداد", investment_buy: "استثمار", investment_return: "عائد استثمار", installment_sale: "بيع بالتقسيط", installment_payment: "دفعة قسط", gam3ya_payment: "قسط جمعية", gam3ya_payout: "قبض جمعية", statement_payment: "سداد كشف حساب", refund: "مرتجع", adjustment: "تسوية", reversal_marker: "عكس قيد" }
       : { income: "Income", expense: "Expense", transfer: "Transfer", receivable: "Receivable", receivable_payment: "Collection", payable: "Debt", debt_payment: "Repayment", investment_buy: "Investment", investment_return: "Inv. return", installment_sale: "Inst. sale", installment_payment: "Inst. payment", gam3ya_payment: "Gam3ya in", gam3ya_payout: "Gam3ya payout", statement_payment: "Statement payment", refund: "Refund", adjustment: "Adjustment", reversal_marker: "Reversal" };
   },
+  // Same shape as Engine's own accName(id) -- just the color instead of the
+  // name -- so txSign() below can hand every row's account(s) real colors
+  // for idea 34's dots without either caller reaching into state.data.accounts
+  // itself.
+  accColor(id) {
+    const a = (this.app.state.data.accounts || []).find(x => x.id === id);
+    return a ? a.color : null;
+  },
   // Sign/amount-text/account-text/tone for one transaction row -- shared by
   // Transactions and Person Detail's History so a type added to outTypes/
   // inTypes, or the transfer-like carve-out, is automatically correct in
@@ -1944,7 +1987,12 @@ const UI = {
     const amtTxt = r.type === "reversal_marker" ? "—" : (signed === 0 ? app.fmt(r.amount) : app.fmtS(signed));
     const acc = isTransferLike ? app.accName(r.fromId) + " → " + app.accName(r.toId) : (r.accountId ? app.accName(r.accountId) : "—");
     const tone = r.void ? "muted-amt" : (signed > 0 ? "tone-pos" : signed < 0 ? "tone-neg" : "");
-    return { isIn, isTransferLike, signed, amtTxt, acc, tone };
+    // 34 (Transactions Recut): 1 or 2 hex colors (transfer-like has both a
+    // from- and a to-account) for the little dots next to the account name
+    // -- .filter(Boolean) drops a deleted/missing account's null color
+    // instead of rendering a broken/empty dot for it.
+    const accColors = isTransferLike ? [this.accColor(r.fromId), this.accColor(r.toId)].filter(Boolean) : (r.accountId ? [this.accColor(r.accountId)].filter(Boolean) : []);
+    return { isIn, isTransferLike, signed, amtTxt, acc, accColors, tone };
   },
   // Credit-card tile flip's "Recent activity" -- called lazily by
   // UI.flipCardC() the first time a given tile actually flips open, not
@@ -1977,22 +2025,48 @@ const UI = {
       '<button class="pill tag-chip" style="' + this.tagStyle(tag) + '" onclick="UI.viewTagTx(\'' + escJsArg(tag) + '\')">#' + esc(tag) + "</button>"
     ).join("") + "</div>" : "";
   },
-  // Reverse stays available on every non-void row, for a formal audit-trail
-  // correction; Edit/Delete/Duplicate only show for the plain entry types
-  // txEditable() recognizes (a structural row like an installment sale or
-  // an investment purchase is corrected through its own record instead).
-  // Shared by Transactions and Person Detail's History.
+  // 31 (Transactions Recut): a single "..." trigger opening the shared
+  // action sheet below, replacing what used to be up to 4 always-visible
+  // inline links crowding every single row -- Reverse stays available on
+  // every non-void row, for a formal audit-trail correction; Edit/Delete/
+  // Duplicate only show for the plain entry types txEditable() recognizes
+  // (a structural row like an installment sale or an investment purchase
+  // is corrected through its own record instead). Shared by Transactions
+  // and Person Detail's History.
   txRowActions(r) {
     const app = this.app;
-    return '<div class="btn-row wrap">' +
-      '<button class="link-btn small" onclick="UI.reverseTx(\'' + r.id + '\')" ' + (r.void ? "disabled" : "") + ">" + esc(r.void ? app.L("reversed") : app.L("reverse")) + "</button>" +
-      (app.txEditable(r) ?
-        '<button class="link-btn small" onclick="UI.openTxEdit(\'' + r.id + '\')">' + esc(app.L("Edit")) + "</button>" +
-        '<button class="link-btn small danger" onclick="UI.deleteTxC(\'' + r.id + '\')">' + esc(app.L("Delete")) + "</button>" +
-        '<button class="link-btn small" onclick="UI.duplicateTxC(\'' + r.id + '\')">' + esc(app.L("Duplicate", "كررها")) + "</button>"
-        : "") +
+    return '<div class="btn-row"><button type="button" class="link-btn small tx-more-btn" aria-haspopup="true" aria-label="' + esc(app.L("More actions", "إجراءات تانية")) + '" onclick="UI.openTxActions(\'' + r.id + '\')">' + svgIcon("M12 6h.01M12 12h.01M12 18h.01", 18) + "</button></div>";
+  },
+  // The sheet txRowActions() above opens -- reuses the exact .sheet/
+  // .sheet-backdrop/.sheet-handle/.sheet-title markup (and its own desktop
+  // popover treatment) renderMoreSheet()/renderQuickAddSheet() already
+  // established, just with .sheet-actions' vertical icon+label list instead
+  // of .sheet-grid's 3-across destination tiles -- this reads as "pick one
+  // thing to do to the row you were just looking at", not "pick a place to
+  // go". this._txActionRow holds which row's sheet (if any) is open.
+  renderTxActionSheet() {
+    const app = this.app, id = this._txActionRow;
+    if (!id) return "";
+    const r = app.state.data.tx.find(x => x.id === id);
+    if (!r) return "";
+    const editable = app.txEditable(r);
+    const items = [
+      ["M12 20h9M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z", app.L("Edit"), editable ? "UI.openTxEdit('" + r.id + "')" : null, false],
+      ["M1 4v6h6M3.51 15a9 9 0 1 0 2.13-9.36L1 10", r.void ? app.L("reversed") : app.L("reverse"), r.void ? null : "UI.reverseTx('" + r.id + "')", false],
+      ["M11 9h9a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-9a2 2 0 0 1-2-2v-9a2 2 0 0 1 2-2zM5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1", app.L("Duplicate", "كررها"), editable ? "UI.duplicateTxC('" + r.id + "')" : null, false],
+      ["M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M10 11v6M14 11v6", app.L("Delete"), editable ? "UI.deleteTxC('" + r.id + "')" : null, true],
+    ];
+    return '<div class="sheet-backdrop" onclick="UI.closeTxActions()"></div>' +
+      '<div class="sheet" role="dialog" aria-modal="true" aria-label="' + esc(r.desc || app.L("Transaction")) + '">' +
+        '<div class="sheet-handle"></div>' +
+        '<div class="sheet-title">' + esc(r.desc || "—") + "</div>" +
+        '<div class="sheet-actions">' + items.map(([ico, label, onclick, danger]) =>
+          '<button type="button" class="sheet-action' + (danger ? " danger" : "") + '"' + (onclick ? ' onclick="' + onclick + '"' : " disabled") + "><span class=\"sheet-action-ico\">" + svgIcon(ico, 18) + "</span>" + esc(label) + "</button>"
+        ).join("") + "</div>" +
       "</div>";
   },
+  openTxActions(id) { this._txActionRow = id; this.render(); },
+  closeTxActions() { this._txActionRow = null; this.render(); },
 
   // Shared by both the mobile card and desktop table row in
   // renderTransactions() below -- was written out twice inline, a real
@@ -2009,14 +2083,20 @@ const UI = {
   // group's individual members with it too, instead of a second near-
   // duplicate copy of this markup.
   txCardRowHtml(item, firstCatIds, typeLabels, t) {
-    const { r, isIn, amtTxt, acc, tone } = item;
+    const { r, isIn, amtTxt, acc, accColors, tone } = item;
     const app = this.app;
     const editable = app.txEditable(r);
+    // 34 (Transactions Recut): a small color dot per real account behind
+    // this row (2 for a transfer-like row) ahead of the account name --
+    // Accounts' own tiles already carry each account's color, this just
+    // gives Transactions the same visual link instead of a plain grey name
+    // with no tie back to it.
+    const accDots = (accColors || []).map(c => '<span class="tx-acc-dot" style="background:' + c + '"></span>').join("");
     const inner = '<div class="card-row-top"><div><div class="card-row-title">' + (r.category ? '<span class="cat-badge" style="background:' + app.categoryColor(r.category, r.type) + '">' + svgIcon(categoryIcon(r.category), 12) + "</span>" : "") + esc(r.desc || "—") + '</div><div class="card-row-sub">' + r.date + " · " + esc(typeLabels[r.type] || r.type) + "</div></div>" +
       '<div class="card-row-amt ' + tone + '">' + amtTxt + "</div></div>" +
       '<div class="card-row-meta">' +
         (r.personId ? '<span>' + esc(app.personName(r.personId)) + "</span>" : "") +
-        '<span>' + esc(acc) + "</span>" +
+        '<span>' + accDots + esc(acc) + "</span>" +
         this.firstCatBadgeHtml(r, firstCatIds) +
       "</div>" +
       this.txTagChips(r) +
@@ -2219,13 +2299,13 @@ const UI = {
 
     const table = '<div class="table-wrap desktop-only"><table class="table"><thead><tr>' +
       "<th>" + esc(t.date) + "</th><th>" + esc(t.type) + "</th><th>" + esc(t.details) + "</th><th>" + esc(t.person) + "</th><th>" + esc(t.account) + "</th><th class=\"num\">" + esc(t.amount) + "</th><th></th>" +
-      "</tr></thead><tbody>" + items.map(({ r, isIn, isTransferLike, amtTxt, acc, tone }) =>
+      "</tr></thead><tbody>" + items.map(({ r, isIn, isTransferLike, amtTxt, acc, accColors, tone }) =>
         '<tr style="' + (r.void ? "opacity:.45;text-decoration:line-through" : "") + '">' +
           "<td>" + r.date + "</td>" +
           '<td><span class="tag ' + (isIn ? "tag-pos" : isTransferLike ? "tag-neu" : "tag-neg") + '">' + esc(typeLabels[r.type] || r.type) + "</span></td>" +
           "<td>" + esc(r.desc || "—") + this.firstCatBadgeHtml(r, firstCatIds) + tagChips(r) + "</td>" +
           "<td>" + esc(r.personId ? app.personName(r.personId) : "—") + "</td>" +
-          "<td>" + esc(acc) + "</td>" +
+          "<td>" + (accColors || []).map(c => '<span class="tx-acc-dot" style="background:' + c + '"></span>').join("") + esc(acc) + "</td>" +
           '<td class="num ' + tone + '">' + amtTxt + "</td>" +
           "<td>" + rowActions(r) + "</td>" +
         "</tr>"
@@ -2252,9 +2332,29 @@ const UI = {
     // why): off by default, so the plain flat list below is completely
     // unchanged unless the user turns it on.
     const cardItems = S.groupTx ? this.groupTxItems(items) : items.map(item => ({ single: item }));
-    const cards = '<div class="card-list mobile-only">' + cardItems.map(entry =>
-      entry.single ? cardRow(entry.single) : this.txGroupRowHtml(entry.group, cardRow)
-    ).join("") + "</div>";
+    // 35 (Transactions Recut): a plain date-section header before the
+    // first card of each new calendar day, so a long scroll has an actual
+    // sense of "where am I in time" instead of one unbroken chain of
+    // cards. `items` (and so `cardItems` when S.groupTx is off) is already
+    // sorted newest-first (this function's own initial sort above), so
+    // this only has to watch for the date changing between consecutive
+    // entries. Skipped entirely while S.groupTx is on -- every entry here
+    // is `.single` only in the branch above that populates it that way, so
+    // this never runs against a similarity-group, which can legitimately
+    // span several different real dates (that's the whole point of the
+    // toggle) and so has no single date left to head a section with.
+    let lastTxDate = null;
+    const cards = '<div class="card-list mobile-only">' + cardItems.map(entry => {
+      const row = entry.single ? cardRow(entry.single) : this.txGroupRowHtml(entry.group, cardRow);
+      // cardItems is only ever a mix of .single/.group entries when
+      // S.groupTx is on (see the ternary above) -- when it's off every
+      // entry is .single, so `!entry.single` alone would never fire there;
+      // S.groupTx is the only real guard needed.
+      if (S.groupTx) return row;
+      const header = entry.single.r.date !== lastTxDate ? '<div class="tx-date-header">' + esc(this.txDateGroupLabel(entry.single.r.date)) + "</div>" : "";
+      lastTxDate = entry.single.r.date;
+      return header + row;
+    }).join("") + "</div>";
 
     const loadMore = total > S.txVisible ? '<button class="btn btn-secondary block" onclick="UI.loadMoreTx()">' + esc(t.loadMore) + " (" + (total - S.txVisible) + ")</button>" : "";
 
@@ -2282,8 +2382,23 @@ const UI = {
     if (F.category !== "all") catSet.add(F.category);
     const catOptions = ["all"].concat([...catSet].sort((a, b) => a.localeCompare(b))).map(c => '<option value="' + esc(c) + '"' + (F.category === c ? " selected" : "") + ">" + (c === "all" ? esc(app.L("All categories", "كل الفئات")) : esc(c)) + "</option>").join("");
 
-    const filters = '<div class="filter-row">' +
+    // 32 (Transactions Recut): search stays in its own always-visible row
+    // -- the one filter reached for without first deciding to "go filter
+    // something" -- while the 4 structural dropdowns collapse behind
+    // .filters-toggle (mobile only; forced back open on desktop by that
+    // class's own CSS regardless of `collapsed`, see app.css). Was FIRST
+    // built collapsing all 5 filters together, including search, but that
+    // broke every test (and, worse, every real use) that reaches straight
+    // for search without first expanding anything -- redesigned to this
+    // split instead of just patching the tests around the worse UX.
+    // .filter-count badges how many of the 4 dropdowns are actually
+    // narrowed from "all", so what's collapsed is never a total mystery.
+    const activeFilterCount = ["type", "account", "preset", "category"].filter(k => F[k] !== "all").length;
+    const searchRow = '<div class="tx-search-row">' +
       '<input id="txSearch" class="input" type="search" placeholder="' + esc(t.search) + '" value="' + esc(F.q) + '" oninput="UI.setFilter(\'q\', this.value)">' +
+      '<button type="button" class="btn btn-secondary filters-toggle mobile-only" aria-expanded="' + (this._txFiltersOpen ? "true" : "false") + '" onclick="UI.toggleTxFilters()">' + esc(app.L("Filters", "الفلاتر")) + (activeFilterCount ? '<span class="filter-count">' + activeFilterCount + "</span>" : "") + "</button>" +
+    "</div>";
+    const filters = '<div class="filter-row' + (this._txFiltersOpen ? "" : " collapsed") + '">' +
       '<select class="input" onchange="UI.setFilter(\'type\', this.value)">' + typeOptions + "</select>" +
       '<select class="input" onchange="UI.setFilter(\'account\', this.value)">' + accOptions + "</select>" +
       '<select class="input" onchange="UI.setFilter(\'preset\', this.value)">' + presetOptions + "</select>" +
@@ -2306,7 +2421,7 @@ const UI = {
 
     return this.tabHeader(t.transactions, total + app.L(" records match your filters", " حركة مطابقة للفلاتر"),
       [[t.aIncome, "UI.openModal('income')"], [t.aTransfer, "UI.openModal('transfer')"]]) +
-      timeline + filters + groupToggle + (total ? table + cards + loadMore : this.emptyState(ICON_SEARCH, t.noMatches, app.L("Try a different search or clear a filter above.", "جرب بحث تاني أو امسح فلتر من فوق.")));
+      timeline + searchRow + filters + groupToggle + (total ? table + cards + loadMore : this.emptyState(ICON_SEARCH, t.noMatches, app.L("Try a different search or clear a filter above.", "جرب بحث تاني أو امسح فلتر من فوق.")));
   },
 
   // ---- People ----------------------------------------------------------------
@@ -2462,10 +2577,15 @@ const UI = {
     const historyTx = d.tx.filter(x => x.personId === p.id).sort((a, b) => a.date < b.date ? 1 : (a.date > b.date ? -1 : 0));
     const historyRows = historyTx.map(x => {
       const s = this.txSign(x);
+      // Same account-color dots Transactions' own rows get (idea 34) --
+      // txSign() already computes accColors for every caller, this one just
+      // wasn't reading it (real bug caught in review: History silently
+      // never got the dots despite sharing the exact same helper).
+      const accDots = (s.accColors || []).map(c => '<span class="tx-acc-dot" style="background:' + c + '"></span>').join("");
       return '<div class="card-row' + (x.void ? " voided" : "") + '">' +
         '<div class="card-row-top"><div><div class="card-row-title">' + esc(x.desc || "—") + '</div><div class="card-row-sub">' + x.date + " · " + esc(typeLabels[x.type] || x.type) + "</div></div>" +
         '<div class="card-row-amt ' + s.tone + '">' + s.amtTxt + "</div></div>" +
-        '<div class="card-row-meta"><span>' + esc(s.acc) + "</span></div>" +
+        '<div class="card-row-meta"><span>' + accDots + esc(s.acc) + "</span></div>" +
         this.txTagChips(x) +
         this.txRowActions(x) +
         "</div>";

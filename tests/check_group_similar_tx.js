@@ -110,16 +110,19 @@ require("./_watchdog"); // shared pass/fail detector -- see that file
   await page.waitForTimeout(150);
   const memberRows = page.locator(".tx-group-members .card-row");
   console.log("expanded shows all 3 members:", await memberRows.count() === 3);
-  // button.link-btn specifically -- the always-visible rowActions Edit
-  // link, not the swipe-to-reveal .swipe-edit button each member ALSO
-  // carries (same text, would double-count otherwise -- see
-  // check_swipe_actions.js's own note on this exact ambiguity).
-  console.log("each member has its own full Edit/Delete/Duplicate actions:", await page.locator(".tx-group-members button.link-btn:has-text('Edit')").count() === 3);
+  // Each member's Edit/Delete/Duplicate/Reverse actions live behind its
+  // own "..." trigger now (see UI.renderTxActionSheet()), not
+  // always-visible inline links -- one trigger per member, distinct from
+  // the swipe-to-reveal .swipe-edit button each member ALSO carries (see
+  // check_swipe_actions.js's own note on that separate mechanism).
+  console.log("each member has its own actions trigger:", await page.locator(".tx-group-members .tx-more-btn").count() === 3);
 
   console.log("\n=== 6) Deleting a member from inside the expanded group actually removes it ===");
   const txCountBefore = await page.evaluate(() => UI.app.state.data.tx.length);
   page.once("dialog", (d) => d.accept());
-  await memberRows.first().locator("button.link-btn:has-text('Delete')").click();
+  await memberRows.first().locator(".tx-more-btn").click();
+  await page.waitForTimeout(150);
+  await page.click(".sheet-action:has-text('Delete')");
   await page.waitForTimeout(150);
   const txCountAfter = await page.evaluate(() => UI.app.state.data.tx.length);
   console.log("transaction actually removed from data:", txCountAfter === txCountBefore - 1);

@@ -60,6 +60,9 @@ require("./_watchdog"); // shared pass/fail detector -- see that file
   // Clear leftover category filter from step 3 too -- that tap now sets a
   // real category filter (see the fix note in step 3 above), a separate
   // field from #txSearch, so clearing the search box alone doesn't reset it.
+  // The 4 structural dropdowns collapse behind "Filters" by default (see
+  // UI.toggleTxFilters()) -- expand before reaching one directly.
+  await page.click(".filters-toggle"); await page.waitForTimeout(150);
   await page.locator(".filter-row select").nth(3).selectOption("all"); await page.waitForTimeout(200);
   const tripRow = page.locator(".card-row", { hasText: "Trip lunch" }).first();
   console.log("tag chips shown:", await tripRow.locator(".pill-row button").allTextContents());
@@ -70,7 +73,12 @@ require("./_watchdog"); // shared pass/fail detector -- see that file
 
   console.log("\n=== 6) Duplicate transaction ===");
   const beforeCount = await page.locator(".card-row").count();
-  await page.locator(".card-row", { hasText: "Trip lunch" }).first().locator("button:has-text('Duplicate')").click();
+  // The "..." trigger opens the shared action sheet (see
+  // UI.renderTxActionSheet()) -- Duplicate is no longer an always-visible
+  // inline link.
+  await page.locator(".card-row", { hasText: "Trip lunch" }).first().locator(".tx-more-btn").click();
+  await page.waitForTimeout(150);
+  await page.click(".sheet-action:has-text('Duplicate')");
   await page.waitForTimeout(200);
   console.log("modal opened with title:", await page.locator(".dialog-title").innerText());
   console.log("desc pre-filled:", await page.locator("#f_desc").inputValue());

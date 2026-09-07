@@ -24,11 +24,13 @@ require("./_watchdog"); // shared pass/fail detector -- see that file
   console.log("amount before edit:", await rowBefore.locator(".card-row-amt").innerText());
 
   console.log("\n=== 2) Edit it: change amount + description ===");
-  // button.link-btn -- a transaction row now offers Edit two ways (swipe
-  // panel + the always-visible rowActions link), both calling the same
-  // openTxEdit(id); the swipe one only becomes clickable once the row is
-  // actually swiped open, so target the always-visible one by class.
-  await rowBefore.locator("button.link-btn:has-text('Edit')").click();
+  // A transaction row offers Edit two ways: the swipe panel, and the
+  // "..." trigger opening the shared action sheet (see
+  // UI.renderTxActionSheet()) -- the swipe one only becomes clickable
+  // once the row is actually swiped open, so use the sheet here.
+  await rowBefore.locator(".tx-more-btn").click();
+  await page.waitForTimeout(150);
+  await page.click(".sheet-action:has-text('Edit')");
   await page.waitForTimeout(200);
   const dialogTitle = await page.locator(".dialog-title").innerText();
   console.log("edit dialog title (should say Edit, not '+ Expense'):", dialogTitle);
@@ -44,8 +46,10 @@ require("./_watchdog"); // shared pass/fail detector -- see that file
 
   console.log("\n=== 3) Delete it ===");
   page.once("dialog", (d) => d.accept());
-  // button.link-btn -- same two-Delete-buttons situation as Edit above.
-  await rowAfter.locator("button.link-btn:has-text('Delete')").click();
+  // Same shared action sheet as Edit above.
+  await rowAfter.locator(".tx-more-btn").click();
+  await page.waitForTimeout(150);
+  await page.click(".sheet-action:has-text('Delete')");
   await page.waitForTimeout(200);
   const rowDeleted = await page.locator(".card-row", { hasText: "EditMe expense" }).count();
   console.log("row removed after delete:", rowDeleted === 0);
@@ -65,7 +69,11 @@ require("./_watchdog"); // shared pass/fail detector -- see that file
   console.log("net before edit (should be -EGP 10,000-ish):", netBefore);
 
   await page.click(".navbtn:has-text('Transactions')"); await page.waitForTimeout(200);
-  await page.locator(".card-row", { hasText: "Loan v1" }).first().locator("button.link-btn:has-text('Edit')").click();
+  // Edit lives behind the "..." trigger's shared action sheet now (see
+  // UI.renderTxActionSheet()), not an always-visible inline link.
+  await page.locator(".card-row", { hasText: "Loan v1" }).first().locator(".tx-more-btn").click();
+  await page.waitForTimeout(150);
+  await page.click(".sheet-action:has-text('Edit')");
   await page.waitForTimeout(150);
   await page.fill("#f_amount", "7000");
   await page.click("button:has-text('Save')"); await page.waitForTimeout(200);
