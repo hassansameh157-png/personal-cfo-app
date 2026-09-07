@@ -776,6 +776,25 @@ const UI = {
   },
   renderMetricsRow(D, t) {
     const S = this.app.state;
+    // Real request from the user: opening one specific account, card, or
+    // category shouldn't keep showing the whole household's Available/Net
+    // worth/... up top -- it should show that ONE thing's own numbers.
+    // Scoped only on the Transactions page, and only once filtered down to
+    // exactly one account or one category -- any other page, or an
+    // unfiltered/"all" Transactions view, keeps the global row exactly as
+    // before. If a account filter AND a category filter are somehow both
+    // active at once (the two dropdowns are independent), the account
+    // wins: narrowing an already-open account further by category is
+    // still fundamentally "looking at that account".
+    if (S.page === "transactions") {
+      const F = S.filt;
+      if (F.account !== "all") {
+        const items = this.scopedAccountMetrics(F.account, D);
+        if (items) return this.renderMetricTiles(items, true);
+      } else if (F.category !== "all") {
+        return this.renderMetricTiles(this.scopedCategoryMetrics(F.category, F.categoryKind), true);
+      }
+    }
     const items = [
       [t.available, this.app.fmt(D.available), "pos"],
       [t.netWorth, this.app.fmt(D.netWorth), "neu"],
@@ -783,9 +802,73 @@ const UI = {
       [t.payables, this.app.fmt(D.payTotal), "neg"],
       [t.investmentsShort, this.app.fmt(D.invValue), "neu"]
     ];
-    return '<div class="metrics-row">' + items.map(([l, v, tone]) =>
+    return this.renderMetricTiles(items, false);
+  },
+  // scoped: true for the per-account/per-category row (2-4 tiles, sized to
+  // fit exactly that many columns at every width -- see .metrics-row.scoped
+  // in app.css for why this needs its own class rather than reusing the
+  // global row's fixed-5-columns-with-2-hidden-on-mobile layout) versus the
+  // always-5-tile global row (false).
+  renderMetricTiles(items, scoped) {
+    const cls = "metrics-row" + (scoped ? " scoped" : "");
+    const style = scoped ? ' style="--n:' + items.length + '"' : "";
+    return '<div class="' + cls + '"' + style + '>' + items.map(([l, v, tone]) =>
       '<div class="metric-tile"><div class="metric-label">' + esc(l) + '</div><div class="metric-value tone-' + tone + '">' + v + "</div></div>"
     ).join("") + "</div>";
+  },
+  // [label, formatted value, tone] tuples for one account's own scoped
+  // metrics row. Credit cards get the same Outstanding/Available/Limit +
+  // nearest statement the account tile itself shows (see renderAccounts()'s
+  // own Outstanding/Available/Limit computation -- duplicated here rather
+  // than shared, since the tile's version is woven into its card-face HTML
+  // and not easily split out on its own); every other account type
+  // (bank/wallet/cash/ecard/other) gets Balance + this month's in/out via
+  // Engine.accountMonthFlow().
+  scopedAccountMetrics(accountId, D) {
+    const app = this.app;
+    const a = (app.state.data.accounts || []).find(x => x.id === accountId);
+    if (!a) return null;
+    const bal = D.bal[accountId];
+    if (a.type === "card") {
+      const available = Math.max(0, (a.limit || 0) - Math.abs(Math.min(0, bal)));
+      const nearestStmt = D.cardStatements.filter(s => s.accountId === accountId && s.status !== "paid").sort((x, y) => x.due < y.due ? -1 : 1)[0];
+      const stmtVal = nearestStmt ? app.fmt(nearestStmt.remaining) + " · " + this.daysUntilText(nearestStmt.due) : app.L("None due", "لا يوجد");
+      return [
+        // Real bug caught in review: this used to hardcode "neg" -- wrong
+        // for a card that's fully paid off or in credit (bal >= 0), where
+        // showing the debt tone on a card that owes nothing misrepresents
+        // it. Sign-driven like the plain-account Balance tile below.
+        [app.L("Outstanding", "المديونية"), app.fmt(bal), bal < 0 ? "neg" : "pos"],
+        [app.L("Available", "المتاح"), app.fmt(available), "pos"],
+        [app.L("Limit", "الحد"), app.fmt(a.limit), "neu"],
+        [app.L("Statement due", "كشف الحساب"), stmtVal, nearestStmt && nearestStmt.overdue ? "neg" : "neu"],
+      ];
+    }
+    const flow = app.accountMonthFlow(accountId);
+    return [
+      [app.L("Balance", "الرصيد"), app.fmt(bal), bal >= 0 ? "pos" : "neg"],
+      [app.L("In this month", "وارد الشهر"), app.fmt(flow.inflow), "pos"],
+      [app.L("Out this month", "منصرف الشهر"), app.fmt(flow.outflow), "neg"],
+    ];
+  },
+  // Same shape as scopedAccountMetrics, for one category name. Budget
+  // remaining only shown when a budget is actually set for it (Settings ->
+  // Budgets) and the filter isn't explicitly the income side -- budgets in
+  // this app are an expense-only concept.
+  scopedCategoryMetrics(category, categoryKind) {
+    const app = this.app, d = app.state.data;
+    const stats = app.categoryMonthStats(category, categoryKind);
+    const tone = categoryKind === "income" ? "pos" : categoryKind === "expense" ? "neg" : "neu";
+    const items = [
+      [app.L("This month", "إجمالي الشهر"), app.fmt(stats.total), tone],
+    ];
+    const budget = (d.budgets || {})[category];
+    if (budget && categoryKind !== "income") {
+      const remaining = Math.round((budget - stats.total) * 100) / 100;
+      items.push([app.L("Budget remaining", "الباقي من الميزانية"), app.fmt(remaining), remaining < 0 ? "neg" : "pos"]);
+    }
+    items.push([app.L("Transactions", "عدد المعاملات"), String(stats.count), "neu"]);
+    return items;
   },
   renderPrimaryNav(t) {
     const S = this.app.state;

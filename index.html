@@ -368,9 +368,19 @@ h1,h2,h3{font-family:var(--font-head);font-weight:600;margin:0;text-wrap:balance
 .metric-tile{padding:7px 9px;border-radius:8px;background:var(--c-surface)}
 .metric-label{font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--c-text-faint);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .metric-value{font-family:var(--font-head);font-size:16px;margin-top:1px;font-variant-numeric:tabular-nums}
+/* .scoped: the per-account/per-category bar (UI.renderMetricsRow) --
+   always exactly as many columns as it actually has tiles (2-4, via
+   --n set inline per row), at every width. The plain 5-tile global bar
+   below it still trims down to its own fixed 3-of-5 on narrow screens,
+   but that nth-child rule must NOT also reach a .scoped row: a real bug
+   caught before shipping -- a credit card's scoped row has exactly 4
+   tiles (Outstanding/Available/Limit/Statement due), and the plain
+   ":nth-child(4)" rule would silently hide "Statement due" on mobile,
+   the one place this whole feature was built for. */
+.metrics-row.scoped{grid-template-columns:repeat(var(--n,3),minmax(0,1fr))}
 @media (max-width:640px){
   .metrics-row{grid-template-columns:repeat(3,minmax(0,1fr))}
-  .metric-tile:nth-child(4),.metric-tile:nth-child(5){display:none}
+  .metrics-row:not(.scoped) .metric-tile:nth-child(4),.metrics-row:not(.scoped) .metric-tile:nth-child(5){display:none}
 }
 
 /* ---- page / tab header ---- */
@@ -1736,6 +1746,38 @@ class Engine {
   }
 
   // ---- engine: single source of truth ------------------------------------
+  // One transaction's effect on account balances / receivable / payable
+  // ledgers, factored out of derive() so accountMonthFlow() below (which
+  // needs the exact same per-type polarity, just scoped to one account and
+  // one month instead of every account up to a cutoff date) can reuse it
+  // verbatim instead of re-deriving its own copy that could quietly drift
+  // out of sync with this one. A/R/Y are the same three accumulator
+  // closures derive() already built; a caller that only cares about
+  // account balances (not the receivable/payable ledgers) can pass no-ops
+  // for R and Y.
+  applyTxToBalances(t, A, R, Y) {
+    const m = t.amount || 0;
+    switch (t.type) {
+      case "income": case "investment_return": case "refund": A(t.accountId, m); break;
+      case "expense": A(t.accountId, -m); break;
+      case "transfer": A(t.fromId, -m); A(t.toId, m); break;
+      // Paying a card statement moves money exactly like a transfer
+      // (out of the funding account, into the card account, paying its
+      // debt down) -- statementId along for the ride is what
+      // statementState() below groups payments by, on top of that.
+      case "statement_payment": A(t.fromId, -m); A(t.toId, m); break;
+      case "receivable": R(t.personId, m); if (t.accountId) A(t.accountId, -m); break;
+      case "receivable_payment": R(t.personId, -m); A(t.accountId, m); break;
+      case "payable": Y(t.personId, m); if (t.accountId) A(t.accountId, m); break;
+      case "debt_payment": Y(t.personId, -m); A(t.accountId, -m); break;
+      case "investment_buy": if (t.accountId) A(t.accountId, -m); break;
+      case "installment_sale": if (t.accountId) A(t.accountId, m * (this.planDir(t.planId) === "out" ? -1 : 1)); break;
+      case "installment_payment": A(t.accountId, this.planDir(t.planId) === "out" ? -m : m); break;
+      case "gam3ya_payment": A(t.accountId, -m); break;
+      case "gam3ya_payout": A(t.accountId, m); break;
+      case "adjustment": A(t.accountId, m); break;
+    }
+  }
   derive(asOf) {
     const d = this.state.data; const cut = asOf || "9999-12-31";
     const bal = {}, recv = {}, pay = {};
@@ -1744,29 +1786,7 @@ class Engine {
     const R = (p, v) => { if (p) recv[p] = Math.round(((recv[p] || 0) + v) * 100) / 100; };
     const Y = (p, v) => { if (p) pay[p] = Math.round(((pay[p] || 0) + v) * 100) / 100; };
     const live = d.tx.filter(t => !t.void && t.date <= cut).sort((a, b) => a.date < b.date ? -1 : 1);
-    live.forEach(t => {
-      const m = t.amount || 0;
-      switch (t.type) {
-        case "income": case "investment_return": case "refund": A(t.accountId, m); break;
-        case "expense": A(t.accountId, -m); break;
-        case "transfer": A(t.fromId, -m); A(t.toId, m); break;
-        // Paying a card statement moves money exactly like a transfer
-        // (out of the funding account, into the card account, paying its
-        // debt down) -- statementId along for the ride is what
-        // statementState() below groups payments by, on top of that.
-        case "statement_payment": A(t.fromId, -m); A(t.toId, m); break;
-        case "receivable": R(t.personId, m); if (t.accountId) A(t.accountId, -m); break;
-        case "receivable_payment": R(t.personId, -m); A(t.accountId, m); break;
-        case "payable": Y(t.personId, m); if (t.accountId) A(t.accountId, m); break;
-        case "debt_payment": Y(t.personId, -m); A(t.accountId, -m); break;
-        case "investment_buy": if (t.accountId) A(t.accountId, -m); break;
-        case "installment_sale": if (t.accountId) A(t.accountId, m * (this.planDir(t.planId) === "out" ? -1 : 1)); break;
-        case "installment_payment": A(t.accountId, this.planDir(t.planId) === "out" ? -m : m); break;
-        case "gam3ya_payment": A(t.accountId, -m); break;
-        case "gam3ya_payout": A(t.accountId, m); break;
-        case "adjustment": A(t.accountId, m); break;
-      }
-    });
+    live.forEach(t => this.applyTxToBalances(t, A, R, Y));
     const plans = d.plans.map(p => this.planState(p, cut));
     const cardStatements = (d.cardStatements || []).map(s => this.statementState(s, cut));
     const savingsGoals = this.savingsGoalStates(bal);
@@ -2075,6 +2095,45 @@ class Engine {
       const c = t.category || "Other"; map[c] = (map[c] || 0) + t.amount;
     });
     return map;
+  }
+  // How much money moved into vs. out of ONE account this month --
+  // reuses applyTxToBalances() (see its own comment) so the sign of every
+  // transaction type here always agrees with what actually moved the
+  // account's real balance, instead of a second hand-rolled "is this
+  // in or out" guess that could drift from it. Powers the scoped metrics
+  // bar (UI.renderMetricsRow) shown while Transactions is filtered to a
+  // single non-card account.
+  accountMonthFlow(accountId) {
+    const d = this.state.data, today = this.today(), mStart = today.slice(0, 8) + "01";
+    let inflow = 0, outflow = 0;
+    const A = (id, v) => {
+      if (id !== accountId) return;
+      if (v >= 0) inflow += v; else outflow += -v;
+    };
+    const noop = () => {};
+    d.tx.filter(t => !t.void && t.date >= mStart && t.date <= today).forEach(t => this.applyTxToBalances(t, A, noop, noop));
+    return { inflow: Math.round(inflow * 100) / 100, outflow: Math.round(outflow * 100) / 100 };
+  }
+  // Month-to-date total + transaction count for ONE category name,
+  // Matches UI.renderTransactions()'s own category filter exactly (see
+  // that function's comment for the full story): a NAMED category matches
+  // ANY transaction type carrying that literal string, kind-unrestricted
+  // -- only the implicit "Other" bucket needs the kind-aware type list,
+  // since "no category set" isn't itself type-specific. Real bug caught in
+  // review: an earlier version restricted every category (not just
+  // "Other") to the expense/income/refund/investment_return types, so a
+  // category name that also landed on some other transaction type (an
+  // investment buy, say) would show 0/0 here while the actual filtered
+  // Transactions list right below it was non-empty.
+  categoryMonthStats(category, kind) {
+    const d = this.state.data, today = this.today(), mStart = today.slice(0, 8) + "01";
+    const otherTypesByKind = { expense: ["expense"], income: ["income", "refund", "investment_return"] };
+    const rows = d.tx.filter(t => !t.void && t.date >= mStart && t.date <= today &&
+      (category === "Other"
+        ? (otherTypesByKind[kind] || otherTypesByKind.expense.concat(otherTypesByKind.income)).includes(t.type) && !t.category
+        : t.category === category));
+    const total = Math.round(rows.reduce((s, t) => s + t.amount, 0) * 100) / 100;
+    return { total, count: rows.length };
   }
   // A monthly limit per category (Settings → Budgets). amount <= 0 clears
   // the budget for that category rather than storing a zero one.
@@ -3775,6 +3834,25 @@ const UI = {
   },
   renderMetricsRow(D, t) {
     const S = this.app.state;
+    // Real request from the user: opening one specific account, card, or
+    // category shouldn't keep showing the whole household's Available/Net
+    // worth/... up top -- it should show that ONE thing's own numbers.
+    // Scoped only on the Transactions page, and only once filtered down to
+    // exactly one account or one category -- any other page, or an
+    // unfiltered/"all" Transactions view, keeps the global row exactly as
+    // before. If a account filter AND a category filter are somehow both
+    // active at once (the two dropdowns are independent), the account
+    // wins: narrowing an already-open account further by category is
+    // still fundamentally "looking at that account".
+    if (S.page === "transactions") {
+      const F = S.filt;
+      if (F.account !== "all") {
+        const items = this.scopedAccountMetrics(F.account, D);
+        if (items) return this.renderMetricTiles(items, true);
+      } else if (F.category !== "all") {
+        return this.renderMetricTiles(this.scopedCategoryMetrics(F.category, F.categoryKind), true);
+      }
+    }
     const items = [
       [t.available, this.app.fmt(D.available), "pos"],
       [t.netWorth, this.app.fmt(D.netWorth), "neu"],
@@ -3782,9 +3860,73 @@ const UI = {
       [t.payables, this.app.fmt(D.payTotal), "neg"],
       [t.investmentsShort, this.app.fmt(D.invValue), "neu"]
     ];
-    return '<div class="metrics-row">' + items.map(([l, v, tone]) =>
+    return this.renderMetricTiles(items, false);
+  },
+  // scoped: true for the per-account/per-category row (2-4 tiles, sized to
+  // fit exactly that many columns at every width -- see .metrics-row.scoped
+  // in app.css for why this needs its own class rather than reusing the
+  // global row's fixed-5-columns-with-2-hidden-on-mobile layout) versus the
+  // always-5-tile global row (false).
+  renderMetricTiles(items, scoped) {
+    const cls = "metrics-row" + (scoped ? " scoped" : "");
+    const style = scoped ? ' style="--n:' + items.length + '"' : "";
+    return '<div class="' + cls + '"' + style + '>' + items.map(([l, v, tone]) =>
       '<div class="metric-tile"><div class="metric-label">' + esc(l) + '</div><div class="metric-value tone-' + tone + '">' + v + "</div></div>"
     ).join("") + "</div>";
+  },
+  // [label, formatted value, tone] tuples for one account's own scoped
+  // metrics row. Credit cards get the same Outstanding/Available/Limit +
+  // nearest statement the account tile itself shows (see renderAccounts()'s
+  // own Outstanding/Available/Limit computation -- duplicated here rather
+  // than shared, since the tile's version is woven into its card-face HTML
+  // and not easily split out on its own); every other account type
+  // (bank/wallet/cash/ecard/other) gets Balance + this month's in/out via
+  // Engine.accountMonthFlow().
+  scopedAccountMetrics(accountId, D) {
+    const app = this.app;
+    const a = (app.state.data.accounts || []).find(x => x.id === accountId);
+    if (!a) return null;
+    const bal = D.bal[accountId];
+    if (a.type === "card") {
+      const available = Math.max(0, (a.limit || 0) - Math.abs(Math.min(0, bal)));
+      const nearestStmt = D.cardStatements.filter(s => s.accountId === accountId && s.status !== "paid").sort((x, y) => x.due < y.due ? -1 : 1)[0];
+      const stmtVal = nearestStmt ? app.fmt(nearestStmt.remaining) + " · " + this.daysUntilText(nearestStmt.due) : app.L("None due", "لا يوجد");
+      return [
+        // Real bug caught in review: this used to hardcode "neg" -- wrong
+        // for a card that's fully paid off or in credit (bal >= 0), where
+        // showing the debt tone on a card that owes nothing misrepresents
+        // it. Sign-driven like the plain-account Balance tile below.
+        [app.L("Outstanding", "المديونية"), app.fmt(bal), bal < 0 ? "neg" : "pos"],
+        [app.L("Available", "المتاح"), app.fmt(available), "pos"],
+        [app.L("Limit", "الحد"), app.fmt(a.limit), "neu"],
+        [app.L("Statement due", "كشف الحساب"), stmtVal, nearestStmt && nearestStmt.overdue ? "neg" : "neu"],
+      ];
+    }
+    const flow = app.accountMonthFlow(accountId);
+    return [
+      [app.L("Balance", "الرصيد"), app.fmt(bal), bal >= 0 ? "pos" : "neg"],
+      [app.L("In this month", "وارد الشهر"), app.fmt(flow.inflow), "pos"],
+      [app.L("Out this month", "منصرف الشهر"), app.fmt(flow.outflow), "neg"],
+    ];
+  },
+  // Same shape as scopedAccountMetrics, for one category name. Budget
+  // remaining only shown when a budget is actually set for it (Settings ->
+  // Budgets) and the filter isn't explicitly the income side -- budgets in
+  // this app are an expense-only concept.
+  scopedCategoryMetrics(category, categoryKind) {
+    const app = this.app, d = app.state.data;
+    const stats = app.categoryMonthStats(category, categoryKind);
+    const tone = categoryKind === "income" ? "pos" : categoryKind === "expense" ? "neg" : "neu";
+    const items = [
+      [app.L("This month", "إجمالي الشهر"), app.fmt(stats.total), tone],
+    ];
+    const budget = (d.budgets || {})[category];
+    if (budget && categoryKind !== "income") {
+      const remaining = Math.round((budget - stats.total) * 100) / 100;
+      items.push([app.L("Budget remaining", "الباقي من الميزانية"), app.fmt(remaining), remaining < 0 ? "neg" : "pos"]);
+    }
+    items.push([app.L("Transactions", "عدد المعاملات"), String(stats.count), "neu"]);
+    return items;
   },
   renderPrimaryNav(t) {
     const S = this.app.state;

@@ -643,6 +643,38 @@ class Engine {
   }
 
   // ---- engine: single source of truth ------------------------------------
+  // One transaction's effect on account balances / receivable / payable
+  // ledgers, factored out of derive() so accountMonthFlow() below (which
+  // needs the exact same per-type polarity, just scoped to one account and
+  // one month instead of every account up to a cutoff date) can reuse it
+  // verbatim instead of re-deriving its own copy that could quietly drift
+  // out of sync with this one. A/R/Y are the same three accumulator
+  // closures derive() already built; a caller that only cares about
+  // account balances (not the receivable/payable ledgers) can pass no-ops
+  // for R and Y.
+  applyTxToBalances(t, A, R, Y) {
+    const m = t.amount || 0;
+    switch (t.type) {
+      case "income": case "investment_return": case "refund": A(t.accountId, m); break;
+      case "expense": A(t.accountId, -m); break;
+      case "transfer": A(t.fromId, -m); A(t.toId, m); break;
+      // Paying a card statement moves money exactly like a transfer
+      // (out of the funding account, into the card account, paying its
+      // debt down) -- statementId along for the ride is what
+      // statementState() below groups payments by, on top of that.
+      case "statement_payment": A(t.fromId, -m); A(t.toId, m); break;
+      case "receivable": R(t.personId, m); if (t.accountId) A(t.accountId, -m); break;
+      case "receivable_payment": R(t.personId, -m); A(t.accountId, m); break;
+      case "payable": Y(t.personId, m); if (t.accountId) A(t.accountId, m); break;
+      case "debt_payment": Y(t.personId, -m); A(t.accountId, -m); break;
+      case "investment_buy": if (t.accountId) A(t.accountId, -m); break;
+      case "installment_sale": if (t.accountId) A(t.accountId, m * (this.planDir(t.planId) === "out" ? -1 : 1)); break;
+      case "installment_payment": A(t.accountId, this.planDir(t.planId) === "out" ? -m : m); break;
+      case "gam3ya_payment": A(t.accountId, -m); break;
+      case "gam3ya_payout": A(t.accountId, m); break;
+      case "adjustment": A(t.accountId, m); break;
+    }
+  }
   derive(asOf) {
     const d = this.state.data; const cut = asOf || "9999-12-31";
     const bal = {}, recv = {}, pay = {};
@@ -651,29 +683,7 @@ class Engine {
     const R = (p, v) => { if (p) recv[p] = Math.round(((recv[p] || 0) + v) * 100) / 100; };
     const Y = (p, v) => { if (p) pay[p] = Math.round(((pay[p] || 0) + v) * 100) / 100; };
     const live = d.tx.filter(t => !t.void && t.date <= cut).sort((a, b) => a.date < b.date ? -1 : 1);
-    live.forEach(t => {
-      const m = t.amount || 0;
-      switch (t.type) {
-        case "income": case "investment_return": case "refund": A(t.accountId, m); break;
-        case "expense": A(t.accountId, -m); break;
-        case "transfer": A(t.fromId, -m); A(t.toId, m); break;
-        // Paying a card statement moves money exactly like a transfer
-        // (out of the funding account, into the card account, paying its
-        // debt down) -- statementId along for the ride is what
-        // statementState() below groups payments by, on top of that.
-        case "statement_payment": A(t.fromId, -m); A(t.toId, m); break;
-        case "receivable": R(t.personId, m); if (t.accountId) A(t.accountId, -m); break;
-        case "receivable_payment": R(t.personId, -m); A(t.accountId, m); break;
-        case "payable": Y(t.personId, m); if (t.accountId) A(t.accountId, m); break;
-        case "debt_payment": Y(t.personId, -m); A(t.accountId, -m); break;
-        case "investment_buy": if (t.accountId) A(t.accountId, -m); break;
-        case "installment_sale": if (t.accountId) A(t.accountId, m * (this.planDir(t.planId) === "out" ? -1 : 1)); break;
-        case "installment_payment": A(t.accountId, this.planDir(t.planId) === "out" ? -m : m); break;
-        case "gam3ya_payment": A(t.accountId, -m); break;
-        case "gam3ya_payout": A(t.accountId, m); break;
-        case "adjustment": A(t.accountId, m); break;
-      }
-    });
+    live.forEach(t => this.applyTxToBalances(t, A, R, Y));
     const plans = d.plans.map(p => this.planState(p, cut));
     const cardStatements = (d.cardStatements || []).map(s => this.statementState(s, cut));
     const savingsGoals = this.savingsGoalStates(bal);
@@ -982,6 +992,45 @@ class Engine {
       const c = t.category || "Other"; map[c] = (map[c] || 0) + t.amount;
     });
     return map;
+  }
+  // How much money moved into vs. out of ONE account this month --
+  // reuses applyTxToBalances() (see its own comment) so the sign of every
+  // transaction type here always agrees with what actually moved the
+  // account's real balance, instead of a second hand-rolled "is this
+  // in or out" guess that could drift from it. Powers the scoped metrics
+  // bar (UI.renderMetricsRow) shown while Transactions is filtered to a
+  // single non-card account.
+  accountMonthFlow(accountId) {
+    const d = this.state.data, today = this.today(), mStart = today.slice(0, 8) + "01";
+    let inflow = 0, outflow = 0;
+    const A = (id, v) => {
+      if (id !== accountId) return;
+      if (v >= 0) inflow += v; else outflow += -v;
+    };
+    const noop = () => {};
+    d.tx.filter(t => !t.void && t.date >= mStart && t.date <= today).forEach(t => this.applyTxToBalances(t, A, noop, noop));
+    return { inflow: Math.round(inflow * 100) / 100, outflow: Math.round(outflow * 100) / 100 };
+  }
+  // Month-to-date total + transaction count for ONE category name,
+  // Matches UI.renderTransactions()'s own category filter exactly (see
+  // that function's comment for the full story): a NAMED category matches
+  // ANY transaction type carrying that literal string, kind-unrestricted
+  // -- only the implicit "Other" bucket needs the kind-aware type list,
+  // since "no category set" isn't itself type-specific. Real bug caught in
+  // review: an earlier version restricted every category (not just
+  // "Other") to the expense/income/refund/investment_return types, so a
+  // category name that also landed on some other transaction type (an
+  // investment buy, say) would show 0/0 here while the actual filtered
+  // Transactions list right below it was non-empty.
+  categoryMonthStats(category, kind) {
+    const d = this.state.data, today = this.today(), mStart = today.slice(0, 8) + "01";
+    const otherTypesByKind = { expense: ["expense"], income: ["income", "refund", "investment_return"] };
+    const rows = d.tx.filter(t => !t.void && t.date >= mStart && t.date <= today &&
+      (category === "Other"
+        ? (otherTypesByKind[kind] || otherTypesByKind.expense.concat(otherTypesByKind.income)).includes(t.type) && !t.category
+        : t.category === category));
+    const total = Math.round(rows.reduce((s, t) => s + t.amount, 0) * 100) / 100;
+    return { total, count: rows.length };
   }
   // A monthly limit per category (Settings → Budgets). amount <= 0 clears
   // the budget for that category rather than storing a zero one.

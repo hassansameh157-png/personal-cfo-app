@@ -326,9 +326,19 @@ h1,h2,h3{font-family:var(--font-head);font-weight:600;margin:0;text-wrap:balance
 .metric-tile{padding:7px 9px;border-radius:8px;background:var(--c-surface)}
 .metric-label{font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--c-text-faint);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .metric-value{font-family:var(--font-head);font-size:16px;margin-top:1px;font-variant-numeric:tabular-nums}
+/* .scoped: the per-account/per-category bar (UI.renderMetricsRow) --
+   always exactly as many columns as it actually has tiles (2-4, via
+   --n set inline per row), at every width. The plain 5-tile global bar
+   below it still trims down to its own fixed 3-of-5 on narrow screens,
+   but that nth-child rule must NOT also reach a .scoped row: a real bug
+   caught before shipping -- a credit card's scoped row has exactly 4
+   tiles (Outstanding/Available/Limit/Statement due), and the plain
+   ":nth-child(4)" rule would silently hide "Statement due" on mobile,
+   the one place this whole feature was built for. */
+.metrics-row.scoped{grid-template-columns:repeat(var(--n,3),minmax(0,1fr))}
 @media (max-width:640px){
   .metrics-row{grid-template-columns:repeat(3,minmax(0,1fr))}
-  .metric-tile:nth-child(4),.metric-tile:nth-child(5){display:none}
+  .metrics-row:not(.scoped) .metric-tile:nth-child(4),.metrics-row:not(.scoped) .metric-tile:nth-child(5){display:none}
 }
 
 /* ---- page / tab header ---- */

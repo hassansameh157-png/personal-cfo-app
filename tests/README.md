@@ -105,6 +105,18 @@ account can be deleted, a card's Available/Limit stay consistent).
   past 100% while the ring geometry itself still clamps to a full circle,
   and the label no longer overlaps the amount now that both share a row
   with the ring (a real layout bug found and fixed during development).
+- `check_scoped_metrics.js` — the per-account/per-category metrics row:
+  filtering Transactions to one plain account, one credit card, or one
+  category swaps the global Available/Net worth/... row for that one
+  thing's own numbers (Balance+in/out, Outstanding/Available/Limit/
+  Statement due, or This month+Budget remaining+Transaction count), the
+  global row returns once the filter clears back to "all", an account
+  filter wins over a simultaneous category filter, and a credit card's
+  4th tile ("Statement due") actually stays visible on a narrow mobile
+  viewport (a real layout bug found in review: the global row's own
+  "hide the 4th/5th tile on mobile" CSS rule matched by nth-child
+  position alone, so it would have silently swallowed the scoped row's
+  4th tile too without its own `.scoped` modifier class).
 
 ## Adding a new one
 
