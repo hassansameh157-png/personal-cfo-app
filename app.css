@@ -328,6 +328,13 @@ h1,h2,h3{font-family:var(--font-head);font-weight:600;margin:0;text-wrap:balance
    sides (unlike .link-btn's own padding:12px 0) so the tap target is
    more than just the three dots' own width. */
 .tx-more-btn{color:var(--c-text-faint);padding-inline:10px}
+/* 36 (Accounts Recut): same "..." trigger pattern as .tx-more-btn above,
+   opening UI.renderAcctActionSheet() instead -- on a plain .card-row
+   (the "other" account rows) this reads exactly like it. On a colored
+   .credit-card-tile it already inherits currentColor via that tile's own
+   ".credit-card-tile .link-btn{color:inherit}" rule further down, since
+   it still carries the shared .link-btn class too. */
+.acct-more-btn{color:var(--c-text-faint);padding-inline:10px}
 
 /* ---- metrics row (single instance, header context) ---- */
 .metrics-row{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px;padding:10px 16px;background:var(--c-surface-2);border-bottom:1px solid var(--c-line)}
@@ -471,8 +478,12 @@ h1,h2,h3{font-family:var(--font-head);font-weight:600;margin:0;text-wrap:balance
   box-shadow:0 1px 0 rgba(255,255,255,.6) inset}
 /* Balance-type tiles (wallet/cash/electronic card) get a plain translucent
    mark instead of the chip — a chip specifically reads as "real EMV card",
-   which none of these are. */
-.cc-mark{width:22px;height:22px;border-radius:999px;background:rgba(255,255,255,.28);border:1.5px solid rgba(255,255,255,.5)}
+   which none of these are. 37 (Accounts Recut): the mark itself now holds
+   a real per-type icon (see UI.renderAccounts()'s own typeIcon map) rather
+   than sitting empty. */
+.cc-mark{width:22px;height:22px;border-radius:999px;background:rgba(255,255,255,.28);border:1.5px solid rgba(255,255,255,.5);
+  display:flex;align-items:center;justify-content:center}
+.cc-mark svg{width:13px;height:13px}
 .balance-tile .cc-row{margin-top:18px}
 .cc-name{display:block;font-family:var(--font-head);font-size:18px;color:inherit;margin-top:14px;padding:0 !important;min-height:0 !important}
 .cc-row{display:flex;justify-content:space-between;align-items:flex-end;margin-top:16px}

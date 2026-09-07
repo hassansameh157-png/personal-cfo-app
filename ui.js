@@ -234,7 +234,7 @@ const UI = {
   },
 
   // ---- generic actions ---------------------------------------------------
-  setPage(p) { this.app.state.page = p; this.app.state.moreOpen = false; this.app.state.quickAddOpen = false; this.app.state.txVisible = 25; this._needsAttentionExpanded = false; this._txActionRow = null; this._txFiltersOpen = false; this.render(); window.scrollTo({ top: 0 }); },
+  setPage(p) { this.app.state.page = p; this.app.state.moreOpen = false; this.app.state.quickAddOpen = false; this.app.state.txVisible = 25; this._needsAttentionExpanded = false; this._txActionRow = null; this._txFiltersOpen = false; this._acctActionRow = null; this.render(); window.scrollTo({ top: 0 }); },
   // A person's own page: every loan and installment plan tied to them (both
   // directions) in one place, instead of scattered across Receivables &
   // Payables and Installments — the gap that made juggling several loans
@@ -563,7 +563,7 @@ const UI = {
   },
   // Reorder accounts -- swap one step up/down within their own visual
   // section (see Engine.moveAccount).
-  moveAccountC(id, dir) { this.app.moveAccount(id, dir); this.render(); },
+  moveAccountC(id, dir) { this._acctActionRow = null; this.app.moveAccount(id, dir); this.render(); },
   openModal(kind, pre) {
     // Both sheets (More, quick-add) share the modal's own "sheet-backdrop"
     // class/z-index (see renderModal below), so a modal opened while either
@@ -736,8 +736,15 @@ const UI = {
     this.render();
   },
   deleteAccountC(id) {
-    const a = this.app.state.data.accounts.find(x => x.id === id); if (!a) return;
-    if (this.app.accountCanDelete(id) && this.hapticConfirm(this.app.L("Delete ") + a.name + "?")) { this.app.deleteAccount(id); this.render(); }
+    this._acctActionRow = null;
+    const a = this.app.state.data.accounts.find(x => x.id === id);
+    // render() must fire unconditionally, even when hapticConfirm() is
+    // cancelled or the account isn't found -- same lesson learned from
+    // deleteTxC's own real bug (see its comment): otherwise _acctActionRow's
+    // reset above never reaches the DOM and a stale .sheet-backdrop stays
+    // live, intercepting the next click anywhere else on the page.
+    if (a && this.app.accountCanDelete(id) && this.hapticConfirm(this.app.L("Delete ") + a.name + "?")) { this.app.deleteAccount(id); }
+    this.render();
   },
   deletePersonC(id) {
     if (!this.app.personHasRecords(id) && this.hapticConfirm(this.app.L("Delete ") + this.app.personName(id) + "?")) { this.app.deletePerson(id); this.render(); }
@@ -908,6 +915,7 @@ const UI = {
       this.renderMoreSheet(t) +
       this.renderQuickAddSheet(t) +
       this.renderTxActionSheet() +
+      this.renderAcctActionSheet() +
       this.renderModal(t);
       // #flashStack is NOT rendered here on purpose -- see UI.flash()'s
       // comment: it lives outside #root in the static page shell so it
@@ -1804,7 +1812,6 @@ const UI = {
     const typeLabel = { cash: app.L("Cash", "كاش"), bank: app.L("Bank", "بنك"), wallet: app.L("Smart wallet", "محفظة إلكترونية"), card: app.L("Credit card", "بطاقة ائتمان"), ecard: app.L("Electronic card", "كارت إلكتروني"), other: app.L("Other", "أخرى") };
     const accs = d.accounts.filter(a => a.active);
     const maxAbs = Math.max(1, ...accs.map(a => Math.abs(D.bal[a.id])));
-    const editArgsFor = (a) => JSON.stringify({ id: a.id, name: a.name, type: a.type, bank: a.bank || "", opening: a.type === "card" ? Math.abs(a.opening || 0) : (a.opening || 0), limit: a.limit || 0, color: a.color || "#7d7979", color2: a.color2 || "", pattern: a.pattern || "diag1", textColor: a.textColor || "auto", desc: a.desc || "" }).replace(/"/g, "&quot;");
 
     // Every account type renders as a card-shaped tile in its own color,
     // instead of the plain list row (no bank logos anywhere — trademarked;
@@ -1819,12 +1826,21 @@ const UI = {
     const tileTypes = app.tileTypes();
     const tileAccs = accs.filter(a => tileTypes.includes(a.type));
     const rowAccs = accs.filter(a => !tileTypes.includes(a.type));
-    // ↑/↓ reorder one step within the account's own section (tiles or plain
-    // rows) — hidden at that section's own top/bottom, since there's
-    // nowhere further for it to go.
-    const moveBtns = (id, i, arr) =>
-      (i > 0 ? '<button class="link-btn small" aria-label="' + esc(app.L("Move up", "حرّك لفوق")) + '" onclick="UI.moveAccountC(\'' + id + '\',-1)">↑</button>' : "") +
-      (i < arr.length - 1 ? '<button class="link-btn small" aria-label="' + esc(app.L("Move down", "حرّك لتحت")) + '" onclick="UI.moveAccountC(\'' + id + '\',1)">↓</button>' : "");
+
+    // 39 (Accounts Recut): the same 3 tile sub-groups (see Engine.
+    // acctTileGroup()'s own comment for why moveAccount() has to scope a
+    // move exactly this way too) as their own headed sections, instead of
+    // one flat scrolling list of every tile type mixed together. Headings
+    // only render at all once there's more than one non-empty group to
+    // actually tell apart -- a ledger that's e.g. all bank accounts gets
+    // no "Cash & bank" label sitting redundantly over literally everything.
+    const tileGroupDefs = [
+      ["cashbank", app.L("Cash & bank", "نقدي وبنوك")],
+      ["wallet", app.L("Wallets & e-cards", "محافظ وكروت إلكترونية")],
+      ["card", app.L("Credit cards", "كروت الائتمان")],
+    ];
+    const tileGroups = tileGroupDefs.map(([key, label]) => [key, label, tileAccs.filter(a => app.acctTileGroup(a.type) === key)]).filter(([, , arr]) => arr.length);
+    const showGroupHeadings = tileGroups.length + (rowAccs.length ? 1 : 0) > 1;
 
     // Total credit-card exposure across every card at once — each tile
     // already shows its own Outstanding/Available/Limit, but "how much do I
@@ -1849,20 +1865,40 @@ const UI = {
       "</div>";
     })();
 
-    const tiles = tileAccs.map((a, i, arr) => {
+    // 37 (Accounts Recut): a real per-type icon in the small corner mark on
+    // a balance tile (cash/bank/wallet/ecard) instead of a blank circle
+    // with no meaning of its own -- credit cards keep their existing gold
+    // chip mark untouched (cc-chip), already a meaningful shape. Reuses the
+    // exact same icon paths Dashboard's own "Where my money is" tiles
+    // already established (see ICON_CASH etc. near ICON_CHECK/ICON_PLUS/
+    // ICON_SEARCH up top) rather than inventing new ones for the same
+    // account types.
+    const typeIcon = { cash: ICON_CASH, bank: ICON_BANK_TILE, wallet: ICON_WALLET_TILE, ecard: ICON_CARDS_TILE };
+    // 40 (Accounts Recut): a small balance-trend sparkline on every
+    // balance-tile (not credit cards -- their 3-column Outstanding/
+    // Available/Limit row is already tight on width, and the usage bar
+    // they already have covers "how full" for them instead of a trend).
+    // Same weeklyDerives pattern Dashboard's own hero-card sparklines use
+    // (see renderDashboard()'s own comment on that) -- 5 weekly derive()
+    // cutoffs, each one's own D.bal map read per account. Only actually
+    // computed when there's at least one balance tile to spend it on.
+    const hasBalanceTiles = tileAccs.some(a => a.type !== "card");
+    const weeklyDerives = hasBalanceTiles ? [4, 3, 2, 1, 0].map(w => app.derive(app.iso(app.addDays(new Date(), -7 * w)))) : null;
+
+    const tileHtml = (a) => {
       const bal = D.bal[a.id];
-      const canDelete = app.accountCanDelete(a.id);
       const isDebt = a.type === "card";
       // Available = how much of the limit is left to spend -- the number a
       // card actually needs day to day, not just Outstanding/Limit on their
       // own (clamped at 0: a card somehow over its limit, e.g. fees, still
       // reads as "nothing left" rather than a confusing negative).
       const available = Math.max(0, (a.limit || 0) - Math.abs(Math.min(0, bal)));
+      const spark = (!isDebt && weeklyDerives) ? this.sparkline(weeklyDerives.map(w => w.bal[a.id] || 0), "currentColor") : "";
       const face = isDebt ?
         '<div class="cc-row"><div><div class="cc-label">' + esc(app.L("Outstanding", "المديونية")) + '</div><div class="cc-amt">' + app.fmt(bal) + "</div></div>" +
         '<div><div class="cc-label">' + esc(app.L("Available", "المتاح")) + '</div><div class="cc-sub">' + app.fmt(available) + "</div></div>" +
         '<div><div class="cc-label">' + esc(app.L("Limit", "الحد")) + '</div><div class="cc-sub">' + app.fmt(a.limit) + "</div></div></div>" :
-        '<div class="cc-row"><div><div class="cc-label">' + esc(app.L("Balance", "الرصيد")) + '</div><div class="cc-amt">' + app.fmt(bal) + "</div></div></div>";
+        '<div class="cc-row"><div><div class="cc-label">' + esc(app.L("Balance", "الرصيد")) + '</div><div class="cc-amt">' + app.fmt(bal) + spark + "</div></div></div>";
       // Nearest un-paid statement on this card, right on the tile -- the
       // full list (add/edit/pay every statement, on every card) lives on
       // its own page (More -> Card statements); this is just the
@@ -1898,6 +1934,13 @@ const UI = {
       // opposite of the flip it's actually on: on the front it shows
       // recent activity, on the back it goes back to the card face.
       const flipBtn = (back) => '<button class="cc-flip-btn" aria-label="' + esc(back ? app.L("Back to card", "ارجع للكارت") : app.L("Show recent activity", "اعرض آخر النشاط")) + '" onclick="UI.flipCardC(\'' + a.id + '\')">⟳</button>';
+      const markIcon = (!isDebt && typeIcon[a.type]) ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + typeIcon[a.type] + "</svg>" : "";
+      // 36 (Accounts Recut): Edit/Statement/Move up/Move down/Delete all
+      // moved off this always-visible row into one "..." trigger opening
+      // UI.renderAcctActionSheet() -- same shared .sheet markup and
+      // reasoning Transactions' own action sheet already established (see
+      // renderTxActionSheet()), just for an account's actions instead of a
+      // transaction's.
       // "Recent activity" is NOT computed here -- a D.live.filter() per
       // account, on every single render() (any save, tab switch, or edit),
       // whether or not a card is ever flipped, was real wasted O(accounts
@@ -1907,14 +1950,11 @@ const UI = {
       // nwTrendExpand.
       return '<div class="credit-card-tile' + (isDebt ? "" : " balance-tile") + '"><div class="cc-flip" id="ccflip-' + a.id + '" data-acc-id="' + esc(a.id) + '">' +
         '<div class="cc-face cc-face-front" ' + faceStyle + '>' +
-          '<div class="cc-top"><span class="cc-bank">' + esc(a.bank || typeLabel[a.type]) + '</span><span style="display:flex;align-items:center;gap:6px"><span class="' + (isDebt ? "cc-chip" : "cc-mark") + '"></span>' + flipBtn(false) + "</span></div>" +
+          '<div class="cc-top"><span class="cc-bank">' + esc(a.bank || typeLabel[a.type]) + '</span><span style="display:flex;align-items:center;gap:6px"><span class="' + (isDebt ? "cc-chip" : "cc-mark") + '">' + markIcon + '</span>' + flipBtn(false) + "</span></div>" +
           '<button class="link-btn cc-name" onclick="UI.viewAccountTx(\'' + a.id + '\')">' + esc(a.name) + "</button>" +
           face + usageBar + stmtLine +
-          '<div class="btn-row wrap" style="margin-top:12px">' +
-          moveBtns(a.id, i, arr) +
-          (isDebt ? '<button class="link-btn small" onclick="UI.openModal(\'card_statement\',{accountId:\'' + a.id + '\'})">' + esc(t.aStatement) + "</button>" : "") +
-          '<button class="link-btn small" onclick="UI.openModal(\'account_edit\',' + editArgsFor(a) + ')">' + esc(app.L("Edit")) + "</button>" +
-          (canDelete ? '<button class="link-btn small danger" onclick="UI.deleteAccountC(\'' + a.id + '\')">' + esc(app.L("Delete")) + "</button>" : "") +
+          '<div class="btn-row" style="margin-top:12px">' +
+          '<button type="button" class="link-btn small acct-more-btn" aria-haspopup="true" aria-label="' + esc(app.L("More actions", "إجراءات تانية")) + '" onclick="UI.openAcctActions(\'' + a.id + '\')">' + svgIcon("M12 6h.01M12 12h.01M12 18h.01", 18) + "</button>" +
           "</div>" +
         "</div>" +
         // inert: backface-visibility:hidden only hides the back face
@@ -1928,29 +1968,94 @@ const UI = {
           '<div class="cc-back-list"></div>' +
         "</div>" +
       "</div></div>";
-    }).join("");
+    };
 
-    const rows = rowAccs.map((a, i, arr) => {
+    const rowHtml = (a) => {
       const bal = D.bal[a.id];
       const extra = a.bank ? '<div class="acc-sub">' + esc(a.bank) + "</div>" : "";
-      const canDelete = app.accountCanDelete(a.id);
       return '<div class="card-row">' +
         '<div class="card-row-top"><span class="acc-swatch" style="background:' + a.color + '"></span><div><button class="link-btn card-row-title" onclick="UI.viewAccountTx(\'' + a.id + '\')">' + esc(a.name) + '</button><div class="card-row-sub">' + typeLabel[a.type] + "</div></div>" +
         '<div class="card-row-amt ' + (bal < 0 ? "tone-neg" : "tone-pos") + '">' + app.fmt(bal) + "</div></div>" +
         '<div class="bar-track thin"><div class="bar-fill" style="width:' + Math.max(2, Math.abs(bal) / maxAbs * 100) + '%;background:' + (bal < 0 ? "var(--c-neg)" : a.color) + '"></div></div>' +
         extra +
-        '<div class="btn-row wrap">' +
-        moveBtns(a.id, i, arr) +
-        '<button class="link-btn small" onclick="UI.openModal(\'account_edit\',' + editArgsFor(a) + ')">' + esc(app.L("Edit")) + "</button>" +
-        (canDelete ? '<button class="link-btn small danger" onclick="UI.deleteAccountC(\'' + a.id + '\')">' + esc(app.L("Delete")) + "</button>" : "") +
+        '<div class="btn-row">' +
+        '<button type="button" class="link-btn small acct-more-btn" aria-haspopup="true" aria-label="' + esc(app.L("More actions", "إجراءات تانية")) + '" onclick="UI.openAcctActions(\'' + a.id + '\')">' + svgIcon("M12 6h.01M12 12h.01M12 18h.01", 18) + "</button>" +
         "</div></div>";
-    }).join("");
+    };
+
+    const tileBlocks = tileGroups.map(([, label, groupAccs]) =>
+      (showGroupHeadings ? '<h2 class="section-title">' + esc(label) + "</h2>" : "") +
+      '<div class="card-list">' + groupAccs.map(tileHtml).join("") + "</div>"
+    ).join("");
+    const rowsBlock = rowAccs.length ?
+      (showGroupHeadings ? '<h2 class="section-title">' + esc(typeLabel.other) + "</h2>" : "") +
+      '<div class="card-list">' + rowAccs.map(rowHtml).join("") + "</div>" : "";
+
     return this.tabHeader(t.accounts, accs.length + app.L(" accounts · transfers never hit income or expense", " حساب · التحويلات لا تُحسب إيراداً ولا مصروفاً"),
       [[t.aAccount, "UI.openModal('account')"], [t.aCard, "UI.openModal('card')"], [t.transfer, "UI.openModal('transfer')"]]) +
-      ccSummary +
-      (tiles ? '<div class="card-list">' + tiles + "</div>" : "") +
-      '<div class="card-list">' + rows + "</div>";
+      ccSummary + tileBlocks + rowsBlock;
   },
+  // Opens the account-edit form pre-filled from the account itself -- same
+  // shape (id/name/bank/opening/limit/color/color2/pattern/textColor) the
+  // removed inline Edit button used to build, but as a plain JS object
+  // handed straight to openModal() instead of one JSON-stringified and
+  // HTML-escaped into an onclick attribute -- there's no HTML round-trip
+  // to survive any more, called from the sheet via just an id, the same
+  // way UI.openTxEdit() already works for a transaction.
+  openAcctEdit(id) {
+    this._acctActionRow = null;
+    const a = this.app.state.data.accounts.find(x => x.id === id);
+    if (!a) return;
+    this.openModal("account_edit", { id: a.id, name: a.name, type: a.type, bank: a.bank || "", opening: a.type === "card" ? Math.abs(a.opening || 0) : (a.opening || 0), limit: a.limit || 0, color: a.color || "#7d7979", color2: a.color2 || "", pattern: a.pattern || "diag1", textColor: a.textColor || "auto", desc: a.desc || "" });
+  },
+  openAcctStatement(id) {
+    this._acctActionRow = null;
+    this.openModal("card_statement", { accountId: id });
+  },
+  // The sheet UI.openAcctActions() opens -- reuses the exact .sheet/
+  // .sheet-backdrop/.sheet-actions markup Transactions' own action sheet
+  // established (see renderTxActionSheet()), just for an account's Edit/
+  // [+ Statement, credit cards only]/Move up/Move down/Delete instead of a
+  // transaction's. Unlike that sheet, an inapplicable item here (Move up at
+  // the top of its group, Delete on an account still in use) is left out
+  // entirely rather than shown disabled -- matching what the row/tile
+  // markup itself always did before this sheet existed, and there's no
+  // "reversed"-style informative disabled state worth showing for any of
+  // these the way there was there. this._acctActionRow holds which
+  // account's sheet (if any) is open.
+  renderAcctActionSheet() {
+    const app = this.app, id = this._acctActionRow;
+    if (!id) return "";
+    const a = app.state.data.accounts.find(x => x.id === id);
+    if (!a) return "";
+    const isDebt = a.type === "card";
+    const canDelete = app.accountCanDelete(a.id);
+    // Same section (one of the 3 tile sub-groups, or the plain rows) and
+    // ordering Engine.moveAccount() itself scopes a move to -- see
+    // Engine.acctTileGroup()'s own comment for why these two have to agree,
+    // or an enabled arrow here could silently do nothing (or jump across a
+    // group boundary) once actually pressed.
+    const key = app.acctTileGroup(a.type) || "row";
+    const section = app.state.data.accounts.filter(x => x.active && (app.acctTileGroup(x.type) || "row") === key);
+    const i = section.findIndex(x => x.id === a.id);
+    const items = [
+      ["M12 20h9M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z", app.L("Edit"), "UI.openAcctEdit('" + a.id + "')", false],
+      isDebt ? ["M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8L14 2zM14 2v6h6M16 13H8M16 17H8", app.L("+ Statement", "+ كشف حساب"), "UI.openAcctStatement('" + a.id + "')", false] : null,
+      i > 0 ? ["M12 19V5M5 12l7-7 7 7", app.L("Move up", "حرّك لفوق"), "UI.moveAccountC('" + a.id + "',-1)", false] : null,
+      i < section.length - 1 ? ["M12 5v14M19 12l-7 7-7-7", app.L("Move down", "حرّك لتحت"), "UI.moveAccountC('" + a.id + "',1)", false] : null,
+      canDelete ? ["M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M10 11v6M14 11v6", app.L("Delete"), "UI.deleteAccountC('" + a.id + "')", true] : null,
+    ].filter(Boolean);
+    return '<div class="sheet-backdrop" onclick="UI.closeAcctActions()"></div>' +
+      '<div class="sheet" role="dialog" aria-modal="true" aria-label="' + esc(a.name) + '">' +
+        '<div class="sheet-handle"></div>' +
+        '<div class="sheet-title">' + esc(a.name) + "</div>" +
+        '<div class="sheet-actions">' + items.map(([ico, label, onclick, danger]) =>
+          '<button type="button" class="sheet-action' + (danger ? " danger" : "") + '" onclick="' + onclick + '"><span class="sheet-action-ico">' + svgIcon(ico, 18) + "</span>" + esc(label) + "</button>"
+        ).join("") + "</div>" +
+      "</div>";
+  },
+  openAcctActions(id) { this._acctActionRow = id; this.render(); },
+  closeAcctActions() { this._acctActionRow = null; this.render(); },
 
   // Shared English/Arabic type-label dict for a transaction row -- used by
   // both Transactions (every row) and Person Detail's History section

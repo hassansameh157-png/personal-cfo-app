@@ -49,14 +49,19 @@ require("./_watchdog"); // shared pass/fail detector -- see that file
   await page.click(".navbtn:has-text('Accounts')"); await page.waitForTimeout(200);
   const tileNamesBefore = await page.locator(".credit-card-tile .cc-name").allTextContents();
   console.log("tile order before:", tileNamesBefore);
-  // move the 2nd tile up one step
+  // move the 2nd tile up one step -- Move up/down live behind the tile's
+  // "..." trigger now (see UI.renderAcctActionSheet()), not an
+  // always-visible inline button.
   const secondTile = page.locator(".credit-card-tile").nth(1);
-  await secondTile.locator('button[aria-label]', { hasText: "↑" }).click();
+  await secondTile.locator(".acct-more-btn").click(); await page.waitForTimeout(150);
+  await page.click(".sheet-action:has-text('Move up')");
   await page.waitForTimeout(200);
   const tileNamesAfter = await page.locator(".credit-card-tile .cc-name").allTextContents();
   console.log("tile order after moving #2 up:", tileNamesAfter);
   console.log("first two swapped:", tileNamesAfter[0] === tileNamesBefore[1] && tileNamesAfter[1] === tileNamesBefore[0]);
-  console.log("first tile has no Move-up button:", await page.locator(".credit-card-tile").first().locator('button[aria-label]', { hasText: "↑" }).count() === 0);
+  await page.locator(".credit-card-tile").first().locator(".acct-more-btn").click(); await page.waitForTimeout(150);
+  console.log("first tile has no Move-up action:", await page.locator(".sheet-action:has-text('Move up')").count() === 0);
+  await page.click(".sheet-backdrop", { force: true, position: { x: 5, y: 5 } }); await page.waitForTimeout(150);
 
   console.log("\n=== 6) Total credit card debt summary (now 4 tiles incl. Available) ===");
   const ccLabel = await page.locator(".pos-tile", { hasText: "Total card debt" }).count();

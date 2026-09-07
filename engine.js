@@ -2,6 +2,14 @@
 // decoded source (seed/derive/planState/groupState/forecast/FORMS/submit).
 // Logic is preserved as-is; only the class wrapper and I/O layer are new.
 
+// 38 (Accounts Recut): a brand-new account/card no longer defaults to the
+// same flat grey/navy every single time (see Engine.nextAccountAutoColor())
+// -- a small, independent rotation, not the same list ui.js's own
+// COLOR_PALETTE swatch picker offers (that one's ~24 entries and lives in
+// the UI layer; this file stays free of any reference into it, same
+// separation every other Engine method already keeps).
+const ACCOUNT_AUTO_COLORS = ["#0088b0", "#7c3aed", "#16a34a", "#db2777", "#d97706", "#0ea5e9", "#65a30d", "#be185d"];
+
 class Engine {
   constructor(props) {
     this.props = props || { defaultHorizon: "30", receivablesAreAssets: true, privacyDefault: false };
@@ -1409,7 +1417,12 @@ class Engine {
     // left as a documented follow-up rather than silently changed here.
     const form = { date: this.today(), freq: "monthly", count: 12, down: 0, balloon: 0, type: kind === "recurring" ? "expense" : undefined, day: 1,
       relation: kind === "person" ? "other" : undefined,
-      color: kind === "card" ? "#004961" : (kind === "person" ? this.relationTypes().find(r => r.v === "other").color : (kind === "goal" ? "#2a9d8f" : "#7d7979")) };
+      // 38 (Accounts Recut): "account"/"card" get a rotating auto-pick
+      // (see nextAccountAutoColor()) instead of the same flat grey/navy
+      // every time -- a real explicit pick (this form's own color swatch,
+      // or an edit's pre.color) still wins, via Object.assign(form, pre)
+      // below, which runs after this default is set.
+      color: (kind === "card" || kind === "account") ? this.nextAccountAutoColor() : (kind === "person" ? this.relationTypes().find(r => r.v === "other").color : (kind === "goal" ? "#2a9d8f" : "#7d7979")) };
     F.fields.forEach(f => { if (form[f.k] === undefined) form[f.k] = f.type === "select" ? (f.options[0] ? f.options[0].v : "") : (f.type === "number" ? "" : ""); });
     form.date = this.today();
     this.state.modal = kind; this.state.form = Object.assign(form, pre || {}); this.state.err = "";
@@ -1821,19 +1834,50 @@ class Engine {
   // moveAccount() below groups accounts the exact same way the display
   // does; only "other" stays a plain row.
   tileTypes() { return ["card", "bank", "wallet", "cash", "ecard"]; }
+  // 39 (Accounts Recut): which of the 3 tile sub-groups renderAccounts()
+  // now displays under their own headings ("Cash & bank"/"Wallets &
+  // cards"/"Credit cards") an account's type belongs to -- null for
+  // anything outside tileTypes() (the plain-row "other" accounts, which
+  // stay their own single un-grouped section, same as before this existed).
+  // Shared with moveAccount() below for the exact same reason tileTypes()
+  // already is: an up/down arrow that's enabled because a tile isn't first/
+  // last within its ON-SCREEN group has to actually move within that same
+  // group, or the arrow would look broken right next to a group boundary.
+  acctTileGroup(type) {
+    if (type === "card") return "card";
+    if (type === "wallet" || type === "ecard") return "wallet";
+    if (type === "cash" || type === "bank") return "cashbank";
+    return null;
+  }
+  // A rotating default for a brand-new account/card's color (see open()
+  // above), instead of every one landing on the same flat grey/navy unless
+  // the user thinks to open the color swatch and pick one themselves --
+  // skips anything already in use by an existing active account, so two
+  // accounts created back to back don't just get handed the same auto-pick
+  // straight through Object.assign(form, pre) either way.
+  nextAccountAutoColor() {
+    const accounts = this.state.data.accounts || [];
+    const used = new Set(accounts.filter(a => a.active).map(a => a.color));
+    const start = accounts.length % ACCOUNT_AUTO_COLORS.length;
+    for (let i = 0; i < ACCOUNT_AUTO_COLORS.length; i++) {
+      const c = ACCOUNT_AUTO_COLORS[(start + i) % ACCOUNT_AUTO_COLORS.length];
+      if (!used.has(c)) return c;
+    }
+    return ACCOUNT_AUTO_COLORS[start]; // every rotation color already in use somehow -- still better than a flat literal
+  }
   // Reorder accounts one step at a time. Swaps with the nearest account in
-  // the SAME visual section (tiles or plain rows) rather than the plain
-  // adjacent array slot — swapping past an item that renders in the other
-  // section wouldn't move anything the user can see, which would make the
-  // ↑/↓ buttons look broken right next to a tile/row boundary.
+  // the SAME visual section (each tile sub-group, or the plain rows) rather
+  // than the plain adjacent array slot — swapping past an item that renders
+  // in a different section wouldn't move anything the user can see, which
+  // would make the ↑/↓ buttons look broken right next to a section boundary.
   moveAccount(id, dir) {
     const data = JSON.parse(JSON.stringify(this.state.data));
     const list = data.accounts;
     const acc = list.find(a => a.id === id);
     if (!acc) return;
-    const isTile = this.tileTypes().includes(acc.type);
+    const key = this.acctTileGroup(acc.type) || "row";
     const sectionIdx = [];
-    list.forEach((a, i) => { if (this.tileTypes().includes(a.type) === isTile) sectionIdx.push(i); });
+    list.forEach((a, i) => { if ((this.acctTileGroup(a.type) || "row") === key) sectionIdx.push(i); });
     const pos = sectionIdx.indexOf(list.indexOf(acc));
     const targetPos = pos + dir;
     if (targetPos < 0 || targetPos >= sectionIdx.length) return;

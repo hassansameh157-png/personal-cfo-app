@@ -46,7 +46,10 @@ require("./_watchdog"); // shared pass/fail detector -- see that file
   console.log("ecard tile uses chosen color:", ecardStyle.includes("ff9900"));
 
   console.log("\n=== 4) Ecard behaves like a normal balance account (no debt logic) ===");
-  await ecardTile.locator("button:has-text('Edit')").click(); await page.waitForTimeout(200);
+  // Edit lives behind the tile's "..." trigger now (see
+  // UI.renderAcctActionSheet()), not an always-visible inline button.
+  await ecardTile.locator(".acct-more-btn").click(); await page.waitForTimeout(150);
+  await page.click(".sheet-action:has-text('Edit')"); await page.waitForTimeout(200);
   console.log("edit label is 'Start amount' not 'Current outstanding':", await page.locator("label:has(#f_opening) .field-label").innerText());
   await page.click("button:has-text('Cancel')"); await page.waitForTimeout(150);
 

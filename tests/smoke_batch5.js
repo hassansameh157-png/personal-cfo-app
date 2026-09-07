@@ -22,7 +22,10 @@ require("./_watchdog"); // shared pass/fail detector -- see that file
   console.log("tile shows Outstanding/Limit:", await firstTile.locator(".cc-label").allTextContents());
 
   console.log("\n=== 2) Edit account color, tile updates ===");
-  await firstTile.locator("button:has-text('Edit')").click(); await page.waitForTimeout(200);
+  // Edit lives behind the tile's "..." trigger now (see
+  // UI.renderAcctActionSheet()), not an always-visible inline button.
+  await firstTile.locator(".acct-more-btn").click(); await page.waitForTimeout(150);
+  await page.click(".sheet-action:has-text('Edit')"); await page.waitForTimeout(200);
   console.log("color field present:", await page.locator("#f_color").count() > 0);
   await page.evaluate(() => { document.getElementById("f_color").value = "#c8102e"; });
   await page.click("button:has-text('Save')"); await page.waitForTimeout(200);

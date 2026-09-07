@@ -111,13 +111,18 @@ require("./_watchdog"); // shared pass/fail detector -- see that file
   await page.fill("#f_opening", "0");
   await page.click("button:has-text('Save')"); await page.waitForTimeout(200);
   const zeroCardTile = page.locator(".credit-card-tile", { hasText: "Zero Card" });
-  console.log("new zero-balance card has a Delete button before any statement:", await zeroCardTile.locator("button:has-text('Delete')").count() > 0);
-  await zeroCardTile.locator("button:has-text('+ Statement')").click(); await page.waitForTimeout(200);
+  // Edit/+ Statement/Delete all live behind the tile's "..." trigger now
+  // (see UI.renderAcctActionSheet()), not always-visible inline buttons.
+  await zeroCardTile.locator(".acct-more-btn").click(); await page.waitForTimeout(150);
+  console.log("new zero-balance card has a Delete action before any statement:", await page.locator(".sheet-action:has-text('Delete')").count() > 0);
+  await page.click(".sheet-action:has-text('+ Statement')"); await page.waitForTimeout(200);
   await page.fill("#f_period", "Test period");
   await page.fill("#f_amount", "500");
   await page.fill("#f_due", "2026-10-01");
   await page.click("button:has-text('Save')"); await page.waitForTimeout(200);
-  console.log("same card has NO Delete button once it has an (unpaid) statement:", await zeroCardTile.locator("button:has-text('Delete')").count() === 0);
+  await zeroCardTile.locator(".acct-more-btn").click(); await page.waitForTimeout(150);
+  console.log("same card has NO Delete action once it has an (unpaid) statement:", await page.locator(".sheet-action:has-text('Delete')").count() === 0);
+  await page.click(".sheet-backdrop", { force: true, position: { x: 5, y: 5 } }); await page.waitForTimeout(150);
 
   console.log("\n=== 10) 'Paid from' on Pay statement never offers a card ===");
   await page.click(".navbtn:has-text('More')"); await page.waitForTimeout(150);

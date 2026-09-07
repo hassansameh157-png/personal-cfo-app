@@ -260,6 +260,43 @@ account can be deleted, a card's Available/Limit stay consistent).
   open the row's `.tx-more-btn` sheet first, and `check_swipe_actions.js`/
   `check_group_similar_tx.js` updated their own row-actions assertions the
   same way.
+- `check_accounts_recut.js` — five mobile-focused changes to Accounts.
+  #36: Edit/[+ Statement, credit cards only]/Move up/Move down/Delete all
+  moved off up to 5 always-visible inline links per tile/row into one
+  shared "..." trigger opening `UI.renderAcctActionSheet()`, reusing the
+  same `.sheet`/`.sheet-backdrop` markup Transactions' own action sheet
+  established. #37: a real per-type icon (cash/bank/wallet/ecard, reusing
+  Dashboard's own `ICON_CASH` etc.) now fills the small corner mark on a
+  balance tile instead of a blank circle -- a credit card keeps its
+  existing gold chip mark untouched. #38: a brand-new account/card no
+  longer defaults to the same flat grey/navy every time
+  (`Engine.nextAccountAutoColor()`, cycling through `ACCOUNT_AUTO_COLORS`
+  and skipping anything already in use) -- a real color pick still always
+  wins. #39: the tile types now render under 3 headed sub-sections ("Cash
+  & bank"/"Wallets & e-cards"/"Credit cards", headings only shown once
+  there's more than one non-empty group to actually tell apart) --
+  `Engine.acctTileGroup()` is shared by both that display grouping and
+  `Engine.moveAccount()`, which now scopes an up/down reorder to the exact
+  same finer sub-group instead of the old coarse tile/row boolean, so an
+  enabled arrow can never silently jump an account across a group boundary
+  the user can see. #40: a balance-trend sparkline (same `weeklyDerives`/
+  5-cutoff pattern Dashboard's own hero-card sparklines use) now sits on
+  every non-debt tile -- deliberately skipped on credit cards, whose
+  3-column Outstanding/Available/Limit row is already tight on width and
+  which already have their own usage bar covering "how full" instead of a
+  trend. Two real bugs surfaced during implementation, both fixed and
+  regression-guarded here: `deleteAccountC()` only called `render()` when
+  the delete was actually confirmed (same class of bug as Transactions
+  Recut's own `deleteTxC` fix); and the sheet's Edit/+ Statement items
+  originally called `UI.openModal(...)` directly without first clearing
+  `_acctActionRow`, so the sheet's own markup stayed in the DOM underneath
+  the modal and could reappear once it closed -- fixed by routing both
+  through new `openAcctEdit(id)`/`openAcctStatement(id)` wrapper methods
+  that clear the sheet state before handing off to `openModal()`, the same
+  pattern `UI.openTxEdit()` already used. `smoke_accounts.js`,
+  `smoke_batch5.js`, `smoke_batch6.js`, `smoke_batch7.js`, and
+  `shot_statements.js` were updated for the new `.acct-more-btn` sheet
+  trigger in place of the old inline buttons.
 
 ## Adding a new one
 
