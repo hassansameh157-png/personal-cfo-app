@@ -27,6 +27,11 @@ require("./_watchdog"); // shared pass/fail detector -- see that file
   const colorAfterRelation = await page.locator("#f_color").inputValue();
   console.log("color auto-set to family default (#e8734a):", colorAfterRelation);
   await page.click("button:has-text('Save')"); await page.waitForTimeout(200);
+  // A brand-new person has no balance yet, so People Recut #45 collapses
+  // them into the "settled" section by default -- expand it first, or the
+  // card genuinely isn't in the DOM at all to find.
+  const settledToggle = page.locator("button", { hasText: "settled" });
+  if (await settledToggle.count()) { await settledToggle.click(); await page.waitForTimeout(150); }
   const newCard = page.locator(".person-card", { hasText: "Mona Family Test" });
   console.log("new person card present:", await newCard.count() > 0);
   const avatarStyle = await newCard.locator(".person-avatar").getAttribute("style");
@@ -40,7 +45,13 @@ require("./_watchdog"); // shared pass/fail detector -- see that file
   await page.click("button:has-text('← People')"); await page.waitForTimeout(200);
 
   console.log("\n=== 4) Edit person: relation/color round-trip ===");
-  await newCard.locator("button:has-text('Edit')").click(); await page.waitForTimeout(200);
+  // "+ Lend"/"+ Debt"/Edit/Delete all live behind the person's "..."
+  // trigger now (see UI.renderPersonActionSheet()), not always-visible
+  // inline buttons -- Mona is still settled (net 0), so re-expand first.
+  const settledToggle2 = page.locator("button", { hasText: "settled" });
+  if (await settledToggle2.count()) { await settledToggle2.click(); await page.waitForTimeout(150); }
+  await newCard.locator(".person-more-btn").click(); await page.waitForTimeout(150);
+  await page.click(".sheet-action:has-text('Edit')"); await page.waitForTimeout(200);
   console.log("relation pre-filled as family:", await page.locator("#f_relation").inputValue());
   console.log("color pre-filled as family color:", await page.locator("#f_color").inputValue());
   await page.click("button:has-text('Cancel')"); await page.waitForTimeout(150);

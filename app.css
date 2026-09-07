@@ -335,6 +335,14 @@ h1,h2,h3{font-family:var(--font-head);font-weight:600;margin:0;text-wrap:balance
    ".credit-card-tile .link-btn{color:inherit}" rule further down, since
    it still carries the shared .link-btn class too. */
 .acct-more-btn{color:var(--c-text-faint);padding-inline:10px}
+/* 41 (People Recut): same "..." trigger pattern as .tx-more-btn/
+   .acct-more-btn above, opening UI.renderPersonActionSheet() instead. */
+.person-more-btn{color:var(--c-text-faint);padding-inline:10px}
+/* 46 (People Recut): tel:/wa.me links next to a phone number (People
+   list, Person Detail) -- small enough to sit inline right after the
+   phone text itself, not a full button. */
+.phone-link{display:inline-flex;vertical-align:middle;margin-inline-start:6px;color:var(--c-accent-fill)}
+.phone-link:hover{opacity:.75}
 
 /* ---- metrics row (single instance, header context) ---- */
 .metrics-row{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px;padding:10px 16px;background:var(--c-surface-2);border-bottom:1px solid var(--c-line)}

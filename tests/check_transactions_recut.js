@@ -56,13 +56,15 @@ require("./_watchdog"); // shared pass/fail detector -- see that file
   await page.click("button:has-text('Cancel')");
   await page.waitForTimeout(150);
 
-  console.log("\n=== 32) Filters: search is always visible, the 4 dropdowns collapse behind a toggle ===");
+  console.log("\n=== 32) Filters: search is always visible, the structural dropdowns collapse behind a toggle ===");
   console.log("#txSearch visible without expanding anything:", await page.locator("#txSearch").isVisible());
-  console.log("the 4 structural dropdowns start collapsed:", await page.locator(".filter-row select").first().isVisible().then(v => !v));
+  console.log("the structural dropdowns start collapsed:", await page.locator(".filter-row select").first().isVisible().then(v => !v));
   await page.click(".filters-toggle");
   await page.waitForTimeout(150);
-  console.log("expanding reveals all 4 dropdowns:", await page.locator(".filter-row select").count() === 4);
-  console.log("all 4 now visible:", await page.locator(".filter-row select").first().isVisible());
+  // 5 now, not the original 4 -- People Recut #47 added a Person dropdown
+  // alongside type/account/period/category.
+  console.log("expanding reveals all 5 dropdowns:", await page.locator(".filter-row select").count() === 5);
+  console.log("all 5 now visible:", await page.locator(".filter-row select").first().isVisible());
   await page.click(".navbtn:has-text('Accounts')");
   await page.waitForTimeout(150);
   await page.click(".navbtn:has-text('Transactions')");

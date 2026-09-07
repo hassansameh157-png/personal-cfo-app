@@ -21,15 +21,33 @@ const PAYLOAD = "x\\');alert(document.cookie);//<script>alert(1)</script>&\"'";
   await page.click("button:has-text('+ Person')"); await page.waitForTimeout(200);
   await page.fill("#f_name", PAYLOAD);
   await page.click("button:has-text('Save')"); await page.waitForTimeout(200);
+  // A brand-new person has no balance yet, so People Recut #45 collapses
+  // them straight into the "settled" section by default -- expand it (if
+  // it's even there) before looking for their card, or .last() would
+  // resolve to whichever unrelated person is last among the visible ones.
+  const settledToggle = page.locator("button", { hasText: "settled" });
+  if (await settledToggle.count()) { await settledToggle.click(); await page.waitForTimeout(150); }
   const personRow = page.locator(".card-row.person-card").last();
+  console.log("malicious name renders as inert escaped text on the person's own card, not executed:", (await personRow.locator(".card-row-title").innerText()).includes("alert(1)"));
   const viewTxBtn = personRow.locator("button", { hasText: "transactions" }).first();
+  // UI.viewPersonTx() (People Recut #47) takes only the person's id now,
+  // not a text-search argument built from their name -- real bug this
+  // closes as a side effect: the raw payload used to be embedded directly
+  // in this button's own onclick attribute, exactly the kind of place a
+  // missed escape could break out of the attribute; keying on id instead
+  // removes that surface for this button entirely.
   const onclickAttr1 = await viewTxBtn.getAttribute("onclick").catch(() => "MISSING");
-  console.log("onclick attr well-formed (no unescaped break):", onclickAttr1 !== "MISSING");
+  console.log("onclick attr carries only the id, no raw payload text at all:", onclickAttr1 !== "MISSING" && !onclickAttr1.includes("alert"));
   await viewTxBtn.click(); await page.waitForTimeout(200);
   console.log("navigated safely, no dialog fired:", dialogs.length === 0);
-  console.log("search box got the raw (unexecuted) name text:", (await page.locator("#txSearch").inputValue()).includes("alert"));
+  console.log("landed on Transactions, correctly scoped to this brand-new person:", (await page.locator(".tab-title").innerText()) === "Transactions");
 
   console.log("\n=== 2) Tag with a malicious payload ===");
+  // filt.person from step 1 above is sticky (same as filt.account already
+  // was) -- clear it back to "all" first, or the new expense below (not
+  // tied to that person) would be filtered straight out from under the
+  // search that follows.
+  await page.evaluate(() => { UI.app.state.filt.person = "all"; UI.render(); });
   await page.click(".navbtn:has-text('Transactions')"); await page.waitForTimeout(200);
   await page.fill("#txSearch", ""); await page.waitForTimeout(150);
   await page.click("button:has-text('+ Expense')"); await page.waitForTimeout(200);

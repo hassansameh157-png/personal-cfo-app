@@ -55,7 +55,11 @@ require("./_watchdog"); // shared pass/fail detector -- see that file
   const personCard = page.locator(".card-list.mobile-only .card-row").first();
   const personName = await personCard.locator(".card-row-title").innerText();
   console.log("person:", personName);
-  await personCard.locator("button:has-text('Debt I owe')").click();
+  // "+ Debt I owe" lives behind the person's "..." trigger now (see
+  // UI.renderPersonActionSheet()), not an always-visible inline button.
+  await personCard.locator(".person-more-btn").click();
+  await page.waitForTimeout(150);
+  await page.click(".sheet-action:has-text('+ Debt I owe')");
   await page.waitForTimeout(200);
   const personIdPrefilled = await page.locator("#f_personId option:checked").innerText();
   console.log("personId pre-filled to this exact person:", personIdPrefilled === personName);

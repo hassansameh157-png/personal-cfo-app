@@ -17,11 +17,20 @@ class Engine {
       // categoryKind: not a real dropdown filter of its own -- set only by
       // UI.viewCategoryTx() to disambiguate an "Other" tap (see there),
       // and ignored for any real, named category.
-      horizon: 30, filt: { q: "", type: "all", account: "all", preset: "all", category: "all", categoryKind: "" }, openPlan: null, saved: "",
+      // person: "all", or a real personId -- set by UI.viewPersonTx() (People
+      // Recut #47) for a precise match on r.personId, replacing what used to
+      // be a same-text-as-the-name search (a real bug: over-matched any
+      // transaction whose description happened to mention the name, and
+      // under-matched a real transaction of theirs whose description didn't).
+      horizon: 30, filt: { q: "", type: "all", account: "all", preset: "all", category: "all", categoryKind: "", person: "all" }, openPlan: null, saved: "",
       // "Group similar" toggle on Transactions (mobile only) -- see
       // UI.toggleGroupTx()'s own comment. Not part of `filt` above: it's a
       // display option, not a filter narrowing which rows match.
       groupTx: false,
+      // People Recut #42: free-text search on the People list (name/phone/
+      // notes) -- its own field, not folded into `filt` above, since that's
+      // Transactions' own filter set and this never touches a transaction.
+      peopleQ: "",
       // Set the instant a persist() actually fails to reach localStorage --
       // see persist() itself -- and cleared the instant one succeeds again.
       // Not persisted itself for the obvious reason: if storage is what's

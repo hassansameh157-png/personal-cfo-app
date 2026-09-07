@@ -59,8 +59,16 @@ require("./_watchdog"); // shared pass/fail detector -- see that file
   await page.click("button:has-text('+ Person')"); await page.waitForTimeout(150);
   await page.fill("#f_name", "EditLoan Test");
   await page.click("button:has-text('Save')"); await page.waitForTimeout(200);
+  // A brand-new person has no balance yet, so People Recut #45 collapses
+  // them into the "settled" section by default -- expand it first, or the
+  // card isn't in the DOM at all to find. "+ Debt I owe" itself now lives
+  // behind the person's "..." trigger (see UI.renderPersonActionSheet()),
+  // not an always-visible inline button.
+  const settledToggle = page.locator("button", { hasText: "settled" });
+  if (await settledToggle.count()) { await settledToggle.click(); await page.waitForTimeout(150); }
   const card = page.locator(".card-row", { hasText: "EditLoan Test" }).first();
-  await card.locator("button:has-text('Debt I owe')").click();
+  await card.locator(".person-more-btn").click(); await page.waitForTimeout(150);
+  await page.click(".sheet-action:has-text('+ Debt I owe')");
   await page.waitForTimeout(150);
   await page.fill("#f_amount", "10000");
   await page.fill("#f_desc", "Loan v1");

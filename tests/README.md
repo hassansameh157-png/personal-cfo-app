@@ -297,6 +297,64 @@ account can be deleted, a card's Available/Limit stay consistent).
   `smoke_batch5.js`, `smoke_batch6.js`, `smoke_batch7.js`, and
   `shot_statements.js` were updated for the new `.acct-more-btn` sheet
   trigger in place of the old inline buttons.
+- `check_people_recut.js` — seven mobile-focused changes to People and
+  Person Detail. #41: "+ Lend / owed to me"/"+ Debt I owe"/Edit/Delete
+  moved off up to 5 always-visible buttons per card/row into one shared
+  "..." trigger opening `UI.renderPersonActionSheet()`, reusing the same
+  `.sheet`/`.sheet-backdrop` markup Transactions'/Accounts' own action
+  sheets established -- Pay/Collect stay their own always-visible primary
+  button, the one action common enough to keep right there. #42: a
+  name/phone/notes search (`S.peopleQ`), its own field rather than reusing
+  Transactions' `filt.q`, so searching People never leaks into (or gets
+  clobbered by) an unrelated search left on the Transactions page. #43: a
+  count-based summary tile (people who owe me / people I owe / settled) --
+  deliberately counts, not amounts, since the total owed to/by me already
+  has a real home on Dashboard's own position tiles; repeating that figure
+  here would just be a duplicate, while a relationship count is genuinely
+  new information. #44: a "last active Xd ago" line per person (mobile
+  only), reusing the exact same `r.personId === p.id` query Person
+  Detail's own History section already keys off. #45: a person whose net
+  balance is effectively zero (settled) collapses into its own section by
+  default (mobile only), same "+N more"/expand-on-demand pattern
+  Dashboard's own Needs Attention already established (idea 25) -- an
+  active search always shows them uncollapsed, since hiding a person you
+  just searched for by name because they happen to be settled would be
+  actively unhelpful. #46: `tel:`/`wa.me` links next to a phone number
+  (`personPhoneLinks()`), previously plain unreachable text on a page
+  whose whole point is tracking money owed to/by real people -- no
+  WhatsApp logo (trademarked, same "no bank logos" reasoning
+  `cardBackground()` already gives for account tiles), just a generic
+  message-circle icon and the "Message" label. #47: a real bug fix --
+  tapping a person's own "Transactions" link used to set
+  `filt.q = person.name` (a free-text search), which both over-matched
+  (any unrelated transaction whose description happened to mention that
+  name) and under-matched (a transaction genuinely tied to them via
+  `personId`, but whose description never said their name at all) -- the
+  same shape as the already-documented "Food" category bug. Replaced with
+  a real `filt.person` exact match (`UI.viewPersonTx(id)`) and a new
+  "Person" dropdown alongside type/account/period/category in
+  Transactions' own filter row.
+
+  Two real bugs surfaced during implementation, both fixed and
+  regression-guarded here: `deletePersonC()` only called `render()` on a
+  *confirmed* delete, same class of bug as `deleteTxC`/`deleteAccountC`'s
+  own fixes; and the sheet's "+ Lend"/"+ Debt"/Edit items originally
+  called `UI.openModal(...)` directly without first clearing
+  `_personActionRow`, leaving the sheet's own markup in the DOM underneath
+  the modal, ready to reappear once it closed -- fixed via new
+  `openPersonForm(kind, id)`/`openPersonEdit(id)` wrapper methods that
+  clear the sheet state first, the same pattern Accounts'
+  `openAcctEdit`/`openAcctStatement` already established. A third,
+  narrower bug caught in code review (not a test failure): the People
+  list's own summary tile (#43) counted from the full unfiltered list
+  instead of the search-filtered one, so it visibly disagreed with the
+  cards/table underneath it while a search was narrowing them down.
+  `smoke_batch7.js`, `smoke_tx_edit.js`, `smoke_v2.js`,
+  `check_xss_hardening.js`, and `check_transactions_recut.js` (now 5
+  filter-row dropdowns, not 4) were updated for the new sheet trigger and
+  the settled-collapse default -- a brand-new, zero-balance person is
+  settled by construction, so any test creating one and immediately
+  expecting to find their card needs to expand that section first.
 
 ## Adding a new one
 

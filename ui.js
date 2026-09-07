@@ -234,7 +234,7 @@ const UI = {
   },
 
   // ---- generic actions ---------------------------------------------------
-  setPage(p) { this.app.state.page = p; this.app.state.moreOpen = false; this.app.state.quickAddOpen = false; this.app.state.txVisible = 25; this._needsAttentionExpanded = false; this._txActionRow = null; this._txFiltersOpen = false; this._acctActionRow = null; this.render(); window.scrollTo({ top: 0 }); },
+  setPage(p) { this.app.state.page = p; this.app.state.moreOpen = false; this.app.state.quickAddOpen = false; this.app.state.txVisible = 25; this._needsAttentionExpanded = false; this._txActionRow = null; this._txFiltersOpen = false; this._acctActionRow = null; this._personActionRow = null; this._peopleSettledExpanded = false; this.render(); window.scrollTo({ top: 0 }); },
   // A person's own page: every loan and installment plan tied to them (both
   // directions) in one place, instead of scattered across Receivables &
   // Payables and Installments — the gap that made juggling several loans
@@ -246,6 +246,15 @@ const UI = {
   // toId (a transfer either side), so this is the same filter a person
   // could set by hand from the dropdown there, just one tap instead of two.
   viewAccountTx(id) { this.app.state.filt.account = id; this.setPage("transactions"); },
+  // 47 (People Recut): a real, exact-match filter.person (matching
+  // r.personId, same field Person Detail's own historyTx already keys
+  // off), replacing what used to be UI.setFilter('q', p.name) here -- a
+  // real bug, same shape as viewCategoryTx's own "Food" one below: a
+  // person's name as free text both over-matches (any unrelated
+  // transaction whose description happens to mention it) and under-
+  // matches (a transaction genuinely tied to them via personId, but whose
+  // description never says their name at all).
+  viewPersonTx(id) { this.app.state.filt.person = id; this.setPage("transactions"); },
   // Same idea for a category/source bar (Dashboard's This month, Reports'
   // by-category and by-source breakdowns) -- a real, dedicated exact-match
   // filter (see renderTransactions/Engine's filt.category), NOT the
@@ -747,8 +756,64 @@ const UI = {
     this.render();
   },
   deletePersonC(id) {
-    if (!this.app.personHasRecords(id) && this.hapticConfirm(this.app.L("Delete ") + this.app.personName(id) + "?")) { this.app.deletePerson(id); this.render(); }
+    this._personActionRow = null;
+    // render() must fire unconditionally, even when hapticConfirm() is
+    // cancelled -- same lesson learned from deleteTxC/deleteAccountC's own
+    // real bugs (see their comments): otherwise _personActionRow's reset
+    // above never reaches the DOM and a stale .sheet-backdrop stays live,
+    // intercepting the next click anywhere else on the page.
+    if (!this.app.personHasRecords(id) && this.hapticConfirm(this.app.L("Delete ") + this.app.personName(id) + "?")) { this.app.deletePerson(id); }
+    this.render();
   },
+  // 41 (People Recut): the sheet UI.openPersonActions() opens -- reuses
+  // the exact .sheet/.sheet-backdrop/.sheet-actions markup Transactions'/
+  // Accounts' own action sheets established (see renderTxActionSheet()/
+  // renderAcctActionSheet()), just for "+ Lend / owed to me"/"+ Debt I
+  // owe"/Edit/Delete instead. Pay/Collect stay their own always-visible
+  // primary button on both the People list and Person Detail -- the one
+  // action most likely to actually be needed for a person with an open
+  // balance, same reasoning search stayed always-visible in Transactions'
+  // own filter split (idea 32) instead of folding everything behind one
+  // toggle. this._personActionRow holds which person's sheet (if any) is
+  // open -- reused as-is by both the People list and Person Detail, since
+  // only one such sheet can ever be open at a time regardless of page.
+  renderPersonActionSheet() {
+    const app = this.app, id = this._personActionRow;
+    if (!id) return "";
+    const p = app.state.data.people.find(x => x.id === id);
+    if (!p) return "";
+    const canDelete = !app.personHasRecords(p.id);
+    const items = [
+      ["M12 5v14M19 12l-7 7-7-7", app.L("+ Lend / owed to me", "+ سلفة / لي"), "UI.openPersonForm('receivable','" + p.id + "')", false],
+      ["M12 19V5M5 12l7-7 7 7", app.L("+ Debt I owe", "+ دين عليّ"), "UI.openPersonForm('payable','" + p.id + "')", false],
+      ["M12 20h9M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z", app.L("Edit"), "UI.openPersonEdit('" + p.id + "')", false],
+      canDelete ? ["M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M10 11v6M14 11v6", app.L("Delete"), "UI.deletePersonC('" + p.id + "')", true] : null,
+    ].filter(Boolean);
+    return '<div class="sheet-backdrop" onclick="UI.closePersonActions()"></div>' +
+      '<div class="sheet" role="dialog" aria-modal="true" aria-label="' + esc(p.name) + '">' +
+        '<div class="sheet-handle"></div>' +
+        '<div class="sheet-title">' + esc(p.name) + "</div>" +
+        '<div class="sheet-actions">' + items.map(([ico, label, onclick, danger]) =>
+          '<button type="button" class="sheet-action' + (danger ? " danger" : "") + '" onclick="' + onclick + '"><span class="sheet-action-ico">' + svgIcon(ico, 18) + "</span>" + esc(label) + "</button>"
+        ).join("") + "</div>" +
+      "</div>";
+  },
+  openPersonActions(id) { this._personActionRow = id; this.render(); },
+  closePersonActions() { this._personActionRow = null; this.render(); },
+  // "receivable"/"payable" both take a bare {personId} pre-fill already
+  // (same as the People list's own inline "+ Lend"/"+ Debt" buttons always
+  // did) -- this just also closes the sheet first, the same pattern
+  // UI.openAcctEdit()/openAcctStatement() already established for Accounts'
+  // own sheet, so it doesn't linger in the DOM underneath the modal.
+  openPersonForm(kind, id) { this._personActionRow = null; this.openModal(kind, { personId: id }); },
+  openPersonEdit(id) {
+    this._personActionRow = null;
+    const p = this.app.state.data.people.find(x => x.id === id);
+    if (!p) return;
+    this.openModal("person_edit", { id: p.id, name: p.name, phone: p.phone || "", relation: p.relation || "other", color: this.personColor(p), color2: p.color2 || "", pattern: p.pattern || "diag1", textColor: p.textColor || "auto", notes: p.notes || "" });
+  },
+  togglePeopleSettled() { this._peopleSettledExpanded = !this._peopleSettledExpanded; this.render(); },
+  setPeopleQuery(v) { this.app.state.peopleQ = v; this.render(); },
   deletePlanC(id) {
     const plan = this.app.state.data.plans.find(p => p.id === id); if (!plan) return;
     if (this.app.planCanDelete(id) && this.hapticConfirm(this.app.L("Delete ") + plan.title + "?")) { this.app.deletePlan(id); this.render(); }
@@ -916,6 +981,7 @@ const UI = {
       this.renderQuickAddSheet(t) +
       this.renderTxActionSheet() +
       this.renderAcctActionSheet() +
+      this.renderPersonActionSheet() +
       this.renderModal(t);
       // #flashStack is NOT rendered here on purpose -- see UI.flash()'s
       // comment: it lives outside #root in the static page shell so it
@@ -2355,6 +2421,11 @@ const UI = {
     const F = S.filt;
     if (F.type !== "all") rows = rows.filter(r => r.type === F.type);
     if (F.account !== "all") rows = rows.filter(r => r.accountId === F.account || r.fromId === F.account || r.toId === F.account);
+    // 47 (People Recut): a real, exact match on r.personId -- see
+    // UI.viewPersonTx()'s own comment for the real "Food"-shaped bug this
+    // replaces (a person's name as free text, both over- and under-
+    // matching real transactions).
+    if (F.person !== "all") rows = rows.filter(r => r.personId === F.person);
     if (F.preset !== "all") { const from = app.iso(app.addDays(new Date(), -presetStart[F.preset])); rows = rows.filter(r => r.date >= from); }
     // Exact match, NOT folded into the free-text search below -- a real
     // bug, reported by a user: "Food" is both a category name AND
@@ -2486,6 +2557,14 @@ const UI = {
     if (d.tx.some(x => anyCatBucketType.includes(x.type) && !x.category)) catSet.add("Other");
     if (F.category !== "all") catSet.add(F.category);
     const catOptions = ["all"].concat([...catSet].sort((a, b) => a.localeCompare(b))).map(c => '<option value="' + esc(c) + '"' + (F.category === c ? " selected" : "") + ">" + (c === "all" ? esc(app.L("All categories", "كل الفئات")) : esc(c)) + "</option>").join("");
+    // 47 (People Recut): a real dropdown for it, same as accOptions above
+    // -- both what UI.viewPersonTx() sets when tapping a person's own
+    // "Transactions" link, and a real, manually-pickable filter that never
+    // existed here at all before. A person who can be deleted was never
+    // party to any transaction to begin with (personHasRecords guards it),
+    // so unlike F.category there's no "since-deleted person still on an
+    // old row" case this dropdown needs to defend against.
+    const personOptions = ["all"].concat(d.people.map(p => p.id)).map(id => '<option value="' + id + '"' + (F.person === id ? " selected" : "") + ">" + (id === "all" ? esc(app.L("All people", "كل الأشخاص")) : esc(app.personName(id))) + "</option>").join("");
 
     // 32 (Transactions Recut): search stays in its own always-visible row
     // -- the one filter reached for without first deciding to "go filter
@@ -2498,7 +2577,7 @@ const UI = {
     // split instead of just patching the tests around the worse UX.
     // .filter-count badges how many of the 4 dropdowns are actually
     // narrowed from "all", so what's collapsed is never a total mystery.
-    const activeFilterCount = ["type", "account", "preset", "category"].filter(k => F[k] !== "all").length;
+    const activeFilterCount = ["type", "account", "preset", "category", "person"].filter(k => F[k] !== "all").length;
     const searchRow = '<div class="tx-search-row">' +
       '<input id="txSearch" class="input" type="search" placeholder="' + esc(t.search) + '" value="' + esc(F.q) + '" oninput="UI.setFilter(\'q\', this.value)">' +
       '<button type="button" class="btn btn-secondary filters-toggle mobile-only" aria-expanded="' + (this._txFiltersOpen ? "true" : "false") + '" onclick="UI.toggleTxFilters()">' + esc(app.L("Filters", "الفلاتر")) + (activeFilterCount ? '<span class="filter-count">' + activeFilterCount + "</span>" : "") + "</button>" +
@@ -2512,6 +2591,7 @@ const UI = {
       // shouldn't silently inherit a stale kind left over from an earlier
       // bar tap (see viewCategoryTx()/the "Other" scoping above).
       '<select class="input" onchange="UI.setFilters({categoryKind:\'\',category:this.value})">' + catOptions + "</select>" +
+      '<select class="input" style="grid-column:1/-1" onchange="UI.setFilter(\'person\', this.value)">' + personOptions + "</select>" +
     "</div>";
     // Mobile-only (see toggleGroupTx()'s own comment for why); this
     // checkbox doesn't touch `filt` at all, so it survives a filter change
@@ -2552,17 +2632,88 @@ const UI = {
     const rt = this.personRelation(p);
     return '<span class="person-tag">' + rt.icon + " " + esc(rt.l) + "</span>";
   },
+  // 46 (People Recut): tel:/wa.me links next to a person's phone number,
+  // wherever it's shown (People list, Person Detail) -- previously plain
+  // text with no way to reach out from inside the app at all, on a page
+  // whose whole point is tracking money owed to/by real people. No
+  // WhatsApp logo (trademarked, same "no bank logos" reasoning
+  // cardBackground() already gives for account tiles) -- a generic
+  // message-circle icon plus the "Message" label makes the wa.me intent
+  // clear without it.
+  personPhoneLinks(phone) {
+    const digits = (phone || "").replace(/\D/g, "");
+    if (!digits) return "";
+    // Egyptian mobile numbers are stored locally (e.g. "0100 111 2233") --
+    // wa.me's deep link needs the international form (leading 0 dropped,
+    // country code 20 prepended); tel: works fine with the local digits
+    // exactly as stored, so only the WhatsApp link needs this adjustment.
+    const intl = digits.replace(/^0/, "20");
+    return '<a class="phone-link" href="tel:' + digits + '" aria-label="' + esc(this.app.L("Call", "اتصال")) + '">' + svgIcon("M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z", 15) + "</a>" +
+      '<a class="phone-link" href="https://wa.me/' + intl + '" target="_blank" rel="noopener" aria-label="' + esc(this.app.L("Message", "مراسلة")) + '">' + svgIcon("M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z", 15) + "</a>";
+  },
+  // 44 (People Recut): "when did anything last actually happen with this
+  // person" -- the exact same r.personId query Person Detail's own
+  // historyTx already uses (see renderPersonDetail()'s comment on that),
+  // just reduced to its single most recent date instead of the full list,
+  // so the People list itself can surface which relationships are still
+  // active at a glance without opening each one.
+  personLastActivityText(personId) {
+    const app = this.app;
+    const tx = app.state.data.tx.filter(x => x.personId === personId);
+    if (!tx.length) return "";
+    const latest = tx.reduce((a, x) => (x.date > a ? x.date : a), tx[0].date);
+    const daysAgo = Math.round((new Date(app.today()) - new Date(latest)) / 86400000);
+    if (daysAgo <= 0) return app.L("Active today", "نشط النهاردة");
+    if (daysAgo === 1) return app.L("Active yesterday", "نشط إمبارح");
+    if (daysAgo < 30) return app.L(daysAgo + "d ago", "من " + daysAgo + " يوم");
+    return app.L("Last active ", "آخر نشاط ") + app.dshort(latest);
+  },
   renderPeople(D, t) {
-    const app = this.app, d = app.state.data;
+    const app = this.app, S = app.state, d = app.state.data;
     const rows = d.people.map(p => {
       const planIn = D.plans.filter(x => x.personId === p.id && x.direction === "in").reduce((s, x) => s + x.remaining, 0);
       const planOut = D.plans.filter(x => x.personId === p.id && x.direction === "out").reduce((s, x) => s + x.remaining, 0);
       const r = Math.max(0, D.recv[p.id] || 0) + planIn, y = Math.max(0, D.pay[p.id] || 0) + planOut;
-      const canDelete = !app.personHasRecords(p.id);
-      return { p, r, y, net: r - y, canDelete };
+      return { p, r, y, net: r - y };
     }).sort((a, b) => Math.abs(b.net) - Math.abs(a.net));
 
-    const editArgs = (p) => JSON.stringify({ id: p.id, name: p.name, phone: p.phone || "", relation: p.relation || "other", color: this.personColor(p), color2: p.color2 || "", pattern: p.pattern || "diag1", textColor: p.textColor || "auto", notes: p.notes || "" }).replace(/"/g, "&quot;");
+    // 42 (People Recut): name/phone/notes search -- its own S.peopleQ, not
+    // Transactions' filt.q, so searching here never leaks into (or gets
+    // clobbered by) an unrelated search left over on the Transactions page.
+    const q = (S.peopleQ || "").trim().toLowerCase();
+    const filteredRows = !q ? rows : rows.filter(row => (row.p.name + " " + (row.p.phone || "") + " " + (row.p.notes || "")).toLowerCase().includes(q));
+    const searchRow = '<div class="tx-search-row"><input class="input" type="search" placeholder="' + esc(app.L("Search people…", "دور على شخص…")) + '" value="' + esc(S.peopleQ || "") + '" oninput="UI.setPeopleQuery(this.value)"></div>';
+
+    // 43 (People Recut): counts, not amounts -- the total owed to/by me
+    // already has a real home on Dashboard's own position tiles, so
+    // repeating that same figure here would just be a duplicate. What
+    // Dashboard *doesn't* answer is "how many relationships", which this
+    // does at a glance without counting cards by hand. Counted from
+    // filteredRows (real bug caught in review: counting from the
+    // unfiltered `rows` instead left this tile silently disagreeing with
+    // the actual list below it while a search was narrowing it down).
+    const owingMeCount = filteredRows.filter(row => row.net > 0.001).length;
+    const owedByMeCount = filteredRows.filter(row => row.net < -0.001).length;
+    const settledCount = filteredRows.length - owingMeCount - owedByMeCount;
+    const summaryTile = !filteredRows.length ? "" : '<div class="tile-grid" style="margin-bottom:10px">' +
+      '<div class="pos-tile"><div class="pos-label">' + esc(app.L("People who owe me", "ناس ليّا عندهم")) + '</div><div class="pos-value tone-pos">' + owingMeCount + "</div></div>" +
+      '<div class="pos-tile"><div class="pos-label">' + esc(app.L("People I owe", "ناس عليّا لهم")) + '</div><div class="pos-value tone-neg">' + owedByMeCount + "</div></div>" +
+      '<div class="pos-tile"><div class="pos-label">' + esc(app.L("Settled", "متسددين")) + '</div><div class="pos-value">' + settledCount + "</div></div>" +
+    "</div>";
+
+    // 45 (People Recut): a fully-settled person (net effectively zero) is
+    // permanently taking up the same visual space as one with real money
+    // still on the line -- collapsed by default (mobile only, see #44's
+    // own mobile-only scoping below for the same "this user's own usage is
+    // 100% mobile" reasoning), same "+N more"/expand-on-demand pattern
+    // Dashboard's own Needs Attention already established (idea 25). A
+    // search in progress always shows them uncollapsed -- hiding a person
+    // you just searched for by name because they happen to be settled
+    // would be actively unhelpful, not tidy.
+    const activeRows = filteredRows.filter(row => Math.abs(row.net) > 0.001);
+    const settledRows = filteredRows.filter(row => Math.abs(row.net) <= 0.001);
+    const settledCollapsed = !q && !this._peopleSettledExpanded && settledRows.length > 0;
+
     // "Add a balance for this person" — this is just the existing
     // receivable/payable form pre-filled with who it's for, reachable
     // directly from the person instead of only from Receivables & Payables.
@@ -2575,29 +2726,40 @@ const UI = {
     // date. That left no way at all to pay down something like a family
     // loan you deliberately never gave a due date. Now they're always here
     // whenever there's an actual balance to settle, regardless of due date.
-    const personActions = ({ p, r, y, canDelete }) =>
+    // 41 (People Recut): "+ Lend"/"+ Debt"/Edit/Delete moved off this
+    // always-visible row into the shared "..." sheet (see
+    // renderPersonActionSheet()) -- Pay/Collect are the one action common
+    // enough to keep right here.
+    const primaryAction = ({ p, r, y }) =>
       (y > 0 ? '<button class="btn btn-primary small" onclick="UI.openModal(\'debt_payment\',{personId:\'' + p.id + '\'})">' + esc(t.pay) + "</button>" : "") +
       (r > 0 ? '<button class="btn btn-primary small" onclick="UI.openModal(\'receivable_payment\',{personId:\'' + p.id + '\'})">' + esc(t.collect) + "</button>" : "") +
-      '<button class="btn btn-secondary small" onclick="UI.openModal(\'receivable\',{personId:\'' + p.id + '\'})">' + esc(t.aReceivable) + "</button>" +
-      '<button class="btn btn-secondary small" onclick="UI.openModal(\'payable\',{personId:\'' + p.id + '\'})">' + esc(t.aDebt) + "</button>" +
-      '<button class="link-btn small" onclick="UI.openModal(\'person_edit\',' + editArgs(p) + ')">' + esc(app.L("Edit")) + "</button>" +
-      (canDelete ? '<button class="link-btn small danger" onclick="UI.deletePersonC(\'' + p.id + '\')">' + esc(app.L("Delete")) + "</button>" : "");
+      '<button type="button" class="link-btn small person-more-btn" aria-haspopup="true" aria-label="' + esc(app.L("More actions", "إجراءات تانية")) + '" onclick="UI.openPersonActions(\'' + p.id + '\')">' + svgIcon("M12 6h.01M12 12h.01M12 18h.01", 18) + "</button>";
 
     const table = '<div class="table-wrap desktop-only"><table class="table"><thead><tr>' +
       "<th>" + esc(t.name) + "</th><th>" + esc(t.phone) + "</th><th class=\"num\">" + esc(t.owesMe) + "</th><th class=\"num\">" + esc(t.iOwe) + "</th><th class=\"num\">" + esc(t.net) + "</th><th></th>" +
-      "</tr></thead><tbody>" + rows.map((row) => { const { p, r, y, net } = row;
+      // Desktop table shows every matching person, settled included, no
+      // collapse -- out of scope for now, this user's own usage is 100%
+      // mobile (same call the Transactions Recut made for its own #33).
+      "</tr></thead><tbody>" + filteredRows.map((row) => { const { p, r, y, net } = row;
         return "<tr><td><div class=\"person-id\">" + this.personAvatar(p, "sm") + "<button class=\"link-btn\" onclick=\"UI.viewPerson('" + p.id + "')\">" + esc(p.name) + "</button></div></td><td>" + esc(p.phone || "—") + '</td><td class="num tone-pos">' + app.fmt(r) + '</td><td class="num tone-neg">' + app.fmt(y) + '</td><td class="num ' + (net >= 0 ? "tone-pos" : "tone-neg") + '">' + app.fmt(net) + "</td>" +
-        '<td><button class="link-btn small" onclick="UI.setPage(\'transactions\');UI.setFilter(\'q\',\'' + escJsArg(p.name) + '\')">' + esc(t.viewTx) + "</button>" + personActions(row) + "</td></tr>";
+        '<td><button class="link-btn small" onclick="UI.viewPersonTx(\'' + p.id + '\')">' + esc(t.viewTx) + "</button>" + primaryAction(row) + "</td></tr>";
       }).join("") + "</tbody></table></div>";
 
-    const cards = '<div class="card-list mobile-only">' + rows.map((row) => { const { p, r, y, net } = row;
-      return '<div class="card-row person-card" style="border-inline-start:4px solid ' + this.personColor(p) + '"><div class="card-row-top"><div class="person-id">' + this.personAvatar(p) + '<div><button class="link-btn card-row-title" onclick="UI.viewPerson(\'' + p.id + '\')">' + esc(p.name) + '</button><div class="card-row-sub">' + this.personTag(p) + (p.phone ? " · " + esc(p.phone) : "") + "</div></div></div>" +
+    const cardHtml = (row) => { const { p, r, y, net } = row;
+      const lastActivity = this.personLastActivityText(p.id);
+      return '<div class="card-row person-card" style="border-inline-start:4px solid ' + this.personColor(p) + '"><div class="card-row-top"><div class="person-id">' + this.personAvatar(p) + '<div><button class="link-btn card-row-title" onclick="UI.viewPerson(\'' + p.id + '\')">' + esc(p.name) + '</button><div class="card-row-sub">' + this.personTag(p) + (p.phone ? " · " + esc(p.phone) + this.personPhoneLinks(p.phone) : "") + "</div></div></div>" +
       '<div class="card-row-amt ' + (net >= 0 ? "tone-pos" : "tone-neg") + '">' + app.fmt(net) + "</div></div>" +
-      '<div class="card-row-meta"><span>' + esc(t.owesMe) + ": " + app.fmt(r) + '</span><span>' + esc(t.iOwe) + ": " + app.fmt(y) + "</span></div>" +
-      '<div class="btn-row wrap"><button class="link-btn small" onclick="UI.setPage(\'transactions\');UI.setFilter(\'q\',\'' + escJsArg(p.name) + '\')">' + esc(t.viewTx) + "</button>" + personActions(row) + "</div></div>";
-    }).join("") + "</div>";
+      '<div class="card-row-meta"><span>' + esc(t.owesMe) + ": " + app.fmt(r) + '</span><span>' + esc(t.iOwe) + ": " + app.fmt(y) + "</span>" + (lastActivity ? "<span>" + esc(lastActivity) + "</span>" : "") + "</div>" +
+      '<div class="btn-row wrap"><button class="link-btn small" onclick="UI.viewPersonTx(\'' + p.id + '\')">' + esc(t.viewTx) + "</button>" + primaryAction(row) + "</div></div>";
+    };
+    const cards = '<div class="card-list mobile-only">' + activeRows.map(cardHtml).join("") + "</div>";
+    const settledSection = !settledRows.length ? "" :
+      (settledCollapsed
+        ? '<button class="btn btn-secondary block mobile-only" onclick="UI.togglePeopleSettled()">' + esc(app.L(settledRows.length + " settled", settledRows.length + " متسدد")) + "</button>"
+        : '<h2 class="section-title mobile-only">' + esc(app.L("Settled", "متسدد")) + '</h2><div class="card-list mobile-only">' + settledRows.map(cardHtml).join("") + "</div>");
 
-    return this.tabHeader(t.people, d.people.length + app.L(" people · balances computed from the ledger", " شخص · الأرصدة محسوبة من السجل"), [[t.aPerson, "UI.openModal('person')"]]) + table + cards;
+    return this.tabHeader(t.people, d.people.length + app.L(" people · balances computed from the ledger", " شخص · الأرصدة محسوبة من السجل"), [[t.aPerson, "UI.openModal('person')"]]) +
+      summaryTile + searchRow + table + cards + settledSection;
   },
 
   // ---- Person detail (everything tied to one person, in one place) --------
@@ -2619,8 +2781,6 @@ const UI = {
     const r = Math.max(0, D.recv[p.id] || 0) + planIn.reduce((s, x) => s + x.remaining, 0);
     const y = Math.max(0, D.pay[p.id] || 0) + planOut.reduce((s, x) => s + x.remaining, 0);
     const net = r - y;
-    const canDelete = !app.personHasRecords(p.id);
-    const editArgs = JSON.stringify({ id: p.id, name: p.name, phone: p.phone || "", relation: p.relation || "other", color: this.personColor(p), color2: p.color2 || "", pattern: p.pattern || "diag1", textColor: p.textColor || "auto", notes: p.notes || "" }).replace(/"/g, "&quot;");
 
     // .hero-card.alt -- same page-level "headline number" treatment
     // Forecast/Cash Flow already give their own single most important
@@ -2697,17 +2857,18 @@ const UI = {
     }).join("");
     const historySection = historyTx.length ? '<h2 class="section-title" style="margin-top:20px">' + esc(t.history) + '</h2><div class="card-list">' + historyRows + "</div>" : "";
 
+    // 41 (People Recut): "+ Lend"/"+ Debt"/Edit/Delete moved off this
+    // always-visible row into the shared "..." trigger opening
+    // UI.renderPersonActionSheet() (same sheet the People list itself now
+    // uses) -- Pay/Collect stay right here, same reasoning as there.
     const actions = '<div class="btn-row wrap">' +
       (y > 0 ? '<button class="btn btn-primary small" onclick="UI.openModal(\'debt_payment\',{personId:\'' + p.id + '\'})">' + esc(t.pay) + "</button>" : "") +
       (r > 0 ? '<button class="btn btn-primary small" onclick="UI.openModal(\'receivable_payment\',{personId:\'' + p.id + '\'})">' + esc(t.collect) + "</button>" : "") +
-      '<button class="btn btn-secondary small" onclick="UI.openModal(\'receivable\',{personId:\'' + p.id + '\'})">' + esc(t.aReceivable) + "</button>" +
-      '<button class="btn btn-secondary small" onclick="UI.openModal(\'payable\',{personId:\'' + p.id + '\'})">' + esc(t.aDebt) + "</button>" +
-      '<button class="link-btn small" onclick="UI.openModal(\'person_edit\',' + editArgs + ')">' + esc(app.L("Edit")) + "</button>" +
-      (canDelete ? '<button class="link-btn small danger" onclick="UI.deletePersonC(\'' + p.id + '\')">' + esc(app.L("Delete")) + "</button>" : "") +
+      '<button type="button" class="link-btn small person-more-btn" aria-haspopup="true" aria-label="' + esc(app.L("More actions", "إجراءات تانية")) + '" onclick="UI.openPersonActions(\'' + p.id + '\')">' + svgIcon("M12 6h.01M12 12h.01M12 18h.01", 18) + "</button>" +
     "</div>";
 
     const backBtn = '<button class="link-btn small" onclick="UI.setPage(\'people\')">← ' + esc(t.people) + "</button>";
-    const sub = this.personTag(p) + " · " + esc(p.phone || app.L("No phone on file", "مفيش رقم متسجل")) + (p.notes ? " · " + esc(p.notes) : "");
+    const sub = this.personTag(p) + " · " + (p.phone ? esc(p.phone) + this.personPhoneLinks(p.phone) : esc(app.L("No phone on file", "مفيش رقم متسجل"))) + (p.notes ? " · " + esc(p.notes) : "");
     // Same avatar as the People list, just bigger -- a colored header
     // instead of the plain "Hazem" / "Sameh Hassan" title every person used
     // to share the exact same look under.
