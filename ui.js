@@ -345,7 +345,7 @@ const UI = {
   },
 
   // ---- generic actions ---------------------------------------------------
-  setPage(p) { this.app.state.page = p; this.app.state.moreOpen = false; this.app.state.quickAddOpen = false; this.app.state.txVisible = 25; this._needsAttentionExpanded = false; this._txActionRow = null; this._txFiltersOpen = false; this._acctActionRow = null; this._personActionRow = null; this._peopleSettledExpanded = false; this._plansCompletedExpanded = false; this._groupActionRow = null; this._groupsCompletedExpanded = false; this._stmtActionRow = null; this._goalsCompletedExpanded = false; this.render(); window.scrollTo({ top: 0 }); },
+  setPage(p) { this.app.state.page = p; this.app.state.moreOpen = false; this.app.state.quickAddOpen = false; this.app.state.txVisible = 25; this._needsAttentionExpanded = false; this._txActionRow = null; this._txFiltersOpen = false; this._acctActionRow = null; this._personActionRow = null; this._peopleSettledExpanded = false; this._plansCompletedExpanded = false; this._groupActionRow = null; this._groupsCompletedExpanded = false; this._stmtActionRow = null; this._goalsCompletedExpanded = false; this._investActionRow = null; this._investClosedExpanded = false; this.render(); window.scrollTo({ top: 0 }); },
   // A person's own page: every loan and installment plan tied to them (both
   // directions) in one place, instead of scattered across Receivables &
   // Payables and Installments — the gap that made juggling several loans
@@ -967,8 +967,14 @@ const UI = {
     if (this.app.planCanDelete(id) && this.hapticConfirm(this.app.L("Delete ") + plan.title + "?")) { this.app.deletePlan(id); this.render(); }
   },
   deleteInvestmentC(id) {
+    // render() must fire unconditionally, even on a cancelled confirm() --
+    // now reachable from the investment's own action sheet, same class of
+    // fix as deleteGroupC/deleteCardStatementC (a cancelled confirm would
+    // otherwise leave the sheet's backdrop stuck in the DOM).
+    this._investActionRow = null;
     const iv = this.app.state.data.investments.find(i => i.id === id); if (!iv) return;
-    if (this.app.investmentCanDelete(id) && this.hapticConfirm(this.app.L("Delete ") + iv.name + "?")) { this.app.deleteInvestment(id); this.render(); }
+    if (this.app.investmentCanDelete(id) && this.hapticConfirm(this.app.L("Delete ") + iv.name + "?")) { this.app.deleteInvestment(id); }
+    this.render();
   },
   // Real bug fix: recurring rules had no delete path anywhere -- same
   // shape as deleteInvestmentC just above.
@@ -1196,6 +1202,7 @@ const UI = {
       this.renderPersonActionSheet() +
       this.renderGroupActionSheet() +
       this.renderStmtActionSheet() +
+      this.renderInvestActionSheet() +
       this.renderModal(t);
       // #flashStack is NOT rendered here on purpose -- see UI.flash()'s
       // comment: it lives outside #root in the static page shell so it
@@ -3606,9 +3613,19 @@ const UI = {
   },
 
   // ---- Investments -----------------------------------------------------------
+  // Real missing feature fixed: there was no way to record actually
+  // selling/closing a position (only invest_update's mark-to-market and
+  // Edit's metadata correction) -- see the new "investment_sell" modal in
+  // FORMS(). Closed positions split into their own collapsed section, the
+  // same active/"N more" pattern Installments/Groups/Savings goals already
+  // use, showing REALIZED P&L (soldFor - invested) instead of the
+  // unrealized one active cards show.
   renderInvestments(D, t) {
     const app = this.app, d = app.state.data;
-    const cards = d.investments.map(v => {
+    const activeInvestments = d.investments.filter(v => !v.closed);
+    const closedInvestments = d.investments.filter(v => v.closed);
+    const closedCollapsed = !this._investClosedExpanded && closedInvestments.length > 0;
+    const activeCard = (v) => {
       const pnl = v.value - v.invested;
       // Real gap fix: the P&L line showed a raw amount only -- +EGP 500
       // reads very differently on a EGP 5,000 position than a EGP 50,000
@@ -3619,18 +3636,76 @@ const UI = {
       // as a nonsensical +Infinity%.
       const pnlPct = v.invested > 0 ? Math.round(pnl / v.invested * 1000) / 10 : null;
       const pnlPctText = pnlPct === null ? "" : " (" + (pnlPct >= 0 ? "+" : "") + app.numStr(pnlPct) + "%)";
-      const editArgs = JSON.stringify({ id: v.id, name: v.name, type: v.type, invested: v.invested }).replace(/"/g, "&quot;");
-      const canDelete = app.investmentCanDelete(v.id);
       return '<div class="card-row"><div class="card-row-top"><div><div class="card-row-title">' + esc(v.name) + '</div><div class="card-row-sub">' + esc(v.type) + "</div></div>" +
         '<div class="card-row-amt">' + app.fmt(v.value) + "</div></div>" +
         '<div class="card-row-meta"><span>' + esc(t.invested) + ": " + app.fmt(v.invested) + '</span><span class="' + (pnl >= 0 ? "tone-pos" : "tone-neg") + '">' + esc(t.pnl) + ": " + app.fmtS(pnl) + esc(pnlPctText) + "</span></div>" +
         '<div class="btn-row wrap">' +
         '<button class="btn btn-secondary small" onclick="UI.openModal(\'invest_update\',{investmentId:\'' + v.id + '\'})">' + esc(t.updateValue) + "</button>" +
-        '<button class="link-btn small" onclick="UI.openModal(\'investment_edit\',' + editArgs + ')">' + esc(app.L("Edit")) + "</button>" +
-        (canDelete ? '<button class="link-btn small danger" onclick="UI.deleteInvestmentC(\'' + v.id + '\')">' + esc(app.L("Delete")) + "</button>" : "") +
+        // Edit/Sell/Delete moved off this always-visible row into the
+        // shared "..." trigger -- same "one primary action stays inline"
+        // convention Card statements/Savings groups already established;
+        // Update value is the frequent one, Sell is a rare/terminal action
+        // that belongs alongside Edit/Delete, not competing for row space.
+        '<button type="button" class="link-btn small invest-more-btn" aria-haspopup="true" aria-label="' + esc(app.L("More actions", "إجراءات تانية")) + '" onclick="UI.openInvestActions(\'' + v.id + '\')">' + svgIcon("M12 6h.01M12 12h.01M12 18h.01", 18) + "</button>" +
         "</div></div>";
-    }).join("");
-    return this.tabHeader(t.investments, D.invValue.toFixed ? (app.fmt(D.invValue) + " · " + esc(t.pnl) + " " + app.fmtS(D.invValue - D.invCost)) : "", [[t.aInvest, "UI.openModal('investment')"]]) + '<div class="card-list">' + cards + "</div>";
+    };
+    const closedCard = (v) => {
+      const realizedPnl = (v.soldFor || 0) - v.invested;
+      const realizedPct = v.invested > 0 ? Math.round(realizedPnl / v.invested * 1000) / 10 : null;
+      const realizedPctText = realizedPct === null ? "" : " (" + (realizedPct >= 0 ? "+" : "") + app.numStr(realizedPct) + "%)";
+      return '<div class="card-row"><div class="card-row-top"><div><div class="card-row-title">' + esc(v.name) + '</div><div class="card-row-sub">' + esc(v.type) + (v.soldDate ? " · " + esc(app.L("Sold ", "متباع في ")) + v.soldDate : "") + "</div></div>" +
+        '<div class="card-row-amt">' + app.fmt(v.soldFor || 0) + "</div></div>" +
+        '<div class="card-row-meta"><span>' + esc(t.invested) + ": " + app.fmt(v.invested) + '</span><span class="' + (realizedPnl >= 0 ? "tone-pos" : "tone-neg") + '">' + esc(app.L("Realized P&L", "الربح/الخسارة المحققة")) + ": " + app.fmtS(realizedPnl) + esc(realizedPctText) + "</span></div>" +
+      "</div>";
+    };
+    const activeCards = activeInvestments.map(activeCard).join("");
+    const closedSection = !closedInvestments.length ? "" : (closedCollapsed ?
+      '<button class="btn btn-secondary block" onclick="UI.toggleInvestClosed()">' + esc(app.L(closedInvestments.length + " sold", closedInvestments.length + " متباع")) + "</button>" :
+      '<h2 class="section-title">' + esc(app.L("Sold", "متباع")) + '</h2><div class="card-list">' + closedInvestments.map(closedCard).join("") + "</div>");
+    // Real bug fix: the whole page went blank with no message once every
+    // investment was removed -- every other list in the app (Savings
+    // goals, To-dos, Savings groups) already falls back to a real empty
+    // state instead of a silently blank card-list.
+    const emptyInvest = d.investments.length ? "" : '<div style="margin-top:14px">' + this.emptyState(ICON_PLUS, app.L("No investments yet", "لسه مفيش استثمارات"), app.L("Add one above to start tracking its value.", "ضيف واحد من فوق تبدأ تتابع قيمته.")) + "</div>";
+    return this.tabHeader(t.investments, D.invValue.toFixed ? (app.fmt(D.invValue) + " · " + esc(t.pnl) + " " + app.fmtS(D.invValue - D.invCost)) : "", [[t.aInvest, "UI.openModal('investment')"]]) +
+      (activeInvestments.length ? '<div class="card-list">' + activeCards + "</div>" : "") + closedSection + emptyInvest;
+  },
+  toggleInvestClosed() { this._investClosedExpanded = !this._investClosedExpanded; this.render(); },
+  // The sheet UI.openInvestActions() opens -- same shared .sheet markup
+  // every other action sheet in the app already uses.
+  renderInvestActionSheet() {
+    const app = this.app, id = this._investActionRow;
+    if (!id) return "";
+    const v = (app.state.data.investments || []).find(x => x.id === id);
+    if (!v || v.closed) return "";
+    const canDelete = app.investmentCanDelete(v.id);
+    const items = [
+      ["M12 20h9M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z", app.L("Edit"), "UI.openInvestEdit('" + v.id + "')", false],
+      ["M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6", app.L("Sell / close", "بيع / إغلاق"), "UI.openInvestSell('" + v.id + "')", false],
+      canDelete ? ["M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M10 11v6M14 11v6", app.L("Delete"), "UI.deleteInvestmentC('" + v.id + "')", true] : null,
+    ].filter(Boolean);
+    return '<div class="sheet-backdrop" onclick="UI.closeInvestActions()"></div>' +
+      '<div class="sheet" role="dialog" aria-modal="true" aria-label="' + esc(v.name) + '">' +
+        '<div class="sheet-handle"></div>' +
+        '<div class="sheet-title">' + esc(v.name) + "</div>" +
+        '<div class="sheet-actions">' + items.map(([ico, label, onclick, danger]) =>
+          '<button type="button" class="sheet-action' + (danger ? " danger" : "") + '" onclick="' + onclick + '"><span class="sheet-action-ico">' + svgIcon(ico, 18) + "</span>" + esc(label) + "</button>"
+        ).join("") + "</div>" +
+      "</div>";
+  },
+  openInvestActions(id) { this._investActionRow = id; this.render(); },
+  closeInvestActions() { this._investActionRow = null; this.render(); },
+  openInvestEdit(id) {
+    this._investActionRow = null;
+    const v = (this.app.state.data.investments || []).find(x => x.id === id);
+    if (!v) return;
+    this.openModal("investment_edit", { id: v.id, name: v.name, type: v.type, invested: v.invested });
+  },
+  openInvestSell(id) {
+    this._investActionRow = null;
+    const v = (this.app.state.data.investments || []).find(x => x.id === id);
+    if (!v) return;
+    this.openModal("investment_sell", { investmentId: v.id });
   },
 
   // ---- Recurring ----------------------------------------------------------

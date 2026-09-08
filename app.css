@@ -344,6 +344,9 @@ h1,h2,h3{font-family:var(--font-head);font-weight:600;margin:0;text-wrap:balance
 /* Card statements: same "..." trigger pattern, opening
    UI.renderStmtActionSheet() instead. */
 .stmt-more-btn{color:var(--c-text-faint);padding-inline:10px}
+/* Investments: same "..." trigger pattern, opening
+   UI.renderInvestActionSheet() instead. */
+.invest-more-btn{color:var(--c-text-faint);padding-inline:10px}
 /* 46 (People Recut): tel:/wa.me links next to a phone number (People
    list, Person Detail) -- small enough to sit inline right after the
    phone text itself, not a full button. */

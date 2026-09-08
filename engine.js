@@ -754,7 +754,14 @@ class Engine {
     // cash/bank/wallets either, so its balance was real on the account's
     // own row but invisible everywhere derived from these totals.
     const otherBalance = sum(a => a.active && !["cash", "bank", "wallet", "card"].includes(a.type));
-    const invValue = d.investments.reduce((s, i) => s + i.value, 0), invCost = d.investments.reduce((s, i) => s + i.invested, 0);
+    // Closed (sold) positions excluded from both totals -- the sale
+    // proceeds already landed in a real account (an investment_return
+    // transaction, counted in `available`/`assets` through that account's
+    // own balance), so still summing the closed position's stale value/
+    // invested here would double-count it once as cash and once as a
+    // phantom holding that no longer exists.
+    const activeInvestments = d.investments.filter(i => !i.closed);
+    const invValue = activeInvestments.reduce((s, i) => s + i.value, 0), invCost = activeInvestments.reduce((s, i) => s + i.invested, 0);
     const recvTotal = Object.values(recv).reduce((s, v) => s + Math.max(0, v), 0) + planRecv + gRecv;
     const payTotal = Object.values(pay).reduce((s, v) => s + Math.max(0, v), 0) + planPay + gPay;
     const available = cash + bank + wallets + otherBalance;
@@ -1419,8 +1426,30 @@ class Engine {
         D("color", this.L("Color", "اللون"), "color", { hint: this.L("Shows up on every bar and badge that draws this category.", "بيظهر في كل شريط وشارة بترسم الفئة دي.") }),
         D("icon", this.L("Icon", "الأيقونة"), "icon", { hint: this.L("Pick one of the app's own category icons — \"Tag\" is the plain default every custom category starts with.", "اختار واحدة من أيقونات الفئات الجاهزة — \"علامة\" هي الافتراضي البسيط اللي كل فئة مخصصة بتبدأ بيه.") })
       ] },
-      invest_update: { title: t.updateValue, fields: [D("investmentId", "Investment", "select", { options: d.investments.map(i => ({ v: i.id, l: i.name })) }), D("value", "New current value", "number"), D("date", "As of", "date")] },
+      // Closed (sold) positions excluded from both pickers below -- there's
+      // nothing left to mark-to-market or sell a second time once a real
+      // sale already closed it out (see the "investment_sell" branch in
+      // submit()).
+      invest_update: { title: t.updateValue, fields: [D("investmentId", "Investment", "select", { options: d.investments.filter(i => !i.closed).map(i => ({ v: i.id, l: i.name })) }), D("value", "New current value", "number"), D("date", "As of", "date")] },
       investment_edit: { title: this.L("Edit investment"), fields: [D("name", t.name, "text"), D("type", t.type, "select", { options: ["Stocks", "Gold", "Mutual fund", "Fixed deposit", "Certificate", "Crypto", "Business", "Other"].map(v => ({ v, l: v })) }), D("invested", "Amount invested", "number")] },
+      // Real missing feature -- there was no way to record actually
+      // selling/closing an investment (cashing it out into a real
+      // account), only openInvestModal's own "invest_update" mark-to-
+      // market and Edit's metadata correction. investment_return was
+      // already a fully wired transaction type everywhere else (derive()'s
+      // balance/bucket handling, categoryColor/categoryIcon's income-side
+      // normalization, categoryInUse) -- txEditableTypes() itself even
+      // used to say so explicitly ("investment_return ... not yet exposed
+      // through an entry form of their own"). Deliberately a full close
+      // only, not a partial sell -- a partial cash-out would need
+      // proportional cost-basis math (how much of `invested` a fractional
+      // sale actually clears) this app has no other precedent for.
+      investment_sell: { title: this.L("Sell / close investment", "بيع / إغلاق الاستثمار"), fields: [
+        D("investmentId", this.L("Investment", "الاستثمار"), "select", { options: d.investments.filter(i => !i.closed).map(i => ({ v: i.id, l: i.name })) }),
+        D("amount", this.L("Sale proceeds", "المبلغ المستلم من البيع"), "number", { hint: this.L("What actually landed in your account -- the realized gain/loss is this minus what you originally invested.", "اللي فعلاً دخل حسابك -- الربح/الخسارة المحققة هي المبلغ ده ناقص اللي استثمرته أصلاً.") }),
+        D("accountId", this.L("Deposit into", "يتحط في حساب"), "select", { options: accs }),
+        D("date", t.date, "date")
+      ] },
       // Relation picks a default avatar color (relationTypes()) so a fresh
       // person isn't just another grey row — same "pick a default, override
       // if you want" pattern as the account color field. Selecting a
@@ -1791,6 +1820,23 @@ class Engine {
       if (!need(iv, "Pick an investment.")) return false;
       iv.name = f.name; iv.type = f.type; iv.invested = N("invested");
       note = "Updated investment " + iv.name;
+    } else if (k === "investment_sell") {
+      const iv = data.investments.find(i => i.id === f.investmentId);
+      if (!need(iv, "Pick an investment.")) return false;
+      if (!need(!iv.closed, "This investment is already sold.")) return false;
+      if (!need(N("amount") > 0, "Sale proceeds must be greater than zero.")) return false;
+      if (!need(f.accountId, "Pick an account.")) return false;
+      // iv.invested/iv.value are left exactly as they were (not zeroed) --
+      // the closed section's own realized-P&L line (soldFor - invested)
+      // needs the real original cost basis to mean anything, and this is
+      // permanent history now, the same reasoning a reversed transaction
+      // is voided rather than actually deleted. invValue/invCost below
+      // exclude every closed position from the running totals instead, so
+      // this stops counting toward the active portfolio without losing
+      // the numbers that explain what happened.
+      iv.closed = true; iv.soldFor = N("amount"); iv.soldDate = f.date;
+      push({ date: f.date, type: "investment_return", amount: N("amount"), accountId: f.accountId, category: iv.type, desc: "Sold — " + iv.name, investmentId: iv.id });
+      note = "Sold " + iv.name + " for " + this.fmt(N("amount"));
     } else if (k === "person") {
       if (!need(f.name, "Name is required.")) return false;
       const rel = f.relation || "other";

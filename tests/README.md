@@ -700,6 +700,49 @@ account can be deleted, a card's Available/Limit stay consistent).
   `deleteCategoryC`'s message is now built from a list of parts (a
   transaction count, a budget, a recurring rule -- any combination) rather
   than a fixed set of and/or branches.
+- `check_batch13.js` -- Investments: a real bug and a real missing feature
+  found sweeping the one screen that hadn't had a "Recut" pass yet.
+
+  **Real bug fixed -- the page went silently blank once every investment
+  was gone.** Every other list in the app (Savings goals, Savings groups,
+  To-dos) already falls back to a real empty state; Investments' own
+  `renderInvestments()` just returned an empty `<div class="card-list">`
+  with nothing in it. Added the same `emptyState()` call the others use,
+  gated on `d.investments.length` (not just the active count, so it stays
+  correctly hidden while every investment is merely sold/closed -- see
+  below).
+
+  **Real gap fixed -- there was no way to actually sell/close a position.**
+  `investment_return` was a fully wired transaction type everywhere else
+  (`derive()`'s balance/bucket handling, `categoryColor`/`categoryIcon`'s
+  income-side normalization, `categoryInUse`) -- `txEditableTypes()`'s own
+  comment even said so explicitly ("not yet exposed through an entry form
+  of their own"). Added an `investment_sell` modal (pick the investment,
+  the sale proceeds, which account it lands in) reached from a new "..."
+  action sheet (`renderInvestActionSheet`/`openInvestActions`, mirroring
+  Card statements' `renderStmtActionSheet` exactly) that also now holds
+  Edit and Delete -- moved off the row itself, same "one primary action
+  stays inline" convention as Card statements/Savings groups, since Sell
+  is a rare/terminal action unlike the frequent "Update value".
+
+  Deliberately a full close only, not a partial sell -- a partial cash-out
+  would need proportional cost-basis math this app has no other precedent
+  for. Selling marks the investment `closed` (kept, not deleted --
+  `invested`/`value` stay as a permanent record so the closed section can
+  show real realized P&L) and posts a real `investment_return` tx tagged
+  with `investmentId`, which automatically blocks the sold position's own
+  deletion the same way any other tied transaction does. Closed positions
+  split into their own collapsed "N sold" section, the same active/"N
+  more" pattern Installments/Groups/Savings goals already use;
+  `derive()`'s `invValue`/`invCost` now sum only active (non-closed)
+  positions, so a sold position's stale value doesn't get double-counted
+  once as real cash (via the account balance the sale tx already updated)
+  and once as a phantom holding that no longer exists.
+
+  One real bug caught in code review: the closed card's "Sold <date>"
+  subtitle used a mistranslated Arabic word (`اتباع`, not a real word for
+  "sold") where the section header two lines above correctly used
+  `متباع` for the same concept -- fixed to match.
 
 ## Adding a new one
 
