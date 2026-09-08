@@ -80,7 +80,10 @@ const PAYLOAD = "x\\');alert(document.cookie);//<script>alert(1)</script>&\"'";
     // "alert(document.cookie)" would have run for real, showing the
     // actual cookie value (or an empty string) as its message, not this
     // literal source text.
-    await catPill.locator("button").click(); await page.waitForTimeout(200);
+    // .danger specifically -- the pill now also carries an Edit button
+    // (category_edit, a later batch), and this test wants the delete
+    // confirm() specifically, not either button.
+    await catPill.locator("button.danger").click(); await page.waitForTimeout(200);
     const deleteDialog = dialogs[dialogs.length - 1] || "";
     console.log("delete confirm() showed the raw payload as inert text (not executed):", deleteDialog.includes(PAYLOAD));
   }

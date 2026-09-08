@@ -692,7 +692,7 @@ class Engine {
       { id: "r4", name: "Mobile line", type: "expense", amount: 250, accountId: "vf", category: "Mobile", freq: "monthly", day: 15 },
       { id: "r5", name: "Streaming bundle", type: "expense", amount: 300, accountId: "card", category: "Subscriptions", freq: "yearly", day: 8 }
     ];
-    return { accounts, people, tx, plans, groups, cardStatements, savingsGoals, investments, recurring, todos: [], customCategories: { income: [], expense: [] }, budgets: {}, audit: [{ at: new Date().toISOString().slice(0, 16).replace("T", " "), what: "Demo data seeded" }] };
+    return { accounts, people, tx, plans, groups, cardStatements, savingsGoals, investments, recurring, todos: [], customCategories: { income: [], expense: [] }, categoryStyles: {}, budgets: {}, audit: [{ at: new Date().toISOString().slice(0, 16).replace("T", " "), what: "Demo data seeded" }] };
   }
 
   // ---- engine: single source of truth ------------------------------------
@@ -1406,6 +1406,19 @@ class Engine {
         D("target", this.L("Target amount", "المبلغ المستهدف"), "number"),
         D("due", this.L("Target date (optional)", "تاريخ مستهدف (اختياري)"), "date"),
         D("color", this.L("Color", "اللون"), "color")] },
+      // Real missing feature -- a custom category (Settings) could only
+      // ever be added or deleted; fixing a typo, or just wanting it to
+      // stand out instead of sharing the flat neutral gray every custom
+      // category defaults to, meant deleting and re-adding it, which
+      // orphans every existing transaction and budget still carrying the
+      // old name (exactly the risk UI.deleteCategoryC's own confirm now
+      // warns about). A real rename here cascades to both instead -- see
+      // the "category_edit" branch in submit().
+      category_edit: { title: this.L("Edit category", "تعديل الفئة"), fields: [
+        D("name", this.L("Category name", "اسم الفئة"), "text", { wide: true }),
+        D("color", this.L("Color", "اللون"), "color", { hint: this.L("Shows up on every bar and badge that draws this category.", "بيظهر في كل شريط وشارة بترسم الفئة دي.") }),
+        D("icon", this.L("Icon", "الأيقونة"), "icon", { hint: this.L("Pick one of the app's own category icons — \"Tag\" is the plain default every custom category starts with.", "اختار واحدة من أيقونات الفئات الجاهزة — \"علامة\" هي الافتراضي البسيط اللي كل فئة مخصصة بتبدأ بيه.") })
+      ] },
       invest_update: { title: t.updateValue, fields: [D("investmentId", "Investment", "select", { options: d.investments.map(i => ({ v: i.id, l: i.name })) }), D("value", "New current value", "number"), D("date", "As of", "date")] },
       investment_edit: { title: this.L("Edit investment"), fields: [D("name", t.name, "text"), D("type", t.type, "select", { options: ["Stocks", "Gold", "Mutual fund", "Fixed deposit", "Certificate", "Crypto", "Business", "Other"].map(v => ({ v, l: v })) }), D("invested", "Amount invested", "number")] },
       // Relation picks a default avatar color (relationTypes()) so a fresh
@@ -1692,6 +1705,76 @@ class Engine {
       if (!need(N("target") > 0, "Target must be greater than zero.")) return false;
       g.name = f.name; g.target = N("target"); g.due = f.due || null; g.color = f.color || g.color;
       note = "Updated goal " + g.name;
+    } else if (k === "category_edit") {
+      // f.kind/f._oldName ride along undeclared in FORMS() (same trick
+      // every other _edit kind uses for its own id -- see open()'s
+      // Object.assign(form, pre)), set by UI.openCategoryEdit() from
+      // which chip's "Edit" was actually tapped.
+      const kind2 = f.kind === "income" ? "income" : "expense";
+      const oldName = f._oldName;
+      const clean = (f.name || "").trim();
+      if (!need(clean, this.L("Give the category a name.", "اكتب اسم للفئة."))) return false;
+      data.customCategories = data.customCategories || { income: [], expense: [] };
+      const list = data.customCategories[kind2] || (data.customCategories[kind2] = []);
+      const idx = list.indexOf(oldName);
+      if (!need(idx !== -1, this.L("Category not found.", "الفئة مش موجودة."))) return false;
+      const others = this.builtinCategories(kind2).concat(list.filter((_, i) => i !== idx));
+      if (!need(!others.some(c => c.toLowerCase() === clean.toLowerCase()), this.L("That category already exists.", "الفئة دي موجودة بالفعل."))) return false;
+      list[idx] = clean;
+      data.categoryStyles = data.categoryStyles || {};
+      // Keyed "kind|name", not bare name -- see categoryColor()'s own
+      // comment on why (an expense and an income category can share a
+      // name; a bare-name key would let editing one repaint the other).
+      delete data.categoryStyles[kind2 + "|" + oldName];
+      const style = {};
+      if (f.color) style.color = f.color;
+      // "tag" is the icon picker's own explicit "no custom icon" choice
+      // (see the ICON_PICKER comment in ui.js) -- never worth storing,
+      // same reasoning an unset color is never stored as a literal hex.
+      if (f.icon && f.icon !== "tag") style.icon = f.icon;
+      if (Object.keys(style).length) data.categoryStyles[kind2 + "|" + clean] = style;
+      // Renaming a category is the entire point of this over delete + re-
+      // add -- a category lives as a bare name on every transaction/budget
+      // row that uses it (there's no id to key off), so the rename has to
+      // reach those rows too or it's really just "add a new one and orphan
+      // the old name everywhere," the exact risk deleteCategoryC's own
+      // confirm now warns about. Scoped to the matching kind's own
+      // transaction types (Engine.categoryInUse's own reasoning) so
+      // renaming an expense category can't collide with an income
+      // category that happens to share the same name.
+      if (clean !== oldName) {
+        data.tx.forEach(t => {
+          if (t.category === oldName && (kind2 === "expense" ? t.type === "expense" : this.isIncomeType(t.type))) t.category = clean;
+        });
+        // Real bug caught in code review: moving the budget unconditionally
+        // could silently discard whatever was already sitting under the
+        // target name -- reachable since the uniqueness check above only
+        // compares against real categories, not leftover budget keys
+        // (deleteCategory deliberately keeps a deleted category's own
+        // budget entry, "until you remove it separately"), so renaming a
+        // DIFFERENT category onto that exact now-freed name is allowed.
+        // Only move it when the destination doesn't already have one of
+        // its own; otherwise leave both alone rather than lose either.
+        if (kind2 === "expense" && data.budgets && Object.prototype.hasOwnProperty.call(data.budgets, oldName) && !Object.prototype.hasOwnProperty.call(data.budgets, clean)) {
+          data.budgets[clean] = data.budgets[oldName];
+          delete data.budgets[oldName];
+        }
+        // Real bug caught in code review: a recurring rule holds its own
+        // category (postRecurring/postRecurringC posts a brand new
+        // transaction straight from r.category every time it fires, see
+        // its own push() call below), not a reference into data.tx -- the
+        // cascade above never touches it. Missing this would have left a
+        // renamed category's own recurring rule quietly posting NEW
+        // transactions under the old, now-gone name forever, the exact
+        // "orphaned everywhere" failure this whole rename exists to avoid.
+        // recurring.type is already a plain "income"/"expense" (never
+        // "refund"/"investment_return" -- those only ever come from a
+        // real transaction, not a rule), so kind2 alone is enough here.
+        (data.recurring || []).forEach(r => {
+          if (r.category === oldName && r.type === kind2) r.category = clean;
+        });
+      }
+      note = clean === oldName ? this.L("Updated category ", "اتعدلت الفئة ") + clean : this.L("Renamed category ", "اتغير اسم الفئة ") + oldName + " " + this.L("to", "لـ") + " " + clean;
     } else if (k === "investment") {
       if (!need(f.name, "Give the investment a name.")) return false;
       const id = this.uid("iv");
@@ -1812,6 +1895,17 @@ class Engine {
     this.persist(data, note);
     return true;
   }
+  // Whether a transaction `type` counts as income-side for category
+  // purposes -- a refund or an investment return is money coming in, same
+  // as a plain "income" row, and every place that groups transactions by
+  // category's own income/expense kind (categoryInUse, firstCategoryUseIds,
+  // categoryColor, the category_edit rename cascade, UI's own categoryIcon)
+  // needs to agree on that or a refund/investment_return silently falls
+  // into the wrong half -- centralized here instead of five separately
+  // copy-pasted incomeTypes arrays risking drift, per code review.
+  isIncomeType(type) {
+    return type === "income" || type === "refund" || type === "investment_return";
+  }
   // Same idea as an account's color+card-face: a person is more than a name
   // in a list. Relation picks a sensible default avatar color/icon (still
   // fully overridable via the Color field) so People reads at a glance
@@ -1834,13 +1928,41 @@ class Engine {
   // palette (colorblind-safe adjacent-pair spacing, checked against both
   // this app's light and dark surfaces) -- adding a 9th slot or reordering
   // these 8 would need re-validating from scratch, so anything past slot 8
-  // (or a custom category) falls back to --cat-neutral instead.
+  // (or a custom category) falls back to --cat-neutral instead -- unless
+  // that category has its own real, user-picked color (see editCategory
+  // via the "category_edit" branch in submit()), stored in
+  // data.categoryStyles and checked here first. Real gap fixed: every
+  // custom category used to share this exact same neutral gray, with no
+  // way to tell two of them apart on a bar chart or a badge.
   CATEGORY_COLOR_ORDER = {
     expense: ["Food", "Rent", "Transportation", "Shopping", "Medical", "Entertainment", "Family", "Car"],
     income: ["Salary", "Freelance", "Business", "Commission", "Rental", "Interest", "Selling items", "Other"]
   };
   categoryColor(name, kind) {
-    const order = this.CATEGORY_COLOR_ORDER[kind === "income" ? "income" : "expense"];
+    // Some call sites pass a real transaction `type` here instead of a
+    // bare "income"/"expense" kind (a card/row drawing its own category
+    // badge, see UI.renderTxCard/renderGroupedTx) -- "refund" and
+    // "investment_return" are income-side too everywhere else in this
+    // file (categoryInUse, firstCategoryUseIds, the category_edit rename
+    // cascade all fold them in via this exact same incomeTypes array), so
+    // this has to as well. Real bug caught in review: without it, a
+    // refund tagged with a custom income category fell through to
+    // "expense" here, missing that category's own categoryStyles entry
+    // entirely and silently drawing the plain neutral/tag default instead
+    // of the user's actual customization -- everywhere else that same
+    // category showed correctly.
+    const kind2 = this.isIncomeType(kind) ? "income" : "expense";
+    // Keyed "kind|name" (same composite key firstCategoryUseIds() already
+    // uses), not bare name -- categories are namespaced per kind
+    // everywhere else (addCategory only checks uniqueness within the same
+    // kind, customCategories keeps separate income/expense lists), so an
+    // expense "Gym" and an income "Gym" are two unrelated categories that
+    // can coexist. Real bug caught in review: keying this by name alone
+    // meant customizing one's color silently repainted the other too, and
+    // deleting either one wiped the still-existing other's override.
+    const custom = this.state.data.categoryStyles && this.state.data.categoryStyles[kind2 + "|" + name];
+    if (custom && custom.color) return custom.color;
+    const order = this.CATEGORY_COLOR_ORDER[kind2];
     const i = order.indexOf(name);
     return i >= 0 ? "var(--cat-" + (i + 1) + ")" : "var(--cat-neutral)";
   }
@@ -2043,6 +2165,14 @@ class Engine {
       .sort((a, b) => a.due < b.due ? -1 : (a.due > b.due ? 1 : 0))
       .map(td => Object.assign({ overdue: this.isTodoOverdue(td) }, td));
   }
+  // Shared with the category_edit branch in submit() below, so the two
+  // "is this name already taken" checks (adding a brand new category,
+  // renaming an existing one) can never drift out of sync with each other.
+  builtinCategories(kind) {
+    return kind === "income"
+      ? ["Salary", "Freelance", "Business", "Commission", "Rental", "Interest", "Selling items", "Other"]
+      : ["Food", "Transportation", "Rent", "Electricity", "Water", "Internet", "Mobile", "Shopping", "Clothing", "Medical", "Education", "Entertainment", "Family", "Children", "Car", "Home", "Subscriptions", "Loans", "Other"];
+  }
   // Custom income/expense categories — added from Settings, then show up
   // in every category dropdown (FORMS()) right alongside the built-in ones.
   addCategory(kind, name) {
@@ -2051,10 +2181,7 @@ class Engine {
     const data = JSON.parse(JSON.stringify(this.state.data));
     data.customCategories = data.customCategories || { income: [], expense: [] };
     const list = data.customCategories[kind] || (data.customCategories[kind] = []);
-    const builtin = kind === "income"
-      ? ["Salary", "Freelance", "Business", "Commission", "Rental", "Interest", "Selling items", "Other"]
-      : ["Food", "Transportation", "Rent", "Electricity", "Water", "Internet", "Mobile", "Shopping", "Clothing", "Medical", "Education", "Entertainment", "Family", "Children", "Car", "Home", "Subscriptions", "Loans", "Other"];
-    if (builtin.concat(list).some(c => c.toLowerCase() === clean.toLowerCase())) {
+    if (this.builtinCategories(kind).concat(list).some(c => c.toLowerCase() === clean.toLowerCase())) {
       return { ok: false, error: this.L("That category already exists.", "الفئة دي موجودة بالفعل.") };
     }
     list.push(clean);
@@ -2099,10 +2226,9 @@ class Engine {
   // one kind everywhere else in the app.
   firstCategoryUseIds() {
     const byKey = {};
-    const incomeTypes = ["income", "refund", "investment_return"];
     for (const t of this.state.data.tx) {
       if (t.void || !t.category) continue;
-      const kind = t.type === "expense" ? "expense" : incomeTypes.includes(t.type) ? "income" : null;
+      const kind = t.type === "expense" ? "expense" : this.isIncomeType(t.type) ? "income" : null;
       if (!kind) continue;
       const key = kind + "|" + t.category;
       const cur = byKey[key];
@@ -2121,16 +2247,29 @@ class Engine {
   // below to edit it).
   categoryInUse(kind, name) {
     const d = this.state.data;
-    const incomeTypes = ["income", "refund", "investment_return"];
     const txCount = (d.tx || []).filter(t => !t.void && t.category === name &&
-      (kind === "expense" ? t.type === "expense" : incomeTypes.includes(t.type))).length;
+      (kind === "expense" ? t.type === "expense" : this.isIncomeType(t.type))).length;
     const hasBudget = kind === "expense" && !!(d.budgets && d.budgets[name]);
-    return { txCount, hasBudget };
+    // Real gap caught in code review: a recurring rule holds its own copy
+    // of the category (see the "category_edit" rename cascade's own
+    // comment on why) -- missing it here left deleteCategoryC's own
+    // in-use warning silent for a category that a rule still actively
+    // posts new transactions under every time it fires, even with zero
+    // transactions or a budget to otherwise flag it.
+    const hasRecurring = (d.recurring || []).some(r => r.category === name && r.type === kind);
+    return { txCount, hasBudget, hasRecurring };
   }
   deleteCategory(kind, name) {
     const data = JSON.parse(JSON.stringify(this.state.data));
     data.customCategories = data.customCategories || { income: [], expense: [] };
     data.customCategories[kind] = (data.customCategories[kind] || []).filter(c => c !== name);
+    // Drop its own color/icon override too (see the "category_edit" branch
+    // in submit()) -- nothing else can ever reach it once the name itself
+    // is gone, so leaving it behind would just be a silently growing,
+    // permanently orphaned entry. Keyed "kind|name" -- see categoryColor()'s
+    // own comment on why a bare name isn't enough (this must never touch
+    // an unrelated category of the other kind that happens to share it).
+    if (data.categoryStyles) delete data.categoryStyles[kind + "|" + name];
     this.persist(data, "Removed category " + name);
   }
   groupCanDelete(id) {

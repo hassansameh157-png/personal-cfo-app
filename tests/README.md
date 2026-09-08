@@ -639,6 +639,67 @@ account can be deleted, a card's Available/Limit stay consistent).
   `data.budgets`) and a confirm message that names what's actually still
   using it -- a transaction count, a budget, or both -- falling back to
   the original plain "Delete X?" when nothing is.
+- `check_batch12.js` -- a real missing feature requested directly by a user:
+  a custom category (Settings) could only ever be added or deleted, with no
+  way to fix a typo or give it a real color/icon instead of the flat
+  neutral gray + plain tag every one of them shared. Added a proper
+  `category_edit` modal (name + a `"color"` field, reusing the exact same
+  swatch-row/native-picker `renderModal()` already draws for account/
+  person/goal colors, + a new `"icon"` field type: a swatch grid of every
+  distinct glyph `CATEGORY_ICONS` already draws, so there's no separate
+  icon set to design) reached from a new Edit button on each category
+  chip, which now also shows its own live badge.
+
+  Renaming is the actual point of Edit over delete + re-add: a category
+  lives as a bare name on every transaction/budget/recurring-rule row that
+  uses it (there's no id to key off), so the rename cascades to all three
+  -- `deleteCategoryC`'s own in-use warning (`check_batch11.js`) exists
+  specifically because skipping this orphans them.
+
+  Four real bugs caught across three rounds of code review, all fixed
+  before shipping:
+  1. The native color picker always needs *some* concrete hex, seeded to
+     light mode's own `--cat-neutral` shade -- saving that unconditionally
+     on every edit would have frozen "no custom color yet" into a
+     permanently wrong, no-longer-theme-adaptive gray the moment someone
+     edited a category's icon without ever touching color. Fixed with the
+     same seeded/touched tracking `_color2Seeded`/`_color2Touched` already
+     use for account/card secondary colors, except resolved in
+     `UI.submitModal()` itself (there's no default to recompute from
+     another field the way `resolveColor2()` does, since the placeholder
+     here depends on the active theme).
+  2. `categoryStyles` was first keyed by bare category name -- but
+     categories are namespaced per kind everywhere else in this app
+     (`addCategory` only checks uniqueness within the same kind), so an
+     expense and an income category can share a name and be two unrelated
+     categories. Fixed by keying `"kind|name"` (the same composite key
+     `firstCategoryUseIds()` already uses), everywhere a style is read,
+     written, or deleted.
+  3. `categoryColor()`/`categoryIcon()` normalized "income" too narrowly
+     (`kind === "income"`), missing that several call sites (a transaction
+     card, a grouped-transactions header) pass the row's real `type` --
+     "refund"/"investment_return" are income-side everywhere else in this
+     app, so a refund tagged with a customized income category silently
+     missed its own style and fell back to the plain default. Fixed by
+     centralizing the income/expense check into one `Engine.isIncomeType()`
+     (also removes four separately copy-pasted `incomeTypes` arrays this
+     same review flagged as a drift risk).
+  4. The rename's own budget-key move (`data.budgets[clean] =
+     data.budgets[oldName]`) ran unconditionally -- reachable because
+     `deleteCategory()` deliberately leaves a deleted category's own
+     budget behind ("stays until you remove it separately"), so renaming
+     a *different* category onto that exact freed-up name would silently
+     discard whichever budget was already sitting there. Fixed by only
+     moving it when the destination doesn't already have one of its own.
+
+  Also extended alongside these: `categoryInUse()` (the delete warning)
+  didn't check `data.recurring` at all, even though the rename cascade
+  above exists specifically because a recurring rule holds its own copy of
+  the category -- a category with zero transactions and no budget, but an
+  active recurring rule, got the plain unwarned "Delete X?" confirm.
+  `deleteCategoryC`'s message is now built from a list of parts (a
+  transaction count, a budget, a recurring rule -- any combination) rather
+  than a fixed set of and/or branches.
 
 ## Adding a new one
 

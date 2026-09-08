@@ -39,7 +39,9 @@ require("./_watchdog"); // shared pass/fail detector -- see that file
 
   console.log("\n=== 3) Delete a custom category ===");
   await page.once("dialog", (d) => d.accept());
-  await page.locator(".pill", { hasText: "Gym" }).locator("button").click();
+  // .danger specifically -- the chip now also carries an Edit button
+  // (category_edit, a later batch), so a bare "button" match is ambiguous.
+  await page.locator(".pill", { hasText: "Gym" }).locator("button.danger").click();
   await page.waitForTimeout(200);
   const gymGone = await page.locator(".pill", { hasText: "Gym" }).count();
   console.log("Gym category removed:", gymGone === 0);

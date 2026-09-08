@@ -1203,6 +1203,17 @@ button.bar-row{width:100%;border:0;background:none;padding:6px 0;min-height:44px
 .swatch-row{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px}
 .swatch-btn{width:26px;height:26px;border-radius:7px;border:1px solid rgba(0,0,0,.12);cursor:pointer;padding:0;flex:none}
 .swatch-btn:hover{transform:scale(1.08)}
+/* Category icon picker (category_edit's own "icon" field, see ICON_PICKER
+   in ui.js) -- same swatch-row shape as the color picker just above, a
+   plain hidden input behind it holding the real value (UI.setIconField).
+   Resting state is a neutral circle (not yet tinted to the category's own
+   color -- that only ever shows once the category is actually drawn
+   elsewhere, keeping this picker simple); .on marks which one is picked,
+   since a hidden input's value alone shows nothing. */
+.icon-swatch-row{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px}
+.icon-swatch{width:34px;height:34px;border-radius:50%;border:2px solid transparent;background:var(--c-surface-2);color:var(--c-text-soft);cursor:pointer;padding:0;flex:none;display:flex;align-items:center;justify-content:center}
+.icon-swatch:hover{transform:scale(1.06)}
+.icon-swatch.on{border-color:var(--c-accent);color:var(--c-accent);background:var(--c-surface-3)}
 /* Vivid category picker -- a --pill-c custom property per button (each
    category's own categoryColor(), a CSS var reference like var(--cat-3))
    drives both the tinted background and the small color dot, same
@@ -2007,7 +2018,7 @@ class Engine {
       { id: "r4", name: "Mobile line", type: "expense", amount: 250, accountId: "vf", category: "Mobile", freq: "monthly", day: 15 },
       { id: "r5", name: "Streaming bundle", type: "expense", amount: 300, accountId: "card", category: "Subscriptions", freq: "yearly", day: 8 }
     ];
-    return { accounts, people, tx, plans, groups, cardStatements, savingsGoals, investments, recurring, todos: [], customCategories: { income: [], expense: [] }, budgets: {}, audit: [{ at: new Date().toISOString().slice(0, 16).replace("T", " "), what: "Demo data seeded" }] };
+    return { accounts, people, tx, plans, groups, cardStatements, savingsGoals, investments, recurring, todos: [], customCategories: { income: [], expense: [] }, categoryStyles: {}, budgets: {}, audit: [{ at: new Date().toISOString().slice(0, 16).replace("T", " "), what: "Demo data seeded" }] };
   }
 
   // ---- engine: single source of truth ------------------------------------
@@ -2721,6 +2732,19 @@ class Engine {
         D("target", this.L("Target amount", "المبلغ المستهدف"), "number"),
         D("due", this.L("Target date (optional)", "تاريخ مستهدف (اختياري)"), "date"),
         D("color", this.L("Color", "اللون"), "color")] },
+      // Real missing feature -- a custom category (Settings) could only
+      // ever be added or deleted; fixing a typo, or just wanting it to
+      // stand out instead of sharing the flat neutral gray every custom
+      // category defaults to, meant deleting and re-adding it, which
+      // orphans every existing transaction and budget still carrying the
+      // old name (exactly the risk UI.deleteCategoryC's own confirm now
+      // warns about). A real rename here cascades to both instead -- see
+      // the "category_edit" branch in submit().
+      category_edit: { title: this.L("Edit category", "تعديل الفئة"), fields: [
+        D("name", this.L("Category name", "اسم الفئة"), "text", { wide: true }),
+        D("color", this.L("Color", "اللون"), "color", { hint: this.L("Shows up on every bar and badge that draws this category.", "بيظهر في كل شريط وشارة بترسم الفئة دي.") }),
+        D("icon", this.L("Icon", "الأيقونة"), "icon", { hint: this.L("Pick one of the app's own category icons — \"Tag\" is the plain default every custom category starts with.", "اختار واحدة من أيقونات الفئات الجاهزة — \"علامة\" هي الافتراضي البسيط اللي كل فئة مخصصة بتبدأ بيه.") })
+      ] },
       invest_update: { title: t.updateValue, fields: [D("investmentId", "Investment", "select", { options: d.investments.map(i => ({ v: i.id, l: i.name })) }), D("value", "New current value", "number"), D("date", "As of", "date")] },
       investment_edit: { title: this.L("Edit investment"), fields: [D("name", t.name, "text"), D("type", t.type, "select", { options: ["Stocks", "Gold", "Mutual fund", "Fixed deposit", "Certificate", "Crypto", "Business", "Other"].map(v => ({ v, l: v })) }), D("invested", "Amount invested", "number")] },
       // Relation picks a default avatar color (relationTypes()) so a fresh
@@ -3007,6 +3031,76 @@ class Engine {
       if (!need(N("target") > 0, "Target must be greater than zero.")) return false;
       g.name = f.name; g.target = N("target"); g.due = f.due || null; g.color = f.color || g.color;
       note = "Updated goal " + g.name;
+    } else if (k === "category_edit") {
+      // f.kind/f._oldName ride along undeclared in FORMS() (same trick
+      // every other _edit kind uses for its own id -- see open()'s
+      // Object.assign(form, pre)), set by UI.openCategoryEdit() from
+      // which chip's "Edit" was actually tapped.
+      const kind2 = f.kind === "income" ? "income" : "expense";
+      const oldName = f._oldName;
+      const clean = (f.name || "").trim();
+      if (!need(clean, this.L("Give the category a name.", "اكتب اسم للفئة."))) return false;
+      data.customCategories = data.customCategories || { income: [], expense: [] };
+      const list = data.customCategories[kind2] || (data.customCategories[kind2] = []);
+      const idx = list.indexOf(oldName);
+      if (!need(idx !== -1, this.L("Category not found.", "الفئة مش موجودة."))) return false;
+      const others = this.builtinCategories(kind2).concat(list.filter((_, i) => i !== idx));
+      if (!need(!others.some(c => c.toLowerCase() === clean.toLowerCase()), this.L("That category already exists.", "الفئة دي موجودة بالفعل."))) return false;
+      list[idx] = clean;
+      data.categoryStyles = data.categoryStyles || {};
+      // Keyed "kind|name", not bare name -- see categoryColor()'s own
+      // comment on why (an expense and an income category can share a
+      // name; a bare-name key would let editing one repaint the other).
+      delete data.categoryStyles[kind2 + "|" + oldName];
+      const style = {};
+      if (f.color) style.color = f.color;
+      // "tag" is the icon picker's own explicit "no custom icon" choice
+      // (see the ICON_PICKER comment in ui.js) -- never worth storing,
+      // same reasoning an unset color is never stored as a literal hex.
+      if (f.icon && f.icon !== "tag") style.icon = f.icon;
+      if (Object.keys(style).length) data.categoryStyles[kind2 + "|" + clean] = style;
+      // Renaming a category is the entire point of this over delete + re-
+      // add -- a category lives as a bare name on every transaction/budget
+      // row that uses it (there's no id to key off), so the rename has to
+      // reach those rows too or it's really just "add a new one and orphan
+      // the old name everywhere," the exact risk deleteCategoryC's own
+      // confirm now warns about. Scoped to the matching kind's own
+      // transaction types (Engine.categoryInUse's own reasoning) so
+      // renaming an expense category can't collide with an income
+      // category that happens to share the same name.
+      if (clean !== oldName) {
+        data.tx.forEach(t => {
+          if (t.category === oldName && (kind2 === "expense" ? t.type === "expense" : this.isIncomeType(t.type))) t.category = clean;
+        });
+        // Real bug caught in code review: moving the budget unconditionally
+        // could silently discard whatever was already sitting under the
+        // target name -- reachable since the uniqueness check above only
+        // compares against real categories, not leftover budget keys
+        // (deleteCategory deliberately keeps a deleted category's own
+        // budget entry, "until you remove it separately"), so renaming a
+        // DIFFERENT category onto that exact now-freed name is allowed.
+        // Only move it when the destination doesn't already have one of
+        // its own; otherwise leave both alone rather than lose either.
+        if (kind2 === "expense" && data.budgets && Object.prototype.hasOwnProperty.call(data.budgets, oldName) && !Object.prototype.hasOwnProperty.call(data.budgets, clean)) {
+          data.budgets[clean] = data.budgets[oldName];
+          delete data.budgets[oldName];
+        }
+        // Real bug caught in code review: a recurring rule holds its own
+        // category (postRecurring/postRecurringC posts a brand new
+        // transaction straight from r.category every time it fires, see
+        // its own push() call below), not a reference into data.tx -- the
+        // cascade above never touches it. Missing this would have left a
+        // renamed category's own recurring rule quietly posting NEW
+        // transactions under the old, now-gone name forever, the exact
+        // "orphaned everywhere" failure this whole rename exists to avoid.
+        // recurring.type is already a plain "income"/"expense" (never
+        // "refund"/"investment_return" -- those only ever come from a
+        // real transaction, not a rule), so kind2 alone is enough here.
+        (data.recurring || []).forEach(r => {
+          if (r.category === oldName && r.type === kind2) r.category = clean;
+        });
+      }
+      note = clean === oldName ? this.L("Updated category ", "اتعدلت الفئة ") + clean : this.L("Renamed category ", "اتغير اسم الفئة ") + oldName + " " + this.L("to", "لـ") + " " + clean;
     } else if (k === "investment") {
       if (!need(f.name, "Give the investment a name.")) return false;
       const id = this.uid("iv");
@@ -3127,6 +3221,17 @@ class Engine {
     this.persist(data, note);
     return true;
   }
+  // Whether a transaction `type` counts as income-side for category
+  // purposes -- a refund or an investment return is money coming in, same
+  // as a plain "income" row, and every place that groups transactions by
+  // category's own income/expense kind (categoryInUse, firstCategoryUseIds,
+  // categoryColor, the category_edit rename cascade, UI's own categoryIcon)
+  // needs to agree on that or a refund/investment_return silently falls
+  // into the wrong half -- centralized here instead of five separately
+  // copy-pasted incomeTypes arrays risking drift, per code review.
+  isIncomeType(type) {
+    return type === "income" || type === "refund" || type === "investment_return";
+  }
   // Same idea as an account's color+card-face: a person is more than a name
   // in a list. Relation picks a sensible default avatar color/icon (still
   // fully overridable via the Color field) so People reads at a glance
@@ -3149,13 +3254,41 @@ class Engine {
   // palette (colorblind-safe adjacent-pair spacing, checked against both
   // this app's light and dark surfaces) -- adding a 9th slot or reordering
   // these 8 would need re-validating from scratch, so anything past slot 8
-  // (or a custom category) falls back to --cat-neutral instead.
+  // (or a custom category) falls back to --cat-neutral instead -- unless
+  // that category has its own real, user-picked color (see editCategory
+  // via the "category_edit" branch in submit()), stored in
+  // data.categoryStyles and checked here first. Real gap fixed: every
+  // custom category used to share this exact same neutral gray, with no
+  // way to tell two of them apart on a bar chart or a badge.
   CATEGORY_COLOR_ORDER = {
     expense: ["Food", "Rent", "Transportation", "Shopping", "Medical", "Entertainment", "Family", "Car"],
     income: ["Salary", "Freelance", "Business", "Commission", "Rental", "Interest", "Selling items", "Other"]
   };
   categoryColor(name, kind) {
-    const order = this.CATEGORY_COLOR_ORDER[kind === "income" ? "income" : "expense"];
+    // Some call sites pass a real transaction `type` here instead of a
+    // bare "income"/"expense" kind (a card/row drawing its own category
+    // badge, see UI.renderTxCard/renderGroupedTx) -- "refund" and
+    // "investment_return" are income-side too everywhere else in this
+    // file (categoryInUse, firstCategoryUseIds, the category_edit rename
+    // cascade all fold them in via this exact same incomeTypes array), so
+    // this has to as well. Real bug caught in review: without it, a
+    // refund tagged with a custom income category fell through to
+    // "expense" here, missing that category's own categoryStyles entry
+    // entirely and silently drawing the plain neutral/tag default instead
+    // of the user's actual customization -- everywhere else that same
+    // category showed correctly.
+    const kind2 = this.isIncomeType(kind) ? "income" : "expense";
+    // Keyed "kind|name" (same composite key firstCategoryUseIds() already
+    // uses), not bare name -- categories are namespaced per kind
+    // everywhere else (addCategory only checks uniqueness within the same
+    // kind, customCategories keeps separate income/expense lists), so an
+    // expense "Gym" and an income "Gym" are two unrelated categories that
+    // can coexist. Real bug caught in review: keying this by name alone
+    // meant customizing one's color silently repainted the other too, and
+    // deleting either one wiped the still-existing other's override.
+    const custom = this.state.data.categoryStyles && this.state.data.categoryStyles[kind2 + "|" + name];
+    if (custom && custom.color) return custom.color;
+    const order = this.CATEGORY_COLOR_ORDER[kind2];
     const i = order.indexOf(name);
     return i >= 0 ? "var(--cat-" + (i + 1) + ")" : "var(--cat-neutral)";
   }
@@ -3358,6 +3491,14 @@ class Engine {
       .sort((a, b) => a.due < b.due ? -1 : (a.due > b.due ? 1 : 0))
       .map(td => Object.assign({ overdue: this.isTodoOverdue(td) }, td));
   }
+  // Shared with the category_edit branch in submit() below, so the two
+  // "is this name already taken" checks (adding a brand new category,
+  // renaming an existing one) can never drift out of sync with each other.
+  builtinCategories(kind) {
+    return kind === "income"
+      ? ["Salary", "Freelance", "Business", "Commission", "Rental", "Interest", "Selling items", "Other"]
+      : ["Food", "Transportation", "Rent", "Electricity", "Water", "Internet", "Mobile", "Shopping", "Clothing", "Medical", "Education", "Entertainment", "Family", "Children", "Car", "Home", "Subscriptions", "Loans", "Other"];
+  }
   // Custom income/expense categories — added from Settings, then show up
   // in every category dropdown (FORMS()) right alongside the built-in ones.
   addCategory(kind, name) {
@@ -3366,10 +3507,7 @@ class Engine {
     const data = JSON.parse(JSON.stringify(this.state.data));
     data.customCategories = data.customCategories || { income: [], expense: [] };
     const list = data.customCategories[kind] || (data.customCategories[kind] = []);
-    const builtin = kind === "income"
-      ? ["Salary", "Freelance", "Business", "Commission", "Rental", "Interest", "Selling items", "Other"]
-      : ["Food", "Transportation", "Rent", "Electricity", "Water", "Internet", "Mobile", "Shopping", "Clothing", "Medical", "Education", "Entertainment", "Family", "Children", "Car", "Home", "Subscriptions", "Loans", "Other"];
-    if (builtin.concat(list).some(c => c.toLowerCase() === clean.toLowerCase())) {
+    if (this.builtinCategories(kind).concat(list).some(c => c.toLowerCase() === clean.toLowerCase())) {
       return { ok: false, error: this.L("That category already exists.", "الفئة دي موجودة بالفعل.") };
     }
     list.push(clean);
@@ -3414,10 +3552,9 @@ class Engine {
   // one kind everywhere else in the app.
   firstCategoryUseIds() {
     const byKey = {};
-    const incomeTypes = ["income", "refund", "investment_return"];
     for (const t of this.state.data.tx) {
       if (t.void || !t.category) continue;
-      const kind = t.type === "expense" ? "expense" : incomeTypes.includes(t.type) ? "income" : null;
+      const kind = t.type === "expense" ? "expense" : this.isIncomeType(t.type) ? "income" : null;
       if (!kind) continue;
       const key = kind + "|" + t.category;
       const cur = byKey[key];
@@ -3436,16 +3573,29 @@ class Engine {
   // below to edit it).
   categoryInUse(kind, name) {
     const d = this.state.data;
-    const incomeTypes = ["income", "refund", "investment_return"];
     const txCount = (d.tx || []).filter(t => !t.void && t.category === name &&
-      (kind === "expense" ? t.type === "expense" : incomeTypes.includes(t.type))).length;
+      (kind === "expense" ? t.type === "expense" : this.isIncomeType(t.type))).length;
     const hasBudget = kind === "expense" && !!(d.budgets && d.budgets[name]);
-    return { txCount, hasBudget };
+    // Real gap caught in code review: a recurring rule holds its own copy
+    // of the category (see the "category_edit" rename cascade's own
+    // comment on why) -- missing it here left deleteCategoryC's own
+    // in-use warning silent for a category that a rule still actively
+    // posts new transactions under every time it fires, even with zero
+    // transactions or a budget to otherwise flag it.
+    const hasRecurring = (d.recurring || []).some(r => r.category === name && r.type === kind);
+    return { txCount, hasBudget, hasRecurring };
   }
   deleteCategory(kind, name) {
     const data = JSON.parse(JSON.stringify(this.state.data));
     data.customCategories = data.customCategories || { income: [], expense: [] };
     data.customCategories[kind] = (data.customCategories[kind] || []).filter(c => c !== name);
+    // Drop its own color/icon override too (see the "category_edit" branch
+    // in submit()) -- nothing else can ever reach it once the name itself
+    // is gone, so leaving it behind would just be a silently growing,
+    // permanently orphaned entry. Keyed "kind|name" -- see categoryColor()'s
+    // own comment on why a bare name isn't enough (this must never touch
+    // an unrelated category of the other kind that happens to share it).
+    if (data.categoryStyles) delete data.categoryStyles[kind + "|" + name];
     this.persist(data, "Removed category " + name);
   }
   groupCanDelete(id) {
@@ -3612,7 +3762,41 @@ const CATEGORY_ICONS = {
 CATEGORY_ICONS.Rental = CATEGORY_ICONS.Home;
 CATEGORY_ICONS["Selling items"] = CATEGORY_ICONS.Shopping;
 const CATEGORY_ICON_FALLBACK = "M20.6 12.3 12.7 20.2a2 2 0 0 1-2.8 0l-8-8a2 2 0 0 1 0-2.8L9.8 1.5H12l8.6 8.6a2 2 0 0 1 0 2.8zM7 7h.01";
-function categoryIcon(name) {
+// The picker offered when editing a custom category (Settings -> Categories
+// -> Edit): every distinct glyph CATEGORY_ICONS already draws, so there's
+// no separate icon set to design or keep in sync -- picking "Shopping"
+// here draws the exact same icon the real built-in Shopping category
+// already uses everywhere else. "tag" (CATEGORY_ICON_FALLBACK itself) is
+// a real, explicit option, not just what happens when nothing is picked --
+// choosing it back removes any custom icon a category had. Rental/Selling
+// items are left out on purpose: they're aliases of Home/Shopping (see
+// just below), not their own distinct shape.
+const ICON_PICKER = [["tag", CATEGORY_ICON_FALLBACK]].concat(
+  Object.keys(CATEGORY_ICONS).filter(k => k !== "Rental" && k !== "Selling items").map(k => [k, CATEGORY_ICONS[k]])
+);
+// `styles` is app.state.data.categoryStyles (a custom category's own
+// color/icon override, see the "category_edit" branch in Engine.submit())
+// -- optional so every pre-existing call site that has no styles handy
+// yet keeps working exactly as before. Keyed "kind|name" (matching
+// Engine.categoryColor()'s own key exactly) rather than bare name --
+// income and expense each keep their own separate category namespace
+// (see addCategory), so an expense and an income category can share a
+// name without being the same category; a bare-name key would let
+// customizing one repaint or re-icon the other. `kind` -- routed through
+// `app`'s own isIncomeType() (not a second copy-pasted income-types
+// array here) since several call sites (a transaction card/group header
+// drawing its own category badge) pass the row's real `type`, and
+// "refund"/"investment_return" are income-side everywhere else in this
+// app -- real bug caught in review, missing this folded a refund's own
+// custom icon into the wrong (expense) half of the key and silently drew
+// the plain fallback tag instead.
+function categoryIcon(app, name, kind, styles) {
+  const kind2 = app.isIncomeType(kind) ? "income" : "expense";
+  const key = styles && styles[kind2 + "|" + name] && styles[kind2 + "|" + name].icon;
+  if (key) {
+    const found = ICON_PICKER.find(([k]) => k === key);
+    if (found) return found[1];
+  }
   return CATEGORY_ICONS[name] || CATEGORY_ICON_FALLBACK;
 }
 // Curated preset swatches for every color field (account/card color, its
@@ -3973,8 +4157,22 @@ const UI = {
   setColorField(fieldKey, hex) {
     const el = document.getElementById("f_" + fieldKey);
     if (el) el.value = hex;
-    if (fieldKey === "color") this.syncColor2Default(hex);
+    if (fieldKey === "color") { this.syncColor2Default(hex); this._catColorTouched = true; }
     else if (fieldKey === "color2") this._color2Touched = true;
+  },
+  // An icon swatch click (category_edit's own picker, see ICON_PICKER) --
+  // same direct-set, no-render() reasoning as setColorField, but the "on"
+  // highlight lives in a CSS class, not something a hidden input's value
+  // alone shows, so it has to be refreshed by hand here instead of coming
+  // free from the input's own appearance.
+  setIconField(key) {
+    const el = document.getElementById("f_icon");
+    if (el) el.value = key;
+    document.querySelectorAll(".icon-swatch").forEach(b => {
+      const on = b.getAttribute("aria-label") === key;
+      b.classList.toggle("on", on);
+      b.setAttribute("aria-pressed", on ? "true" : "false");
+    });
   },
   // While color2 is still just the auto-darkened placeholder Engine.open()
   // invented (never a real choice -- see _color2Seeded there), keep it
@@ -4210,6 +4408,15 @@ const UI = {
     // just editing. A brand new blank entry has no pre.category, so
     // autocomplete still does its job as the description is first typed.
     this._categoryTouched = !!(pre && pre.category);
+    // category_edit's own color field, same "was this a real prior choice
+    // or just a placeholder" tracking as _color2Touched above -- except
+    // there's no default to recompute at submit() time the way
+    // resolveColor2() does for color2 (the placeholder here is the
+    // theme-adaptive --cat-neutral, not a value derivable from another
+    // field), so submitModal() below reads this flag directly instead.
+    // Inert for every other modal kind (pre._colorSeeded is only ever set
+    // by catChips's own editArgs).
+    this._catColorTouched = !(pre && pre._colorSeeded);
     this.render();
   },
   closeModal() { this.app.state.modal = null; this.app.state.err = ""; this.render(); },
@@ -4219,6 +4426,14 @@ const UI = {
       const fd = new FormData(modalEl);
       for (const [k, v] of fd.entries()) this.app.state.form[k] = v;
     }
+    // A category_edit save that never touched the color field (see
+    // openModal's _catColorTouched) must not freeze the placeholder shown
+    // in the picker into a real stored override -- that placeholder is
+    // just light mode's own --cat-neutral hex, wrong outright under dark
+    // mode and, either way, no longer able to fall back and stay
+    // theme-adaptive once saved. Dropping it here (before Engine.submit()
+    // ever sees it) is what actually leaves "no custom color" alone.
+    if (this.app.state.modal === "category_edit" && !this._catColorTouched) delete this.app.state.form.color;
     const ok = this.app.submit();
     this.render();
     // Single choke point every modal save funnels through (add/edit a
@@ -4514,16 +4729,20 @@ const UI = {
   // ran into it later trying to edit one of them.
   deleteCategoryC(kind, name) {
     const app = this.app, use = app.categoryInUse(kind, name);
+    // Built as a list of parts, not a fixed set of and/or branches -- a
+    // recurring rule (see categoryInUse's own comment on why it's checked
+    // too now) is a third, independent reason this category might still
+    // be live, and hardcoding every combination of 3 flags would mean 7
+    // near-duplicate messages instead of 1.
+    const parts = [];
+    if (use.txCount > 0) parts.push(app.L(use.txCount + " transaction(s)", use.txCount + " حركة"));
+    if (use.hasBudget) parts.push(app.L("a budget", "ميزانية"));
+    if (use.hasRecurring) parts.push(app.L("a recurring rule", "قاعدة متكررة"));
     let msg;
-    if (use.txCount > 0 && use.hasBudget) {
-      msg = app.L(name + " is used by " + use.txCount + " transaction(s) and has a budget set. Deleting it here only removes it from the picker -- existing entries and the budget keep the name, but you won't be able to select it again. Continue?",
-        name + " مستخدمة في " + use.txCount + " حركة وليها ميزانية محددة. مسحها هنا هيشيلها من قايمة الاختيار بس -- الحركات والميزانية هتفضل شايلة الاسم، بس مش هتقدر تختارها تاني. تكمل؟");
-    } else if (use.txCount > 0) {
-      msg = app.L(name + " is used by " + use.txCount + " transaction(s). Deleting it here only removes it from the picker -- existing entries keep it, but you won't be able to select it again, including while editing one of them. Continue?",
-        name + " مستخدمة في " + use.txCount + " حركة. مسحها هنا هيشيلها من قايمة الاختيار بس -- الحركات الحالية هتفضل شايلاها، بس مش هتقدر تختارها تاني، حتى وانت بتعدل واحدة منها. تكمل؟");
-    } else if (use.hasBudget) {
-      msg = app.L(name + " has a monthly budget set. Deleting it here only removes it from the picker -- the budget itself stays until you remove it separately. Continue?",
-        name + " ليها ميزانية شهرية محددة. مسحها هنا هيشيلها من قايمة الاختيار بس -- الميزانية نفسها هتفضل موجودة لحد ما تشيلها بنفسك. تكمل؟");
+    if (parts.length) {
+      const list = parts.length === 1 ? parts[0] : parts.slice(0, -1).join(app.L(", ", "، ")) + app.L(" and ", " و") + parts[parts.length - 1];
+      msg = app.L(name + " is still used by " + list + ". Deleting it here only removes it from the picker -- existing entries keep it, but you won't be able to select it again, including while editing one of them or the next time a recurring rule using it fires. Continue?",
+        name + " لسه مستخدمة في " + list + ". مسحها هنا هيشيلها من قايمة الاختيار بس -- الحركات الحالية هتفضل شايلاها، بس مش هتقدر تختارها تاني، حتى وانت بتعدل واحدة منها أو أول ما قاعدة متكررة بتستخدمها تشتغل تاني. تكمل؟");
     } else {
       msg = app.L("Delete ") + name + "?";
     }
@@ -5040,6 +5259,7 @@ const UI = {
   // a solid "neg-fill" the way it used to.
   catBar(name, v, max, kind, over, suffix) {
     const app = this.app;
+    const catColor = app.categoryColor(name, kind);
     const ring = over ? ";outline:2px solid var(--c-neg);outline-offset:1px" : "";
     // escJsArg(kind) too, not just name -- kind is only ever the literal
     // "expense"/"income" today, but this is exactly the class of bug the
@@ -5052,8 +5272,8 @@ const UI = {
     // color+icon pairing that could drift from Transactions' own.
     // margin-inline-end:0 overrides cat-badge's own spacing since
     // .bar-name's flex `gap` already places it, not this badge's margin.
-    return '<button class="bar-row" onclick="UI.viewCategoryTx(\'' + escJsArg(name) + "','" + escJsArg(kind) + '\')"><span class="bar-name"><span class="cat-badge" style="background:' + app.categoryColor(name, kind) + ';margin-inline-end:0">' + svgIcon(categoryIcon(name), 12) + '</span><span class="bar-name-text">' + esc(name) + "</span></span>" +
-      '<div class="bar-track"><div class="bar-fill" style="width:' + Math.max(4, v / max * 100) + '%;background:' + app.categoryColor(name, kind) + ring + '"></div></div>' +
+    return '<button class="bar-row" onclick="UI.viewCategoryTx(\'' + escJsArg(name) + "','" + escJsArg(kind) + '\')"><span class="bar-name"><span class="cat-badge" style="background:' + catColor + ";color:" + this.catBadgeIconColor(catColor) + ';margin-inline-end:0">' + svgIcon(categoryIcon(app, name, kind, app.state.data.categoryStyles), 12) + '</span><span class="bar-name-text">' + esc(name) + "</span></span>" +
+      '<div class="bar-track"><div class="bar-fill" style="width:' + Math.max(4, v / max * 100) + '%;background:' + catColor + ring + '"></div></div>' +
       '<span class="bar-val' + (over ? " tone-neg" : "") + '">' + app.fmt(v) + (suffix || "") + "</span></button>";
   },
 
@@ -5545,6 +5765,22 @@ const UI = {
     }
     return lum > 165 ? "#1c1b18" : "#fff";
   },
+  // .cat-badge's own fixed dark icon stroke (app.css) assumes every
+  // background it's ever drawn on is light/vivid enough to read against --
+  // true for the whole built-in --cat-1..8/--cat-neutral palette (see its
+  // own comment there), but no longer guaranteed now that a custom
+  // category can pick literally any hex (see the "category_edit" branch
+  // in Engine.submit()) -- a near-black custom color would otherwise hide
+  // its own icon almost completely. Reuses cardTextColor()'s exact YIQ
+  // approach; an unparsable value (any of the --cat-N/--cat-neutral CSS
+  // variables, never a real hex) falls through to the existing fixed dark
+  // stroke, so nothing changes for a category that was never customized.
+  catBadgeIconColor(hex) {
+    const rgb = this.app.hexToRgb(hex);
+    if (!rgb) return "rgba(0,0,0,.72)";
+    const yiq = 0.299 * rgb.r + 0.587 * rgb.g + 0.114 * rgb.b;
+    return yiq > 165 ? "rgba(0,0,0,.72)" : "#fff";
+  },
 
   renderAccounts(D, t) {
     const app = this.app, d = app.state.data;
@@ -5930,13 +6166,14 @@ const UI = {
     const { r, isIn, amtTxt, acc, accColors, tone } = item;
     const app = this.app;
     const editable = app.txEditable(r);
+    const catColor = app.categoryColor(r.category, r.type);
     // 34 (Transactions Recut): a small color dot per real account behind
     // this row (2 for a transfer-like row) ahead of the account name --
     // Accounts' own tiles already carry each account's color, this just
     // gives Transactions the same visual link instead of a plain grey name
     // with no tie back to it.
     const accDots = (accColors || []).map(c => '<span class="tx-acc-dot" style="background:' + c + '"></span>').join("");
-    const inner = '<div class="card-row-top"><div><div class="card-row-title">' + (r.category ? '<span class="cat-badge" style="background:' + app.categoryColor(r.category, r.type) + '">' + svgIcon(categoryIcon(r.category), 12) + "</span>" : "") + esc(r.desc || "—") + '</div><div class="card-row-sub">' + r.date + " · " + esc(typeLabels[r.type] || r.type) + "</div></div>" +
+    const inner = '<div class="card-row-top"><div><div class="card-row-title">' + (r.category ? '<span class="cat-badge" style="background:' + catColor + ';color:' + this.catBadgeIconColor(catColor) + '">' + svgIcon(categoryIcon(app, r.category, r.type, app.state.data.categoryStyles), 12) + "</span>" : "") + esc(r.desc || "—") + '</div><div class="card-row-sub">' + r.date + " · " + esc(typeLabels[r.type] || r.type) + "</div></div>" +
       '<div class="card-row-amt ' + tone + '">' + amtTxt + "</div></div>" +
       '<div class="card-row-meta">' +
         (r.personId ? '<span>' + esc(app.personName(r.personId)) + "</span>" : "") +
@@ -5945,7 +6182,7 @@ const UI = {
       "</div>" +
       this.txTagChips(r) +
       this.txRowActions(r);
-    const rowStyle = r.category ? ' style="border-inline-start:4px solid ' + app.categoryColor(r.category, r.type) + '"' : "";
+    const rowStyle = r.category ? ' style="border-inline-start:4px solid ' + catColor + '"' : "";
     if (!editable) return '<div class="card-row' + (r.void ? " voided" : "") + '"' + rowStyle + ">" + inner + "</div>";
     return '<div class="card-row swipe-row' + (r.void ? " voided" : "") + '"' + rowStyle + ">" +
       '<div class="swipe-actions">' +
@@ -6037,9 +6274,10 @@ const UI = {
     const groupId = "grp-" + first.type + "-" + (first.category || "none").replace(/[^a-zA-Z0-9]/g, "_") + "-" + first.desc.trim().toLowerCase().replace(/[^a-zA-Z0-9]/g, "_");
     this._expandedTxGroups = this._expandedTxGroups || new Set();
     const expanded = this._expandedTxGroups.has(groupId);
-    const rowStyle = first.category ? ' style="border-inline-start:4px solid ' + app.categoryColor(first.category, first.type) + '"' : "";
+    const catColor = app.categoryColor(first.category, first.type);
+    const rowStyle = first.category ? ' style="border-inline-start:4px solid ' + catColor + '"' : "";
     const header = '<button class="card-row tx-group-head" type="button"' + rowStyle + ' aria-expanded="' + (expanded ? "true" : "false") + '" onclick="UI.toggleTxGroup(\'' + groupId + '\')">' +
-      '<div class="card-row-top"><div><div class="card-row-title">' + (first.category ? '<span class="cat-badge" style="background:' + app.categoryColor(first.category, first.type) + '">' + svgIcon(categoryIcon(first.category), 12) + "</span>" : "") + esc(first.desc) + '</div><div class="card-row-sub">' + esc(app.L(members.length + " similar transactions", members.length + " حركة متشابهة")) + "</div></div>" +
+      '<div class="card-row-top"><div><div class="card-row-title">' + (first.category ? '<span class="cat-badge" style="background:' + catColor + ';color:' + this.catBadgeIconColor(catColor) + '">' + svgIcon(categoryIcon(app, first.category, first.type, app.state.data.categoryStyles), 12) + "</span>" : "") + esc(first.desc) + '</div><div class="card-row-sub">' + esc(app.L(members.length + " similar transactions", members.length + " حركة متشابهة")) + "</div></div>" +
         '<div class="card-row-amt ' + tone + '">' + amtTxt + "</div></div>" +
       '<div class="tx-group-toggle">' + (expanded ? "▲" : "▼") + "</div>" +
     "</button>";
@@ -7268,10 +7506,35 @@ const UI = {
   renderSettings(D, t) {
     const app = this.app, d = app.state.data;
     const custom = d.customCategories || { income: [], expense: [] };
+    const catStyles = d.categoryStyles || {};
+    // Real missing feature fixed: a custom category could only ever be
+    // added or deleted -- fixing a typo, or giving it a real color/icon
+    // instead of the flat neutral gray + plain tag every one of them used
+    // to share, meant deleting and re-adding it (see category_edit's own
+    // comment in FORMS() for why that's a real risk, not just an
+    // inconvenience). Each chip now shows its own live badge (so a past
+    // edit is visible right here, not just out on the category's own
+    // bars/badges elsewhere) plus a real Edit alongside Remove.
     const catChips = (kind, list) => list.length ?
-      '<div class="btn-row wrap">' + list.map(c =>
-        '<span class="pill">' + esc(c) + ' <button class="link-btn small danger" onclick="UI.deleteCategoryC(\'' + kind + '\',\'' + escJsArg(c) + '\')" aria-label="' + esc(app.L("Remove ") + c) + '">×</button></span>'
-      ).join("") + "</div>" :
+      '<div class="btn-row wrap">' + list.map(c => {
+        // Keyed "kind|name" -- see categoryColor()'s own comment on why a
+        // bare name isn't enough (income/expense each keep their own
+        // separate category namespace, so the two can share a name).
+        const st = catStyles[kind + "|" + c] || {};
+        // _colorSeeded: true means the color field below is only a
+        // placeholder shown so the native picker doesn't open on pure
+        // black, not a real prior choice -- UI.openModal() reads this to
+        // decide whether submitModal() should actually save it (see the
+        // matching comment there) or let a Save that never touched color
+        // keep falling back to the theme-adaptive neutral every
+        // never-customized category already shares, same as before this
+        // edit feature existed.
+        const editArgs = JSON.stringify({ kind, _oldName: c, name: c, color: st.color || "#8f97a6", _colorSeeded: !st.color, icon: st.icon || "tag" }).replace(/"/g, "&quot;");
+        const catColor = app.categoryColor(c, kind);
+        return '<span class="pill"><span class="cat-badge" style="background:' + catColor + ';color:' + this.catBadgeIconColor(catColor) + '">' + svgIcon(categoryIcon(app, c, kind, catStyles), 12) + "</span>" + esc(c) +
+          ' <button class="link-btn small" onclick="UI.openModal(\'category_edit\',' + editArgs + ')" aria-label="' + esc(app.L("Edit ") + c) + '">' + esc(app.L("Edit")) + "</button>" +
+          ' <button class="link-btn small danger" onclick="UI.deleteCategoryC(\'' + kind + '\',\'' + escJsArg(c) + '\')" aria-label="' + esc(app.L("Remove ") + c) + '">×</button></span>';
+      }).join("") + "</div>" :
       // No body text -- the section intro right above already explains
       // what to do, so a second line here would just repeat it.
       this.emptyState(ICON_PLUS, app.L("No custom categories yet", "مفيش فئات مخصصة لسه"));
@@ -7542,9 +7805,21 @@ const UI = {
         // touched once the user edits it directly) so dragging the native
         // picker behaves the same as clicking a swatch -- see
         // syncColor2Default.
-        const liveSync = f.k === "color" ? ' oninput="UI.syncColor2Default(this.value)"' : (f.k === "color2" ? ' oninput="UI._color2Touched=true"' : "");
+        const liveSync = f.k === "color" ? ' oninput="UI.syncColor2Default(this.value);UI._catColorTouched=true"' : (f.k === "color2" ? ' oninput="UI._color2Touched=true"' : "");
         const swatches = COLOR_PALETTE.map(hex => '<button type="button" class="swatch-btn" style="background:' + hex + '" onclick="UI.setColorField(\'' + f.k + '\',\'' + hex + '\')" aria-label="' + hex + '"></button>').join("");
         input = '<div class="swatch-row">' + swatches + '</div><input class="input" id="f_' + f.k + '" name="' + f.k + '" type="color" value="' + esc(val) + '"' + liveSync + '">';
+      } else if (f.type === "icon") {
+        // Same "visual buttons drive a plain hidden input, no form-
+        // association, click just sets the real field's value" shape as
+        // the color swatches just above -- see ICON_PICKER's own comment
+        // for why this offers every glyph CATEGORY_ICONS already draws
+        // instead of a separate icon set. The "on" class (not just the
+        // hidden input's value) is what actually shows which one is
+        // picked, so UI.setIconField has to refresh it directly the same
+        // no-render() way setColorField mutates the color input.
+        const cur = val || "tag";
+        const swatches = ICON_PICKER.map(([key, path]) => '<button type="button" class="icon-swatch' + (cur === key ? " on" : "") + '" onclick="UI.setIconField(\'' + key + '\')" aria-label="' + esc(key) + '" aria-pressed="' + (cur === key ? "true" : "false") + '">' + svgIcon(path, 18) + "</button>").join("");
+        input = '<div class="icon-swatch-row">' + swatches + '</div><input type="hidden" id="f_' + f.k + '" name="' + f.k + '" value="' + esc(cur) + '">';
       } else {
         // Description → category autocomplete, income/expense only: as the
         // user types, suggest whatever category their past entries with a
