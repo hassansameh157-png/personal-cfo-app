@@ -1085,9 +1085,15 @@ class Engine {
   categoryMonthStats(category, kind) {
     const d = this.state.data, today = this.today(), mStart = today.slice(0, 8) + "01";
     const otherTypesByKind = { expense: ["expense"], income: ["income", "refund", "investment_return"] };
+    // !t.category || t.category === "Other" -- real bug caught in review:
+    // this only matched uncategorized rows, missing the exact same
+    // literally-"Other" half UI.renderTransactions()'s own filter was
+    // just fixed to include, so this stats bar and the list it sits
+    // above would silently disagree for any category genuinely tagged
+    // "Other".
     const rows = d.tx.filter(t => !t.void && t.date >= mStart && t.date <= today &&
       (category === "Other"
-        ? (otherTypesByKind[kind] || otherTypesByKind.expense.concat(otherTypesByKind.income)).includes(t.type) && !t.category
+        ? (otherTypesByKind[kind] || otherTypesByKind.expense.concat(otherTypesByKind.income)).includes(t.type) && (!t.category || t.category === "Other")
         : t.category === category));
     const total = Math.round(rows.reduce((s, t) => s + t.amount, 0) * 100) / 100;
     return { total, count: rows.length };

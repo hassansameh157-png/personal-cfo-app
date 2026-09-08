@@ -801,6 +801,33 @@ account can be deleted, a card's Available/Limit stay consistent).
   three spots. Fixed all three "That is more than the `<cap>` ..." cap
   messages that had this bug: installment payment, statement payment
   (the one in the bug report), and gam3ya payment.
+- `check_batch16.js` -- real bug reported directly by a user: tapping the
+  "Other" bar in Reports' "By source"/"By category" (or any of the other
+  category bars sharing the same click-through) found zero transactions
+  whenever the amount it showed came from rows genuinely categorized
+  "Other" -- a completely ordinary, selectable category (the last entry
+  in `Engine.builtinCategories()` for both income and expense) -- rather
+  than uncategorized ones.
+
+  Every category aggregation this app has (`monthCategorySpend`,
+  `unusualSpending`, Reports' `catMap`/`srcMap`) buckets a transaction
+  with no category at all under `"Other"` too (via `category ||
+  "Other"`), so a bar's own total always means both halves together --
+  but `UI.renderTransactions()`'s own click-through filter only ever
+  checked `!r.category`, missing the `r.category === "Other"` half. The
+  filter's own comment already said it "has to match both", stated
+  intent the code itself never actually implemented. Fixed to
+  `!r.category || r.category === "Other"`.
+
+  One real bug caught in code review, in the sibling function: `Engine.
+  categoryMonthStats()` -- the scoped "This month" stats tile shown right
+  above the same filtered list (see `scopedCategoryMetrics()`) -- had the
+  identical `!t.category`-only bug, and its own comment explicitly says
+  it "matches `UI.renderTransactions()`'s own category filter exactly",
+  which this same fix had just changed. Without the matching fix here,
+  the stats tile and the list right under it would have silently
+  disagreed for any category genuinely tagged "Other". Fixed the same
+  way.
 
 ## Adding a new one
 

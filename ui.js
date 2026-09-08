@@ -2679,16 +2679,18 @@ const UI = {
     // "Other" is special: every category aggregation this app already has
     // (monthCategorySpend, unusualSpending, Reports' catMap/srcMap) buckets
     // a transaction with NO category set at all under "Other" too (via
-    // `category || "Other"`), not just one literally categorized "Other" --
-    // so its bar's total includes both, and this filter has to match both
-    // to actually show what that bar counted, not silently drop the
-    // uncategorized half. Scoped to the same types those aggregations
-    // actually sum (expense, or income/refund/investment_return) -- every
-    // OTHER type (transfer, receivable/payable, investment_buy, a gam3ya
-    // installment, a reversal marker...) never carries a category at all
-    // either, but was never counted into that bar's total, so a bare
-    // `!r.category` on its own would sweep in unrelated transactions the
-    // "Other" bar never claimed to represent.
+    // `category || "Other"`) -- and "Other" is ALSO a real, ordinary,
+    // selectable category (the last entry in builtinCategories() for both
+    // income and expense), so a transaction genuinely categorized "Other"
+    // lands in that exact same bucket. A bar's total therefore always
+    // means BOTH halves together, and this filter has to match both to
+    // actually show what that bar counted. Scoped to the same types those
+    // aggregations actually sum (expense, or income/refund/
+    // investment_return) -- every OTHER type (transfer, receivable/
+    // payable, investment_buy, a gam3ya installment, a reversal marker...)
+    // never carries a category at all either, but was never counted into
+    // that bar's total, so a bare `!r.category` on its own would sweep in
+    // unrelated transactions the "Other" bar never claimed to represent.
     // Real bug, found by inspection: an uncategorized expense and an
     // uncategorized income both fall into "Other" (the same category ||
     // "Other" logic above applies to both catMap and srcMap), so without
@@ -2705,7 +2707,14 @@ const UI = {
     // repeating the same type list (and risking the two drifting apart).
     const anyCatBucketType = otherTypesByKind.expense.concat(otherTypesByKind.income);
     const catBucketTypes = otherTypesByKind[F.categoryKind] || anyCatBucketType;
-    if (F.category !== "all") rows = rows.filter(r => F.category === "Other" ? (catBucketTypes.includes(r.type) && !r.category) : r.category === F.category);
+    // Real bug reported directly by a user: tapping the "Other" bar found
+    // zero transactions whenever the amount it showed came from rows
+    // genuinely categorized "Other" (a completely ordinary category pick,
+    // right there in the dropdown) rather than uncategorized ones -- this
+    // used to check `!r.category` alone, missing exactly the
+    // `r.category === "Other"` half the comment above already says the
+    // bar's own total includes.
+    if (F.category !== "all") rows = rows.filter(r => F.category === "Other" ? (catBucketTypes.includes(r.type) && (!r.category || r.category === "Other")) : r.category === F.category);
     if (F.q.trim()) { const q = F.q.toLowerCase(); rows = rows.filter(r => [r.desc, r.category, typeLabels[r.type], app.personName(r.personId), app.accName(r.accountId), app.accName(r.fromId), app.accName(r.toId), (r.tags || []).join(" ")].join(" ").toLowerCase().includes(q)); }
     const total = rows.length;
     const visible = rows.slice(0, S.txVisible);
