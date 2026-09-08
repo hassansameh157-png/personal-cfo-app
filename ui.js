@@ -311,7 +311,7 @@ const UI = {
   },
 
   // ---- generic actions ---------------------------------------------------
-  setPage(p) { this.app.state.page = p; this.app.state.moreOpen = false; this.app.state.quickAddOpen = false; this.app.state.txVisible = 25; this._needsAttentionExpanded = false; this._txActionRow = null; this._txFiltersOpen = false; this._acctActionRow = null; this._personActionRow = null; this._peopleSettledExpanded = false; this._plansCompletedExpanded = false; this._groupActionRow = null; this._groupsCompletedExpanded = false; this._stmtActionRow = null; this.render(); window.scrollTo({ top: 0 }); },
+  setPage(p) { this.app.state.page = p; this.app.state.moreOpen = false; this.app.state.quickAddOpen = false; this.app.state.txVisible = 25; this._needsAttentionExpanded = false; this._txActionRow = null; this._txFiltersOpen = false; this._acctActionRow = null; this._personActionRow = null; this._peopleSettledExpanded = false; this._plansCompletedExpanded = false; this._groupActionRow = null; this._groupsCompletedExpanded = false; this._stmtActionRow = null; this._goalsCompletedExpanded = false; this.render(); window.scrollTo({ top: 0 }); },
   // A person's own page: every loan and installment plan tied to them (both
   // directions) in one place, instead of scattered across Receivables &
   // Payables and Installments — the gap that made juggling several loans
@@ -978,8 +978,28 @@ const UI = {
     if (!res.ok) { alert(res.error); return; }
     this.render();
   },
+  // Real bug fix: this used to be a plain "Delete X?" regardless of
+  // whether the category was still in active use -- deleteCategory()
+  // itself never blocks (see its own comment on why it can't), so nothing
+  // ever told the user their existing transactions or a live budget were
+  // about to lose the ability to re-pick this exact category, until they
+  // ran into it later trying to edit one of them.
   deleteCategoryC(kind, name) {
-    if (this.hapticConfirm(this.app.L("Delete ") + name + "?")) { this.app.deleteCategory(kind, name); this.render(); }
+    const app = this.app, use = app.categoryInUse(kind, name);
+    let msg;
+    if (use.txCount > 0 && use.hasBudget) {
+      msg = app.L(name + " is used by " + use.txCount + " transaction(s) and has a budget set. Deleting it here only removes it from the picker -- existing entries and the budget keep the name, but you won't be able to select it again. Continue?",
+        name + " مستخدمة في " + use.txCount + " حركة وليها ميزانية محددة. مسحها هنا هيشيلها من قايمة الاختيار بس -- الحركات والميزانية هتفضل شايلة الاسم، بس مش هتقدر تختارها تاني. تكمل؟");
+    } else if (use.txCount > 0) {
+      msg = app.L(name + " is used by " + use.txCount + " transaction(s). Deleting it here only removes it from the picker -- existing entries keep it, but you won't be able to select it again, including while editing one of them. Continue?",
+        name + " مستخدمة في " + use.txCount + " حركة. مسحها هنا هيشيلها من قايمة الاختيار بس -- الحركات الحالية هتفضل شايلاها، بس مش هتقدر تختارها تاني، حتى وانت بتعدل واحدة منها. تكمل؟");
+    } else if (use.hasBudget) {
+      msg = app.L(name + " has a monthly budget set. Deleting it here only removes it from the picker -- the budget itself stays until you remove it separately. Continue?",
+        name + " ليها ميزانية شهرية محددة. مسحها هنا هيشيلها من قايمة الاختيار بس -- الميزانية نفسها هتفضل موجودة لحد ما تشيلها بنفسك. تكمل؟");
+    } else {
+      msg = app.L("Delete ") + name + "?";
+    }
+    if (this.hapticConfirm(msg)) { app.deleteCategory(kind, name); this.render(); }
   },
   postRecurringC(id) {
     const r = this.app.state.data.recurring.find(x => x.id === id); if (!r) return;
@@ -3246,7 +3266,17 @@ const UI = {
   renderSavingsGoals(D, t) {
     const app = this.app;
     const goals = D.savingsGoals.slice().sort((a, b) => (a.due || "9999") < (b.due || "9999") ? -1 : 1);
-    const cards = goals.map(g => {
+    // Real gap fix, same pattern already applied to Installments (#53) and
+    // Savings groups: a reached goal used to stay inline forever, right
+    // alongside still-active ones, sorted purely by its (now moot) due
+    // date -- an old finished goal with an early due date would sit at the
+    // very TOP, crowding out what's actually still being tracked. Splits
+    // into active/completed the same way, collapsed behind an "N reached"
+    // toggle by default.
+    const activeGoals = goals.filter(g => !g.done);
+    const completedGoals = goals.filter(g => g.done);
+    const completedCollapsed = !this._goalsCompletedExpanded && completedGoals.length > 0;
+    const goalCard = (g) => {
       const editArgs = JSON.stringify({ id: g.id, name: g.name, target: g.target, due: g.due || "", color: g.color }).replace(/"/g, "&quot;");
       return '<div class="card-row">' +
         '<div class="card-row-top"><div><div class="card-row-title">' + esc(g.name) + '</div><div class="card-row-sub">' + esc(app.accName(g.accountId)) + (g.due ? " · " + esc(t.dueDate) + " " + g.due + (!g.done ? " · " + esc(this.daysUntilText(g.due)) : "") : "") + "</div></div>" +
@@ -3261,11 +3291,17 @@ const UI = {
         '<button class="link-btn small" onclick="UI.openModal(\'goal_edit\',' + editArgs + ')">' + esc(app.L("Edit")) + "</button>" +
         '<button class="link-btn small danger" onclick="UI.deleteSavingsGoalC(\'' + g.id + '\')">' + esc(app.L("Delete")) + "</button>" +
         "</div></div>";
-    }).join("");
+    };
+    const activeCards = activeGoals.map(goalCard).join("");
+    const completedSection = !completedGoals.length ? "" : (completedCollapsed ?
+      '<button class="btn btn-secondary block" onclick="UI.toggleGoalsCompleted()">' + esc(app.L(completedGoals.length + " reached", completedGoals.length + " متحقق")) + "</button>" :
+      '<h2 class="section-title">' + esc(app.L("Reached", "متحقق")) + '</h2><div class="card-list">' + completedGoals.map(goalCard).join("") + "</div>");
+    const emptyGoals = goals.length ? "" : '<div style="margin-top:14px">' + this.emptyState(ICON_PLUS, app.L("No savings goals yet", "لسه مفيش أهداف ادخار"), app.L("Add one above to start tracking progress toward it.", "ضيف هدف من فوق تبدأ تتابع تقدمك فيه.")) + "</div>";
     return this.tabHeader(t.goals, goals.length + app.L(" goal(s) · progress follows the linked account's own balance since the goal was set", " هدف · التقدم بيتابع رصيد الحساب المرتبط من وقت ما اتحدد الهدف"),
       [[t.aGoal, "UI.openModal('goal')"]]) +
-      (goals.length ? '<div class="card-list" style="margin-top:14px">' + cards + "</div>" : '<div style="margin-top:14px">' + this.emptyState(ICON_PLUS, app.L("No savings goals yet", "لسه مفيش أهداف ادخار"), app.L("Add one above to start tracking progress toward it.", "ضيف هدف من فوق تبدأ تتابع تقدمك فيه.")) + "</div>");
+      (activeGoals.length ? '<div class="card-list" style="margin-top:14px">' + activeCards + "</div>" : "") + completedSection + emptyGoals;
   },
+  toggleGoalsCompleted() { this._goalsCompletedExpanded = !this._goalsCompletedExpanded; this.render(); },
 
   // ---- To-do list (plain reminders -- zero financial effect) ------------
   // Reads straight from d.todos, never from D (the derived financial

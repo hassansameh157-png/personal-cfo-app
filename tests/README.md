@@ -614,6 +614,31 @@ account can be deleted, a card's Available/Limit stay consistent).
   history/back-button work. Fixed by computing the expected day-count in
   the test itself, from the app's own `planState()`, instead of a
   hardcoded literal.
+- `check_batch11.js` -- a small two-item batch: a real missing feature and a
+  real bug, both spotted sweeping the screens that hadn't had a "Recut" pass
+  yet (Savings Goals, Settings' custom categories).
+
+  **Real gap fixed -- Savings Goals: a reached goal never left the active
+  list.** Same pattern already applied to Installments (#53) and Savings
+  groups: a goal that hit its target stayed inline forever, sorted purely
+  by its now-moot due date -- an old finished goal with an early due date
+  could sit at the very top, crowding out what's actually still being
+  tracked. Splits into active/reached the same way, a "N reached" toggle
+  collapsed by default (`_goalsCompletedExpanded`, reset on `setPage()`
+  same as `_plansCompletedExpanded`/`_groupsCompletedExpanded`).
+
+  **Real bug fixed -- deleting a custom category never warned it was still
+  in use.** `Engine.deleteCategory()` can't actually break anything when
+  it removes a category (it's a free-text label on existing rows, not an
+  id anything depends on) so it never blocked the delete -- but nothing
+  told the user beforehand that an existing transaction or a live budget
+  still carrying that exact name would silently lose the ability to be
+  re-picked (including re-opening that very transaction to edit it) once
+  the category disappeared from every dropdown. Added `categoryInUse()`
+  (checks live, non-void transactions of the matching kind plus
+  `data.budgets`) and a confirm message that names what's actually still
+  using it -- a transaction count, a budget, or both -- falling back to
+  the original plain "Delete X?" when nothing is.
 
 ## Adding a new one
 

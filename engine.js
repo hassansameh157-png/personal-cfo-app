@@ -2110,6 +2110,23 @@ class Engine {
     }
     return new Set(Object.values(byKey).map(t => t.id));
   }
+  // Whether a custom category is still actively referenced anywhere, so
+  // deleteCategory's own confirm (see UI.deleteCategoryC) can warn before
+  // silently taking it out of every picker. Unlike groupCanDelete/
+  // recurringCanDelete elsewhere, this never blocks the delete outright:
+  // a category is just a free-text label on existing rows, not an id
+  // those rows depend on, so removing it here can never break anything
+  // already saved -- it only stops showing up as a pickable option going
+  // forward (including while re-opening one of the very entries counted
+  // below to edit it).
+  categoryInUse(kind, name) {
+    const d = this.state.data;
+    const incomeTypes = ["income", "refund", "investment_return"];
+    const txCount = (d.tx || []).filter(t => !t.void && t.category === name &&
+      (kind === "expense" ? t.type === "expense" : incomeTypes.includes(t.type))).length;
+    const hasBudget = kind === "expense" && !!(d.budgets && d.budgets[name]);
+    return { txCount, hasBudget };
+  }
   deleteCategory(kind, name) {
     const data = JSON.parse(JSON.stringify(this.state.data));
     data.customCategories = data.customCategories || { income: [], expense: [] };
