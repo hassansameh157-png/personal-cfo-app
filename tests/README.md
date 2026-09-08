@@ -783,6 +783,24 @@ account can be deleted, a card's Available/Limit stay consistent).
   note was the one case in that branch that silently ignored the current
   UI language. Fixed to `this.L("Refund", "مرتجع")`, matching the same
   locale rule as everything else there.
+- `check_batch15.js` -- real bug reported directly by a user, with a
+  screenshot: paying more than a card statement's remaining balance
+  showed the raw error message as literal
+  `<bdi dir="ltr" class="amt-bidi">EGP 7,021</bdi>` text instead of a
+  normal formatted amount.
+
+  `fmt()`/`fmtS()` wrap their output in a `<bdi>` tag (see `bidiWrap()`)
+  so an RTL page context can't strand a sign away from its digits --
+  markup meant to be inserted into rendered HTML. But this message goes
+  through `this.state.err`, which the modal's error banner displays via
+  `esc(S.err)` (plain-text escaping, so a genuinely malicious value in it
+  can never execute) -- so any HTML embedded in it shows up escaped and
+  literal instead of rendered. The engine already had `fmtPlain()` built
+  for exactly this "needs a plain string, not markup" case (a chart
+  tooltip's `textContent`, an onclick argument) -- just not used in these
+  three spots. Fixed all three "That is more than the `<cap>` ..." cap
+  messages that had this bug: installment payment, statement payment
+  (the one in the bug report), and gam3ya payment.
 
 ## Adding a new one
 

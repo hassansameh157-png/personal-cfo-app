@@ -1678,7 +1678,13 @@ class Engine {
       // picker allows it) gets no such allowance: it has to fit that plan's
       // remaining as-is.
       const cap = (existing && existing.planId === plan.id) ? st.remaining + existing.amount : st.remaining;
-      if (!need(N("amount") <= cap + 0.001, "That is more than the " + this.fmt(cap) + " still outstanding on this plan.")) return false;
+      // fmtPlain(), not fmt() -- real bug reported by a user (screenshot):
+      // fmt() wraps the amount in a <bdi> tag meant for HTML markup, but
+      // this message is displayed through esc() (see the modal's error
+      // banner), which escapes it into literal "<bdi ...>...</bdi>" text
+      // instead of rendering it. fmtPlain() exists specifically for a
+      // spot like this that needs a plain string, not markup.
+      if (!need(N("amount") <= cap + 0.001, "That is more than the " + this.fmtPlain(cap) + " still outstanding on this plan.")) return false;
       if (existing) {
         Object.assign(existing, { date: f.date, amount: N("amount"), accountId: f.accountId, personId: plan.personId, planId: plan.id, desc: f.desc || "Installment payment" });
         note = "Updated installment payment " + this.fmt(N("amount")) + " · " + plan.title;
@@ -1718,7 +1724,11 @@ class Engine {
       // added back before capping, so shrinking/growing it validates
       // against the statement's real remaining, not remaining-minus-itself.
       const cap = (existing && existing.statementId === stmt.id) ? st.remaining + existing.amount : st.remaining;
-      if (!need(N("amount") <= cap + 0.001, "That is more than the " + this.fmt(cap) + " still outstanding on this statement.")) return false;
+      // fmtPlain(), not fmt() -- same real bug as the installment-payment
+      // cap message above (this.fmt() embeds a <bdi> HTML tag that shows
+      // as literal escaped text through this modal's plain-text error
+      // banner).
+      if (!need(N("amount") <= cap + 0.001, "That is more than the " + this.fmtPlain(cap) + " still outstanding on this statement.")) return false;
       if (existing) {
         Object.assign(existing, { date: f.date, amount: N("amount"), statementId: stmt.id, fromId: f.fromId, toId: stmt.accountId, desc: f.desc || "Statement payment" });
         note = "Updated statement payment " + this.fmt(N("amount"));
@@ -1923,7 +1933,9 @@ class Engine {
       if (k === "group_payment") {
         const st = this.groupState(g);
         const cap = (existing && existing.groupId === g.id) ? st.remainingPay + existing.amount : st.remainingPay;
-        if (!need(N("amount") <= cap + 0.001, "That is more than the " + this.fmt(cap) + " left to pay into this group.")) return false;
+        // fmtPlain(), not fmt() -- same real bug as the installment-payment
+        // and statement-payment cap messages above.
+        if (!need(N("amount") <= cap + 0.001, "That is more than the " + this.fmtPlain(cap) + " left to pay into this group.")) return false;
       }
       const type = k === "group_payment" ? "gam3ya_payment" : "gam3ya_payout";
       const desc = f.desc || (k === "group_payment" ? "Contribution — " : "Payout collected — ") + g.name;
