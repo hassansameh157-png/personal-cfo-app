@@ -856,6 +856,47 @@ account can be deleted, a card's Available/Limit stay consistent).
   Math.round(cap))`, which only ever raises the ceiling to match a
   rounded-up display and never lowers it below the real cap. Covered by
   a dedicated regression case (a `500.30` cap, paid as exactly `500.30`).
+- `check_batch18.js` -- two things reported directly by a user in the
+  same conversation, right after batch17 shipped.
+
+  **Real gap closed: "Pay statement" now reachable straight from the
+  account itself.** Paying a card's own statement used to mean leaving
+  Accounts entirely for Card statements just to find the same Pay button
+  already shown right on the tile's own "Statement due" line. Added "Pay
+  statement" to the account's own "..." sheet (`renderAcctActionSheet`) --
+  shown only when the card has a real unpaid statement, computed the
+  exact same "nearest due, not yet paid" way the tile's own `nearestStmt`
+  already does. `UI.openAcctPayStatement()` recomputes that pick fresh
+  (not passed in as a stale argument) so it can never open a statement
+  that's gone stale between the sheet rendering and the tap landing, and
+  opens the real `statement_payment` form pre-filled, same as the
+  Card-statements page's own Pay button always has.
+
+  **Real bug this surfaced: a screenshot showed "Outstanding EGP 1" on a
+  card whose "Available" already showed the full credit limit** --
+  self-contradictory, since 1 outstanding should mean limit-1 available.
+  Paying the rounded display amount (batch17's own fix) can leave the
+  card's real account balance a few piastres in credit rather than
+  exactly zero -- a genuine, harmless overpayment, not more debt -- but
+  the tile showed that raw signed balance under "Outstanding" with no
+  sign at all (`app.fmt()` only prefixes a minus for negative values), so
+  a small credit read as if there were still an "Outstanding" amount.
+  Fixed to the exact same debt-only convention the aggregate "Total card
+  debt" tile (`ccSummary`) already used one section above it --
+  `Math.abs(Math.min(0, bal))` instead of the raw `bal` -- so a credit
+  now reads as 0 outstanding, consistent with Available already showing
+  the full limit right next to it. Real debt (a genuinely negative
+  balance) is completely unaffected -- still shows its correct positive
+  magnitude, covered by a dedicated regression case.
+
+  One real bug self-caught before this ever ran: the first pass of the
+  `Outstanding` fix accidentally deleted the adjacent `const spark = ...`
+  line (the tile's own weekly-trend sparkline, used by plain balance
+  accounts) while editing right next to it, throwing `spark is not
+  defined` and silently breaking the whole Accounts page render.
+  Caught immediately by actually running the page rather than trusting
+  the edit, and restored before this test or the regression suite ever
+  saw it.
 
 ## Adding a new one
 

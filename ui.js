@@ -2198,8 +2198,19 @@ const UI = {
       // reads as "nothing left" rather than a confusing negative).
       const available = Math.max(0, (a.limit || 0) - Math.abs(Math.min(0, bal)));
       const spark = (!isDebt && weeklyDerives) ? this.sparkline(weeklyDerives.map(w => w.bal[a.id] || 0), "currentColor") : "";
+      // Math.abs(Math.min(0, bal)), not the raw signed bal -- real bug
+      // noticed by a user: a slight overpayment (a few piastres rounded
+      // up to pay off a statement in whole EGP, or any other rounding
+      // residue) leaves `bal` a tiny positive CREDIT, not debt -- and
+      // app.fmt() shows no sign at all for a positive value, so this
+      // used to read as e.g. "Outstanding EGP 1" for a card actually
+      // fully paid off with a 50-piastre credit sitting on it, visibly
+      // inconsistent with Available already showing the full limit right
+      // next to it. Same debt-only convention ccSummary's own "Total
+      // card debt" tile above already uses -- a credit isn't outstanding
+      // debt, so it reads as 0 here, same as it already did there.
       const face = isDebt ?
-        '<div class="cc-row"><div><div class="cc-label">' + esc(app.L("Outstanding", "المديونية")) + '</div><div class="cc-amt">' + app.fmt(bal) + "</div></div>" +
+        '<div class="cc-row"><div><div class="cc-label">' + esc(app.L("Outstanding", "المديونية")) + '</div><div class="cc-amt">' + app.fmt(Math.abs(Math.min(0, bal))) + "</div></div>" +
         '<div><div class="cc-label">' + esc(app.L("Available", "المتاح")) + '</div><div class="cc-sub">' + app.fmt(available) + "</div></div>" +
         '<div><div class="cc-label">' + esc(app.L("Limit", "الحد")) + '</div><div class="cc-sub">' + app.fmt(a.limit) + "</div></div></div>" :
         '<div class="cc-row"><div><div class="cc-label">' + esc(app.L("Balance", "الرصيد")) + '</div><div class="cc-amt">' + app.fmt(bal) + spark + "</div></div></div>";
@@ -2316,6 +2327,18 @@ const UI = {
     this._acctActionRow = null;
     this.openModal("card_statement", { accountId: id });
   },
+  // Same "unpaid, nearest due" pick renderAcctActionSheet() itself just
+  // computed to decide whether to show this item at all -- recomputed
+  // fresh here (not carried over as an argument) so this can never open
+  // a statement that's gone stale between the sheet rendering and the
+  // tap actually landing.
+  openAcctPayStatement(id) {
+    this._acctActionRow = null;
+    const app = this.app;
+    const nearest = (app.state.data.cardStatements || []).filter(s => s.accountId === id).map(s => app.statementState(s)).filter(s => s.status !== "paid").sort((x, y) => x.due < y.due ? -1 : 1)[0];
+    if (!nearest) return;
+    this.openModal("statement_payment", { statementId: nearest.id });
+  },
   // The sheet UI.openAcctActions() opens -- reuses the exact .sheet/
   // .sheet-backdrop/.sheet-actions markup Transactions' own action sheet
   // established (see renderTxActionSheet()), just for an account's Edit/
@@ -2342,9 +2365,17 @@ const UI = {
     const key = app.acctTileGroup(a.type) || "row";
     const section = app.state.data.accounts.filter(x => x.active && (app.acctTileGroup(x.type) || "row") === key);
     const i = section.findIndex(x => x.id === a.id);
+    // Real gap closed, requested directly by a user: paying a card's own
+    // statement used to mean leaving Accounts entirely for Card
+    // statements just to find the same Pay button already shown right on
+    // this tile's own "Statement due" line (see tileHtml's nearestStmt
+    // just above) -- same record, computed the exact same way (unpaid,
+    // nearest due date), just also reachable from here.
+    const nearestStmt = isDebt ? (app.state.data.cardStatements || []).filter(s => s.accountId === a.id).map(s => app.statementState(s)).filter(s => s.status !== "paid").sort((x, y) => x.due < y.due ? -1 : 1)[0] : null;
     const items = [
       ["M12 20h9M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z", app.L("Edit"), "UI.openAcctEdit('" + a.id + "')", false],
       isDebt ? ["M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8L14 2zM14 2v6h6M16 13H8M16 17H8", app.L("+ Statement", "+ كشف حساب"), "UI.openAcctStatement('" + a.id + "')", false] : null,
+      nearestStmt ? ["M12 19V5M5 12l7-7 7 7", app.L("Pay statement", "سداد كشف حساب") + " · " + app.fmtPlain(nearestStmt.remaining), "UI.openAcctPayStatement('" + a.id + "')", false] : null,
       i > 0 ? ["M12 19V5M5 12l7-7 7 7", app.L("Move up", "حرّك لفوق"), "UI.moveAccountC('" + a.id + "',-1)", false] : null,
       i < section.length - 1 ? ["M12 5v14M19 12l-7 7-7-7", app.L("Move down", "حرّك لتحت"), "UI.moveAccountC('" + a.id + "',1)", false] : null,
       canDelete ? ["M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M10 11v6M14 11v6", app.L("Delete"), "UI.deleteAccountC('" + a.id + "')", true] : null,
