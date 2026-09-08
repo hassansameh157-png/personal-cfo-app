@@ -1348,7 +1348,17 @@ class Engine {
     // showing them on an edit would silently do nothing if filled in.
     const isEditingExpense = this.state.modal === "expense" && this.state.form && this.state.form.id;
     const F = {
-      income: { title: t.aIncome, fields: [D("date", t.date, "date"), D("amount", t.amount, "number"), D("accountId", t.account, "select", { options: accs }), D("category", t.category, "select", { options: inc, wide: true }), D("personId", t.person + this.L(" (optional)", " (اختياري)"), "select", { options: [{ v: "", l: "—" }].concat(ppl) }), D("desc", t.details, "text", { wide: true }), D("tags", this.L("Tags (optional)", "تاجات (اختياري)"), "text", { wide: true, hint: this.L("Comma separated — a way to slice spending across categories, e.g. \"trip, work\".", "افصل بينهم بفاصلة — طريقة لتجميع مصاريف من فئات مختلفة، زي \"رحلة، شغل\".") })] },
+      // Real gap fix: "refund" was already a fully wired transaction type
+      // everywhere else (derive()'s balance application, cashFlowBucket,
+      // isIncomeType(), categoryColor/categoryIcon's income-side
+      // normalization) and even had its own entry in the Transactions
+      // type filter -- but nothing anywhere could actually create one, so
+      // filtering by it always came back empty. Rather than a whole new
+      // button/screen, it's this same form with one added "type" select
+      // (same field name/shape the "recurring" form's own income/expense
+      // selector already uses -- see open()'s own default for it) --
+      // submit() below reads it to decide the real stored tx.type.
+      income: { title: t.aIncome, fields: [D("date", t.date, "date"), D("amount", t.amount, "number"), D("accountId", t.account, "select", { options: accs }), D("category", t.category, "select", { options: inc, wide: true }), D("type", this.L("Type", "النوع"), "select", { options: [{ v: "income", l: this.L("Income", "إيراد") }, { v: "refund", l: this.L("Refund", "مرتجع") }] }), D("personId", t.person + this.L(" (optional)", " (اختياري)"), "select", { options: [{ v: "", l: "—" }].concat(ppl) }), D("desc", t.details, "text", { wide: true }), D("tags", this.L("Tags (optional)", "تاجات (اختياري)"), "text", { wide: true, hint: this.L("Comma separated — a way to slice spending across categories, e.g. \"trip, work\".", "افصل بينهم بفاصلة — طريقة لتجميع مصاريف من فئات مختلفة، زي \"رحلة، شغل\".") })] },
       expense: { title: t.aExpense, fields: [D("date", t.date, "date"), D("amount", t.amount, "number"), D("accountId", t.account, "select", { options: accs }), D("category", t.category, "select", { options: cats, wide: true }), D("personId", "Merchant / person", "select", { options: [{ v: "", l: "—" }].concat(ppl) }), D("desc", t.details, "text", { wide: true }), D("tags", this.L("Tags (optional)", "تاجات (اختياري)"), "text", { wide: true, hint: this.L("Comma separated — a way to slice spending across categories, e.g. \"trip, work\".", "افصل بينهم بفاصلة — طريقة لتجميع مصاريف من فئات مختلفة، زي \"رحلة، شغل\".") })].concat(isEditingExpense ? [] : [
         D("splitPersonId", this.L("Split with (optional)", "قسمها مع (اختياري)"), "select", { options: [{ v: "", l: "—" }].concat(ppl) }),
         D("splitAmount", this.L("Their share", "حصتهم"), "number", { hint: this.L("Optional — also records this amount as owed to you by that person.", "اختياري — بيسجل المبلغ ده كمان كمبلغ مستحق ليك من الشخص ده.") })
@@ -1594,13 +1604,26 @@ class Engine {
       // other kind here f.tags is simply undefined and this line is a
       // harmless no-op — nothing needs a type check to skip it.
       if (["income", "expense"].includes(k)) fields.tags = (f.tags || "").split(",").map((s) => s.trim()).filter(Boolean);
+      // A refund is the exact same shape as regular income, just stored
+      // with tx.type "refund" instead of "income" when the income form's
+      // own "type" select (see FORMS().income above) is set to it --
+      // every other kind in this shared branch has no such field, so
+      // f.type is simply undefined for them and txType falls back to k.
+      const txType = (k === "income" && f.type === "refund") ? "refund" : k;
+      // this.L(), not a hardcoded "Refund" -- this.FORMS()[k].title below
+      // (used for every other kind in this branch) is itself already
+      // locale-dependent (FORMS() resolves t = this.T[this.state.lang]
+      // fresh on each call), so a plain English literal here would have
+      // been the one kind in this branch whose audit-trail note ignored
+      // the current UI language.
+      const kindLabel = txType === "refund" ? this.L("Refund", "مرتجع") : this.FORMS()[k].title;
       if (f.id) {
         const ex = data.tx.find(x => x.id === f.id);
         if (!need(ex, "That transaction no longer exists.")) return false;
-        Object.assign(ex, fields);
-        note = "Updated " + this.FORMS()[k].title.toLowerCase() + " " + this.fmt(N("amount"));
+        Object.assign(ex, fields, { type: txType });
+        note = "Updated " + kindLabel.toLowerCase() + " " + this.fmt(N("amount"));
       } else {
-        push(Object.assign({ type: k }, fields));
+        push(Object.assign({ type: txType }, fields));
         // Posted as an independent receivable, same as one added from
         // Receivables & Payables directly — nothing in the data model
         // links it back to this expense (only plan/group ids get that
@@ -1609,7 +1632,7 @@ class Engine {
         if (splitting) {
           push({ type: "receivable", date: f.date, amount: this.n(f.splitAmount), accountId: null, fromId: null, toId: null, category: null, personId: f.splitPersonId, due: null, desc: this.L("Share of: ", "حصة من: ") + fields.desc });
         }
-        note = this.FORMS()[k].title + " " + this.fmt(N("amount"));
+        note = kindLabel + " " + this.fmt(N("amount"));
       }
     } else if (k === "transfer") {
       if (!need(N("amount") > 0, "Amount must be greater than zero.")) return false;
@@ -2360,13 +2383,15 @@ class Engine {
   // Excluded on purpose: installment_sale and investment_buy (the opening
   // transaction of a plan/investment — corrected via that record's own Edit,
   // or removed by deleting the plan/investment itself while nothing has been
-  // paid against it), investment_return/refund/adjustment (not yet exposed
-  // through an entry form of their own), and reversal_marker (a zero-amount
-  // marker row, nothing to edit). A voided (already-reversed) row is also
-  // excluded — it's already inactive, and its reversal marker points at it
-  // by id.
+  // paid against it), investment_return/adjustment (not yet exposed through
+  // an entry form of their own), and reversal_marker (a zero-amount marker
+  // row, nothing to edit). A voided (already-reversed) row is also excluded
+  // — it's already inactive, and its reversal marker points at it by id.
+  // "refund" IS included -- it's added/edited through the income form
+  // itself now (see FORMS().income's own "type" select), the same shape
+  // as plain income.
   txEditableTypes() {
-    return ["income", "expense", "transfer", "receivable", "payable", "receivable_payment", "debt_payment", "installment_payment", "gam3ya_payment", "gam3ya_payout", "statement_payment"];
+    return ["income", "expense", "transfer", "receivable", "payable", "receivable_payment", "debt_payment", "installment_payment", "gam3ya_payment", "gam3ya_payout", "statement_payment", "refund"];
   }
   txEditable(t) {
     return !!t && !t.void && this.txEditableTypes().includes(t.type);
@@ -2376,7 +2401,10 @@ class Engine {
   // group_payout forms but stored as gam3ya_payment / gam3ya_payout) — this
   // maps a tx back to the form that can edit it.
   txEditKind(t) {
-    const map = { gam3ya_payment: "group_payment", gam3ya_payout: "group_payout" };
+    // refund -> income: a refund is added/edited through the income form
+    // itself (see FORMS().income's own "type" select), same reasoning as
+    // the gam3ya mapping just below.
+    const map = { gam3ya_payment: "group_payment", gam3ya_payout: "group_payout", refund: "income" };
     return map[t.type] || t.type;
   }
   deleteTx(id) {

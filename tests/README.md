@@ -743,6 +743,46 @@ account can be deleted, a card's Available/Limit stay consistent).
   subtitle used a mistranslated Arabic word (`اتباع`, not a real word for
   "sold") where the section header two lines above correctly used
   `متباع` for the same concept -- fixed to match.
+- `check_batch14.js` -- another orphaned-but-fully-wired transaction type,
+  found the same way `investment_return` was (batch13): "refund" already
+  had its own translated label (`txTypeLabels()`), its own income-side
+  normalization (`isIncomeType()`, `categoryColor`/`categoryIcon`,
+  `cashFlowBucket`), and its own entry in the Transactions type filter --
+  but nothing anywhere could ever actually create one, so filtering by it
+  always came back empty.
+
+  Rather than a whole new button/screen for something that's otherwise
+  identical to plain income, added one "Type" select (Income/Refund) to
+  the income form itself (`FORMS().income`) that decides the real stored
+  `tx.type` on submit. The field is deliberately named `"type"`, the same
+  field name/shape the `"recurring"` form's own income/expense selector
+  already uses -- `Engine.open()`'s existing `Object.assign(form, pre)`
+  pre-fill then does the rest for free: opening Edit/Duplicate on an
+  existing refund spreads its real `t.type` ("refund") straight into the
+  new field with no extra glue code anywhere.
+
+  Three small wiring changes made "refund" a first-class editable kind,
+  the same as plain income already was:
+  - `txEditKind()`: added `refund: "income"` so `openTxEdit`/`duplicateTxC`
+    reopen a refund through the income form, the same shape the existing
+    `gam3ya_payment -> group_payment` mapping already uses.
+  - `txEditableTypes()`: added `"refund"` -- it used to be explicitly
+    excluded ("not yet exposed through an entry form of their own"), the
+    same comment `investment_return` carried before batch13.
+  - `submit()`'s shared income/expense/receivable/payable branch: computes
+    `txType` from the new field (only ever changes behavior when
+    `k === "income"` -- every other kind in that branch has no such field,
+    so `f.type` is simply `undefined` for them and `txType` falls back to
+    `k`, unchanged).
+
+  One real bug caught in code review: the audit-trail note for a new
+  refund used a hardcoded English `"Refund"` literal, while every other
+  kind in that same branch already builds its note from
+  `this.FORMS()[k].title` -- itself locale-dependent (`FORMS()` resolves
+  `t = this.T[this.state.lang]` fresh on each call) -- so a refund's own
+  note was the one case in that branch that silently ignored the current
+  UI language. Fixed to `this.L("Refund", "مرتجع")`, matching the same
+  locale rule as everything else there.
 
 ## Adding a new one
 
