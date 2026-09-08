@@ -3642,8 +3642,85 @@ const UI = {
     window.addEventListener("resize", () => {});
     this.initSwipeRows();
     this.initChartScrub();
+    this.initBackTrap();
     this.render();
     this.maybeNotify();
+  },
+  // Real bug reported by a user: this is a pure in-memory SPA -- every
+  // navigation (setPage, viewPerson, openModal, the action sheets, More,
+  // quick-add) only ever mutates app.state and re-renders, never touching
+  // the browser's own history stack. With zero history entries of its own
+  // to pop, the mobile/Android back button (and the PWA's back gesture)
+  // had nothing to do but fall through to the browser's default -- closing
+  // the tab or exiting the installed app outright -- instead of stepping
+  // back one layer the way a native app would.
+  //
+  // Fix: keep exactly one extra "trap" history entry ahead of the page at
+  // all times. A back press always has that entry to pop, so it always
+  // reaches our popstate handler instead of the browser's default action;
+  // the handler closes whatever the single topmost dismissible layer is
+  // (see closeTopLayer()) and immediately re-pushes the trap so the next
+  // back press is caught too. Deliberately NOT one pushState per
+  // openModal()/openXActions()/etc. call -- this app can only ever have
+  // one such layer open at a time in practice (opening a modal already
+  // clears More/quick-add, an action sheet's own "Edit" wrapper always
+  // clears its sheet before opening the modal, ...), so a single shared
+  // trap entry plus a fixed close-priority order gets the same real-world
+  // behavior as a true per-layer stack, without needing every existing
+  // close*()/Cancel/backdrop-click call site to also pop history in exact
+  // lockstep (a much larger, much riskier change across this whole file).
+  // Closing a layer via the UI as normal (Cancel, a backdrop tap, a
+  // completed submit) is untouched -- it never consumes the trap entry,
+  // so it has no effect on how many back presses remain queued up.
+  initBackTrap() {
+    // Guarded, not unconditional: init() re-runs on every reload, and a
+    // reload does NOT reset the tab's session history -- an earlier
+    // reload's own trap entry is still sitting there. Pushing again
+    // regardless would stack one more untracked entry on top of it every
+    // single reload, so a few reloads back-to-back would need that many
+    // back presses before one actually closed anything -- the exact
+    // "back button feels broken" complaint this whole feature exists to
+    // fix. history.state already tells us whether the entry we're
+    // currently on is our own trap (pushState's state persists across a
+    // reload of that same entry), so only lay a fresh one when it isn't.
+    try {
+      if (!(history.state && history.state.pcfoTrap)) history.pushState({ pcfoTrap: true }, "", location.href);
+    } catch (e) {}
+    window.addEventListener("popstate", () => this.onPopState());
+  },
+  onPopState() {
+    if (this.closeTopLayer()) {
+      try { history.pushState({ pcfoTrap: true }, "", location.href); } catch (e) {}
+      this.render();
+    }
+    // Nothing was open (already at Dashboard, no modal/sheet/panel) --
+    // don't re-lay the trap, so THIS back press is left to actually go
+    // through (leave the tab / exit the PWA), same as a native app's own
+    // home screen.
+  },
+  // Closes exactly the one topmost dismissible thing, in a fixed priority
+  // order (a modal sits over an action sheet, which sits over More/quick-
+  // add, which sits over the mobile filter panel, which sits over the
+  // person_detail sub-page, which sits over tab navigation itself).
+  // Returns whether anything was actually closed, so onPopState() knows
+  // whether to keep the back-trap armed for next time.
+  closeTopLayer() {
+    const app = this.app, S = app.state;
+    // Nothing of this app's own is visibly open behind the lock screen --
+    // let back behave normally (leave/exit) rather than trapping it here.
+    if (S.locked) return false;
+    if (S.modal) { S.modal = null; S.err = ""; return true; }
+    if (this._txActionRow) { this._txActionRow = null; return true; }
+    if (this._acctActionRow) { this._acctActionRow = null; return true; }
+    if (this._personActionRow) { this._personActionRow = null; return true; }
+    if (this._groupActionRow) { this._groupActionRow = null; return true; }
+    if (this._stmtActionRow) { this._stmtActionRow = null; return true; }
+    if (S.moreOpen) { S.moreOpen = false; return true; }
+    if (S.quickAddOpen) { S.quickAddOpen = false; return true; }
+    if (this._txFiltersOpen) { this._txFiltersOpen = false; return true; }
+    if (S.page === "person_detail") { S.page = this._personDetailFrom || "people"; S.personDetailId = null; return true; }
+    if (S.page !== "dashboard") { S.page = "dashboard"; return true; }
+    return false;
   },
   // Swipe-to-reveal on .card-row.swipe-row (renderTransactions' cards --
   // see the comment there). Attached once, here, via delegation on
@@ -3751,7 +3828,13 @@ const UI = {
   // Payables and Installments — the gap that made juggling several loans
   // with the same person (e.g. a normal loan plus money held in trust) hard
   // to see at a glance.
-  viewPerson(id) { this.app.state.personDetailId = id; this.app.state.page = "person_detail"; this.app.state.moreOpen = false; this.app.state.quickAddOpen = false; this.render(); window.scrollTo({ top: 0 }); },
+  // Remembers the real page it was opened from (People, Ledgers, an
+  // Installment plan's own card, ...) so the mobile back button can return
+  // there (see closeTopLayer()) instead of always landing on People --
+  // guarded so re-viewing a *different* person from inside person_detail
+  // itself (nothing currently does this, but nothing rules it out either)
+  // doesn't overwrite the real origin with "person_detail" itself.
+  viewPerson(id) { if (this.app.state.page !== "person_detail") this._personDetailFrom = this.app.state.page; this.app.state.personDetailId = id; this.app.state.page = "person_detail"; this.app.state.moreOpen = false; this.app.state.quickAddOpen = false; this.render(); window.scrollTo({ top: 0 }); },
   // Tapping an account/card jumps straight to its own transactions —
   // Transactions' account filter already matches accountId, fromId and
   // toId (a transfer either side), so this is the same filter a person
@@ -6420,7 +6503,18 @@ const UI = {
       '<button type="button" class="link-btn small person-more-btn" aria-haspopup="true" aria-label="' + esc(app.L("More actions", "إجراءات تانية")) + '" onclick="UI.openPersonActions(\'' + p.id + '\')">' + svgIcon("M12 6h.01M12 12h.01M12 18h.01", 18) + "</button>" +
     "</div>";
 
-    const backBtn = '<button class="link-btn small" onclick="UI.setPage(\'people\')">← ' + esc(t.people) + "</button>";
+    // Goes back to wherever this page was actually opened from (People,
+    // Installments, Savings groups, Ledgers -- see viewPerson()'s own
+    // _personDetailFrom, which the mobile back button already uses via
+    // closeTopLayer()) instead of a hardcoded "People" -- caught in code
+    // review as a real inconsistency once the back button started doing
+    // that: two "back" affordances on the same screen disagreeing about
+    // where "back" actually goes. Falls back to People, same as before,
+    // for the one case with no real origin to return to (e.g. a fresh
+    // reload landing here with nothing to restore _personDetailFrom from).
+    const fromPage = this._personDetailFrom || "people";
+    const fromLabel = { people: t.people, installments: t.installments, groups: t.groups, ledgers: t.ledgers }[fromPage] || t.people;
+    const backBtn = '<button class="link-btn small" onclick="UI.setPage(\'' + fromPage + '\')">← ' + esc(fromLabel) + "</button>";
     const sub = this.personTag(p) + " · " + (p.phone ? esc(p.phone) + this.personPhoneLinks(p.phone) : esc(app.L("No phone on file", "مفيش رقم متسجل"))) + (p.notes ? " · " + esc(p.notes) : "");
     // Same avatar as the People list, just bigger -- a colored header
     // instead of the plain "Hazem" / "Sameh Hassan" title every person used
@@ -7428,16 +7522,20 @@ window.addEventListener("DOMContentLoaded", function () {
   var engine = new Engine({ defaultHorizon: "30", receivablesAreAssets: true, privacyDefault: false });
   window.UI = UI;
   window.APP = engine;
-  UI.init(engine);
   // Home-screen icon shortcuts (long-press → "+ Expense" / "+ Income",
   // wired via manifest.json's "shortcuts" — only reachable once the app is
   // actually installed, see personal_cfo_app.html's __ICON_HEAD__ note)
-  // land here as ?action=expense / ?action=income. Open the matching modal
-  // once, then drop the param so a reload doesn't reopen it.
+  // land here as ?action=expense / ?action=income. Read + strip the param
+  // on THIS original history entry before UI.init() below lays its own
+  // back-button trap entry on top of it (see UI.initBackTrap()) — doing it
+  // after, like this used to, left the trap sitting on the clean URL while
+  // the entry underneath still carried ?action=..., so closing the
+  // auto-opened modal via the back button landed back on that entry and
+  // resurrected the stale param (silently reopening the modal on the next
+  // reload) instead of the one-time deep link this was always meant to be.
   var action = new URLSearchParams(location.search).get("action");
-  if (action === "expense" || action === "income") {
-    UI.openModal(action);
-    history.replaceState(null, "", location.pathname);
-  }
+  if (action === "expense" || action === "income") history.replaceState(null, "", location.pathname);
+  UI.init(engine);
+  if (action === "expense" || action === "income") UI.openModal(action);
 });
 </script>

@@ -526,6 +526,94 @@ account can be deleted, a card's Available/Limit stay consistent).
   never a technical need to Remove first), just no shortcut existed to
   pre-fill the category/amount instead of re-finding the category in the
   dropdown and retyping the number from scratch.
+- `check_batch10.js` -- a single real bug reported directly by a user: the
+  mobile/Android back button closed the whole app instead of navigating
+  back a step inside it. Root cause: this is a pure in-memory SPA -- every
+  navigation (`setPage`, `viewPerson`, `openModal`, every action sheet,
+  More, quick-add) only ever mutated `app.state` and re-rendered, never
+  touching the browser's own history stack (confirmed by an exhaustive
+  grep across both `ui.js` and `engine.js` -- zero `pushState`/`popstate`
+  anywhere). With no history entries of its own to pop, the back button
+  fell straight through to the browser's default action -- closing the
+  tab or exiting the installed PWA.
+
+  Fixed with `UI.initBackTrap()`/`onPopState()`/`closeTopLayer()`: exactly
+  one "trap" history entry is kept one step ahead of the real page at all
+  times, so a back press always reaches the app's own popstate handler
+  instead of the browser's default. The handler closes whichever single
+  layer is topmost, in a fixed priority order (modal > any action sheet >
+  More/quick-add > the mobile Transactions filter panel > `person_detail`
+  back to wherever it was opened from, via a new `_personDetailFrom` --
+  > any other tab back to Dashboard), then immediately re-arms the trap so
+  the next back press is caught too; only when there is truly nothing left
+  to close does it leave the trap consumed, letting *that* press actually
+  exit. Deliberately one shared trap entry rather than a real per-layer
+  history stack (one `pushState` per `openModal()`/`openXActions()`/etc.
+  call) -- this app only ever has one such layer open at a time in
+  practice (opening a modal already clears More/quick-add, every sheet's
+  own "Edit" wrapper clears its sheet before opening the modal, ...), so
+  the fixed priority order gets the same real-world behavior without
+  needing every existing `close*()`/Cancel/backdrop-click call site
+  across this whole file to also pop history in exact lockstep. Closing a
+  layer normally (Cancel, a backdrop tap, a completed submit) is
+  untouched by any of this -- it never consumes the trap entry, so it has
+  no effect on how many back presses are queued up (regression-guarded in
+  section 7).
+
+  Two real bugs caught in code review on the first draft, both fixed
+  before shipping:
+  1. `initBackTrap()` pushed its trap entry unconditionally on every
+     `init()` call. A reload does NOT reset the tab's own session
+     history, so each reload piled one more untracked entry on top of the
+     last one -- a user who reloaded a few times in a row would need that
+     many back presses before one actually closed anything, reproducing
+     the exact "back button feels broken" complaint this whole fix exists
+     for. Fixed by checking `history.state` first -- `pushState`'s own
+     state survives a reload of that same entry, so a trap is only ever
+     laid when the current entry isn't already one (regression-guarded in
+     section 8, which reloads three times in a row and checks the history
+     stack never grows past its very first trap entry).
+  2. The pre-existing `?action=expense`/`?action=income` home-screen
+     shortcut handler (`index.html`'s own bootstrap `<script>`, outside
+     `ui.js`/`engine.js`) used to call `UI.init()` -- which lays the trap
+     -- *before* reading and stripping its own query param. That left the
+     trap sitting on the now-clean URL while the *original* entry
+     underneath it still carried `?action=...`, so closing the
+     auto-opened modal via the back button landed back on that entry and
+     resurrected the stale param (silently reopening the modal again on
+     the next reload) instead of the one-time deep link it was always
+     meant to be. Fixed by reading + stripping the param first, then
+     calling `UI.init()`, then opening the modal -- not covered by an
+     automated test here (the shortcut only fires from a real installed
+     PWA's home-screen icon, not a plain `file://` load Playwright can
+     drive), verified by hand instead.
+
+  A third real bug, caught in a second code-review pass after the above
+  two were already fixed: Person Detail's own on-screen "← People" link
+  was (and had always been) hardcoded to the People tab, harmless before
+  this feature existed since there was no other "back" affordance on the
+  page to compare it against -- but a real inconsistency now that the
+  hardware back button correctly returns to wherever the page was really
+  opened from (`_personDetailFrom`, e.g. Installments or Savings groups):
+  two "back" controls on one screen disagreeing about where "back" goes.
+  Fixed by building both the link's destination *and* its label from
+  `_personDetailFrom` the same way `closeTopLayer()` already does,
+  falling back to People only when there's truly no real origin to
+  return to. Regression-guarded in section 4b, opening a person from an
+  Installment plan card specifically to exercise the non-default origin.
+
+  A pre-existing, unrelated issue surfaced while chasing a full green
+  suite for this fix, fixed alongside it since it was actively blocking
+  that verification: two assertions in `check_installments_recut.js`
+  (#51, #57) hardcoded a literal day-count ("in 13d", "Overdue · 6d
+  overdue") for a due date that's seeded *relative to whatever "today"
+  happens to be* (see `engine.js`'s own `seed()`) -- correct only on the
+  one real calendar day they were written on, and silently wrong on every
+  other. Confirmed pre-existing (still failed against the unmodified
+  `HEAD` commit, before any of this batch's changes) and unrelated to
+  history/back-button work. Fixed by computing the expected day-count in
+  the test itself, from the app's own `planState()`, instead of a
+  hardcoded literal.
 
 ## Adding a new one
 

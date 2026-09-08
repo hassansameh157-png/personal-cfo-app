@@ -37,7 +37,17 @@ require("./_watchdog"); // shared pass/fail detector -- see that file
   console.log("\n=== 51) The next due row shows on the closed card, no need to expand the schedule ===");
   console.log("Hazem's card shows a 'Next:' line without expanding:", (await hazemCard.locator(".card-row-meta").innerText()).includes("Next: #3"));
   console.log("it includes the same day-count phrasing due dates use elsewhere:", (await hazemCard.locator(".card-row-meta").innerText()).includes("overdue"));
-  console.log("Phone's own next line (not overdue) uses the 'in Nd' phrasing instead:", (await phoneCard.locator(".card-row-meta").innerText()).includes("in 13d"));
+  // Phone's own next unpaid due date is seeded relative to "today" (see
+  // engine.js seed()'s p3First), so the day-count is computed here from
+  // the app's own state instead of a hardcoded literal -- a fixed literal
+  // (this used to read plain "in 13d") only ever matched on the one real
+  // calendar day it was written on and silently went stale on every other.
+  const phoneNext = await page.evaluate(() => {
+    const app = UI.app, st = app.planState(app.state.data.plans.find(p => p.id === "pl_phone"));
+    return { due: st.next.due, today: app.today() };
+  });
+  const phoneDays = Math.round((new Date(phoneNext.due) - new Date(phoneNext.today)) / 86400000);
+  console.log("Phone's own next line (not overdue) uses the 'in Nd' phrasing instead:", (await phoneCard.locator(".card-row-meta").innerText()).includes("in " + phoneDays + "d"));
   console.log("a plan with nothing left owed on it would show no 'Next:' line at all (none here yet, all three still active):", await page.locator(".card-row-meta", { hasText: "Next:" }).count() === 3);
 
   console.log("\n=== 55) Plans sort most-urgent first (overdue, soonest due date) ===");
@@ -57,7 +67,17 @@ require("./_watchdog"); // shared pass/fail detector -- see that file
   await page.waitForTimeout(150);
   const rows = hazemCard.locator(".sched-row");
   console.log("a fully-paid row reads 'Fully settled':", (await rows.nth(0).locator(".sched-status").innerText()) === "Fully settled");
-  console.log("the overdue row names both its status and how many days overdue:", (await rows.nth(2).locator(".sched-status").innerText()) === "Overdue · 6d overdue");
+  // Same reasoning as Phone's "in Nd" above: row #3's due date (schedule
+  // index 2) is seeded relative to "today", so how many days overdue it
+  // reads today has to be computed the same way, not hardcoded (this used
+  // to read a fixed "Overdue · 6d overdue", correct on one calendar day
+  // only).
+  const hazemRow2Due = await page.evaluate(() => {
+    const app = UI.app, st = app.planState(app.state.data.plans.find(p => p.id === "pl_hazem"));
+    return { due: st.rows[2].due, today: app.today() };
+  });
+  const hazemOverdueDays = Math.abs(Math.round((new Date(hazemRow2Due.due) - new Date(hazemRow2Due.today)) / 86400000));
+  console.log("the overdue row names both its status and how many days overdue:", (await rows.nth(2).locator(".sched-status").innerText()) === "Overdue · " + hazemOverdueDays + "d overdue");
   console.log("a future row still just reads 'Open' (nothing to count down yet):", (await rows.nth(3).locator(".sched-status").innerText()) === "Open");
   await hazemCard.locator("button", { hasText: "Hide schedule" }).click();
   await page.waitForTimeout(150);
