@@ -1690,7 +1690,23 @@ class Engine {
       // banner), which escapes it into literal "<bdi ...>...</bdi>" text
       // instead of rendering it. fmtPlain() exists specifically for a
       // spot like this that needs a plain string, not markup.
-      if (!need(N("amount") <= cap + 0.001, "That is more than the " + this.fmtPlain(cap) + " still outstanding on this plan.")) return false;
+      // Math.max(cap, Math.round(cap)), not cap -- real bug reported by a
+      // user (screenshot): fmtPlain() above rounds to whole EGP for
+      // display (this app never surfaces piastres anywhere), but `cap`
+      // itself can carry sub-pound cents from underlying arithmetic -- so
+      // a plan with e.g. 7020.55 remaining displayed "EGP 7,021", and
+      // typing exactly that back in (7021 > 7020.551) still got refused.
+      // Plain Math.round(cap) alone is NOT the fix -- real bug caught in
+      // review: it can round DOWN too (cap=500.30 rounds to 500), which
+      // would reject paying the exact true remaining amount whenever
+      // cap's own fractional part is under .50, a regression this
+      // wasn't before. Math.max() only ever RAISES the ceiling to match
+      // what the rounded message told the user, never lowers it below
+      // the real cap. Safe to slightly "overpay" by rounding up since
+      // st.remaining is itself clamped to >= 0 (see planState()), so it
+      // just settles at 0/"paid" instead of leaving a stray sub-pound
+      // balance no UI here would ever show clearly enough to clear.
+      if (!need(N("amount") <= Math.max(cap, Math.round(cap)) + 0.001, "That is more than the " + this.fmtPlain(cap) + " still outstanding on this plan.")) return false;
       if (existing) {
         Object.assign(existing, { date: f.date, amount: N("amount"), accountId: f.accountId, personId: plan.personId, planId: plan.id, desc: f.desc || "Installment payment" });
         note = "Updated installment payment " + this.fmt(N("amount")) + " · " + plan.title;
@@ -1734,7 +1750,11 @@ class Engine {
       // cap message above (this.fmt() embeds a <bdi> HTML tag that shows
       // as literal escaped text through this modal's plain-text error
       // banner).
-      if (!need(N("amount") <= cap + 0.001, "That is more than the " + this.fmtPlain(cap) + " still outstanding on this statement.")) return false;
+      // Math.max(cap, Math.round(cap)), not cap -- same real bug (and
+      // same review-caught round-DOWN pitfall of a plain Math.round(cap))
+      // as the installment-payment cap check above. Safe here too:
+      // statementState()'s own remaining is clamped to >= 0.
+      if (!need(N("amount") <= Math.max(cap, Math.round(cap)) + 0.001, "That is more than the " + this.fmtPlain(cap) + " still outstanding on this statement.")) return false;
       if (existing) {
         Object.assign(existing, { date: f.date, amount: N("amount"), statementId: stmt.id, fromId: f.fromId, toId: stmt.accountId, desc: f.desc || "Statement payment" });
         note = "Updated statement payment " + this.fmt(N("amount"));
@@ -1941,7 +1961,11 @@ class Engine {
         const cap = (existing && existing.groupId === g.id) ? st.remainingPay + existing.amount : st.remainingPay;
         // fmtPlain(), not fmt() -- same real bug as the installment-payment
         // and statement-payment cap messages above.
-        if (!need(N("amount") <= cap + 0.001, "That is more than the " + this.fmtPlain(cap) + " left to pay into this group.")) return false;
+        // Math.max(cap, Math.round(cap)), not cap -- same rounding-vs-
+        // precision bug (and same review-caught round-DOWN pitfall) as
+        // those two caps as well. Safe here too: groupState()'s own
+        // remainingPay is clamped to >= 0.
+        if (!need(N("amount") <= Math.max(cap, Math.round(cap)) + 0.001, "That is more than the " + this.fmtPlain(cap) + " left to pay into this group.")) return false;
       }
       const type = k === "group_payment" ? "gam3ya_payment" : "gam3ya_payout";
       const desc = f.desc || (k === "group_payment" ? "Contribution — " : "Payout collected — ") + g.name;

@@ -828,6 +828,34 @@ account can be deleted, a card's Available/Limit stay consistent).
   the stats tile and the list right under it would have silently
   disagreed for any category genuinely tagged "Other". Fixed the same
   way.
+- `check_batch17.js` -- real bug reported directly by a user, with a
+  screenshot: the error read "That is more than the EGP 7,021 still
+  outstanding on this statement" -- but typing exactly `7021`, what the
+  message itself said, still got refused.
+
+  `fmtPlain()` (batch15) displays a cap rounded to whole EGP -- this app
+  never surfaces piastres anywhere -- but the three "That is more than
+  the `<cap>` ..." checks (installment payment, statement payment, gam3ya
+  payment) compared against the raw, cents-precision `cap` value. A real
+  remaining of e.g. `7020.55` displays as "EGP 7,021", but `7021 >
+  7020.551`, so the exact amount the message told the user to pay was
+  rejected. Fixed by rounding the comparison the same way the message
+  rounds for display -- safe in all three, since the underlying
+  remaining/`remainingPay` is already clamped to `>= 0` (see
+  `statementState`/`planState`/`groupState`), so a slight rounding
+  "overpay" just settles cleanly at 0/"paid" rather than leaving a
+  stray sub-pound balance nothing in the UI would ever show clearly
+  enough to clear.
+
+  One real regression caught in code review, self-introduced by the
+  first pass of this exact fix: a plain `Math.round(cap)` rounds in
+  *either* direction, and a cap like `500.30` rounds *down* to `500` --
+  so `Math.round(cap)` alone would have newly refused paying `500.30`
+  itself (`500.30 > 500.001`), the exact true amount owed, whenever a
+  cap's fractional part was under `.50`. Fixed to `Math.max(cap,
+  Math.round(cap))`, which only ever raises the ceiling to match a
+  rounded-up display and never lowers it below the real cap. Covered by
+  a dedicated regression case (a `500.30` cap, paid as exactly `500.30`).
 
 ## Adding a new one
 
