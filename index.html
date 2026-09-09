@@ -2754,14 +2754,26 @@ class Engine {
       return { v: g.id, l: g.name + (isPaid ? " " + this.L("(paid)", "(متسدد)") : " — " + this.fmtPlain(st.remainingPay)) };
     });
     // Reconciliation: receivable_payment/debt_payment's own optional "Settles"
-    // field -- every still-open plain loan (any person, not just whoever's
-    // picked in Person above), same flat-list-with-the-owner-named-in-the-
-    // label convention as planOptions/groupOptions just above. Submit() reads
-    // this to link the payment to that exact loan (see loanRows()'s own
-    // settlesId handling) instead of the old default of silently settling
-    // whichever open loan is oldest.
-    const loanOptions = (kind) => this.allLoanRows(kind).map(r => ({
-      v: r.id, l: this.personName(r.personId) + " — " + (r.desc || "—") + " — " + this.fmtPlain(r.rem)
+    // field. Real bug reported by a user (screenshot): opened from a
+    // specific person's own "Pay"/"Collect" button (personId already known,
+    // passed in as `pre`), the list still showed every OTHER person's open
+    // loans too -- confusing, and an easy way to pick the wrong one by
+    // mistake. Scoped to that one person's own open loans whenever a person
+    // is already selected (this.state.form.personId, read fresh on every
+    // FORMS() call so it reflects whatever's currently chosen); only when
+    // no person is picked yet does this fall back to the flat, every-
+    // person list (each option then names its own owner, same convention
+    // planOptions/groupOptions just above use), so the field still works
+    // as a starting point when opened with nothing pre-filled. Submit()
+    // reads the pick either way to link the payment to that exact loan
+    // (see loanRows()'s own settlesId handling) instead of the old default
+    // of silently settling whichever open loan is oldest. UI.openModal's
+    // own onchange on the Person field (see the "settlesId" field below)
+    // keeps this in sync if the person is changed after the modal opens,
+    // without this list on its own ever going stale mid-edit.
+    const settlesPersonId = this.state.form && this.state.form.personId;
+    const loanOptions = (kind) => (settlesPersonId ? this.loanRows(settlesPersonId, kind).filter(r => r.rem > 0.001) : this.allLoanRows(kind)).map(r => ({
+      v: r.id, l: (settlesPersonId ? "" : this.personName(r.personId) + " — ") + (r.desc || "—") + " — " + this.fmtPlain(r.rem)
     }));
     // Custom categories the user added in Settings — no ARW translation
     // exists for these (they're free text the user typed), so the language
@@ -2821,8 +2833,8 @@ class Engine {
       // real choice ("Pick a person.").
       receivable: { title: t.aReceivable, fields: [D("date", t.date, "date"), D("amount", t.amount, "number"), D("personId", t.person, "select", { options: [{ v: "", l: "—" }].concat(ppl) }), D("accountId", "Paid out of", "select", { options: [{ v: "", l: "No cash movement (opening balance)" }].concat(accs) }), D("due", "Due date", "date"), D("desc", t.details, "text", { wide: true })] },
       payable: { title: t.aDebt, fields: [D("date", t.date, "date"), D("amount", t.amount, "number"), D("personId", t.person, "select", { options: [{ v: "", l: "—" }].concat(ppl) }), D("accountId", "Received into", "select", { options: [{ v: "", l: "No cash movement (opening balance)" }].concat(accs) }), D("due", "Due date", "date"), D("desc", t.details, "text", { wide: true })] },
-      receivable_payment: { title: t.aCollect, fields: [D("date", t.date, "date"), D("amount", t.amount, "number"), D("personId", t.person, "select", { options: [{ v: "", l: "—" }].concat(ppl) }), D("settlesId", this.L("Settles (optional)", "بتقفل (اختياري)"), "select", { options: [{ v: "", l: this.L("— No specific loan (auto)", "— من غير سلفة محددة (تلقائي)") }].concat(loanOptions("receivable")), hint: this.L("Pick which open loan this closes. Leave blank to settle the oldest one automatically.", "اختار انهي سلفة مفتوحة هتتقفل بالمبلغ ده. سيبها فاضية عشان تتقفل الأقدم تلقائيًا.") }), D("accountId", "Into account", "select", { options: accs }), D("desc", t.details, "text", { wide: true })] },
-      debt_payment: { title: t.aRepay, fields: [D("date", t.date, "date"), D("amount", t.amount, "number"), D("personId", t.person, "select", { options: [{ v: "", l: "—" }].concat(ppl) }), D("settlesId", this.L("Settles (optional)", "بتقفل (اختياري)"), "select", { options: [{ v: "", l: this.L("— No specific loan (auto)", "— من غير دين محدد (تلقائي)") }].concat(loanOptions("payable")), hint: this.L("Pick which open loan this closes. Leave blank to settle the oldest one automatically.", "اختار انهي دين مفتوح هيتقفل بالمبلغ ده. سيبه فاضي عشان يتقفل الأقدم تلقائيًا.") }), D("accountId", "Paid from", "select", { options: accs }), D("desc", t.details, "text", { wide: true })] },
+      receivable_payment: { title: t.aCollect, fields: [D("date", t.date, "date"), D("amount", t.amount, "number"), D("personId", t.person, "select", { options: [{ v: "", l: "—" }].concat(ppl), onchange: "UI.syncSettlesOptions(this.value,'receivable')" }), D("settlesId", this.L("Settles (optional)", "بتقفل (اختياري)"), "select", { options: [{ v: "", l: this.L("— No specific loan (auto)", "— من غير سلفة محددة (تلقائي)") }].concat(loanOptions("receivable")), hint: this.L("Pick which open loan this closes. Leave blank to settle the oldest one automatically.", "اختار انهي سلفة مفتوحة هتتقفل بالمبلغ ده. سيبها فاضية عشان تتقفل الأقدم تلقائيًا.") }), D("accountId", "Into account", "select", { options: accs }), D("desc", t.details, "text", { wide: true })] },
+      debt_payment: { title: t.aRepay, fields: [D("date", t.date, "date"), D("amount", t.amount, "number"), D("personId", t.person, "select", { options: [{ v: "", l: "—" }].concat(ppl), onchange: "UI.syncSettlesOptions(this.value,'payable')" }), D("settlesId", this.L("Settles (optional)", "بتقفل (اختياري)"), "select", { options: [{ v: "", l: this.L("— No specific loan (auto)", "— من غير دين محدد (تلقائي)") }].concat(loanOptions("payable")), hint: this.L("Pick which open loan this closes. Leave blank to settle the oldest one automatically.", "اختار انهي دين مفتوح هيتقفل بالمبلغ ده. سيبه فاضي عشان يتقفل الأقدم تلقائيًا.") }), D("accountId", "Paid from", "select", { options: accs }), D("desc", t.details, "text", { wide: true })] },
       sale: { title: t.aSale, fields: [D("date", "Sale date", "date"), D("personId", "Customer", "select", { options: ppl }), D("title", "What was sold", "text", { wide: true }), D("total", "Sale total", "number"), D("down", "Down payment", "number"), D("accountId", "Down payment into", "select", { options: [{ v: "", l: "No down payment" }].concat(accs) }), D("count", "Number of installments", "number"), D("freq", "Frequency", "select", { options: [{ v: "monthly", l: "Monthly" }, { v: "weekly", l: "Weekly" }, { v: "quarterly", l: "Quarterly" }] }), D("first", "First due date", "date"), D("balloon", "Final balloon payment", "number", { hint: "Optional. Leave 0 for equal installments." })] },
       purchase: { title: t.aPurchasePlan, fields: [D("date", "Purchase date", "date"), D("personId", "Seller", "select", { options: ppl }), D("title", "What was bought", "text", { wide: true }), D("total", "Total price", "number"), D("down", "Down payment", "number"), D("accountId", "Down payment from", "select", { options: [{ v: "", l: "No down payment" }].concat(accs) }), D("count", "Number of installments", "number"), D("freq", "Frequency", "select", { options: [{ v: "monthly", l: "Monthly" }, { v: "weekly", l: "Weekly" }, { v: "quarterly", l: "Quarterly" }] }), D("first", "First due date", "date"), D("balloon", "Final balloon payment", "number")] },
       installment_payment: { title: t.recordPayment, fields: [D("date", t.date, "date"), D("planId", "Plan", "select", { options: planOptions }), D("amount", t.amount, "number", { hint: "Partial, exact or several installments at once — allocation is automatic." }), D("accountId", "Account", "select", { options: accs }), D("desc", t.details, "text", { wide: true })] },
@@ -4408,6 +4420,28 @@ const UI = {
     if (!rt) return;
     const el = document.getElementById("f_color");
     if (el) el.value = rt.color;
+  },
+  // receivable_payment/debt_payment's own Person field changing -- same
+  // direct-DOM, no-render() reasoning as setPersonRelation just above (a
+  // full render() here would wipe out an amount/date/description already
+  // typed but not yet submitted). Real bug reported by a user (screenshot):
+  // the Settles dropdown listed every person's open loans, not just the
+  // one the payment is actually for, and picking a person after the modal
+  // was already open didn't narrow it -- this keeps that list scoped to
+  // whoever's currently selected. Rebuilds the select's own options from
+  // Engine.loanRows() (the same data FORMS()'s own loanOptions() already
+  // reads at open time, kept in sync here instead of going stale
+  // mid-edit) rather than re-deriving anything -- an empty personId (the
+  // "—" placeholder) falls back to every open loan across every person,
+  // matching what the field already shows before any person is picked.
+  syncSettlesOptions(personId, kind) {
+    const sel = document.getElementById("f_settlesId");
+    if (!sel) return;
+    const rows = personId ? this.app.loanRows(personId, kind).filter(r => r.rem > 0.001) : this.app.allLoanRows(kind);
+    const blank = '<option value="">' + esc(this.app.L("— No specific loan (auto)", kind === "receivable" ? "— من غير سلفة محددة (تلقائي)" : "— من غير دين محدد (تلقائي)")) + "</option>";
+    sel.innerHTML = blank + rows.map(r =>
+      '<option value="' + esc(r.id) + '">' + esc((personId ? "" : this.app.personName(r.personId) + " — ") + (r.desc || "—") + " — " + this.app.fmtPlain(r.rem)) + "</option>"
+    ).join("");
   },
   // A preset swatch button click -- same "set the real input's value
   // directly, no render()" reasoning as setPersonRelation just above, so
@@ -8305,7 +8339,14 @@ const UI = {
         // type's default (see UI.setPersonRelation) -- nothing else uses a
         // select's onchange to touch another field.
         const relOnchange = f.k === "relation" && ["person", "person_edit"].includes(S.modal) ? ' onchange="UI.setPersonRelation(this.value)"' : "";
-        input = '<select class="input" id="f_' + f.k + '" name="' + f.k + '"' + relOnchange + '>' + f.options.map(o => '<option value="' + esc(o.v) + '"' + (String(val) === String(o.v) ? " selected" : "") + ">" + esc(o.l) + "</option>").join("") + "</select>";
+        // f.onchange -- a plain string set directly on the field definition
+        // (see receivable_payment/debt_payment's own personId field in
+        // FORMS() above, the one other current use) -- same "set another
+        // field's live DOM directly, no render()" reasoning as relOnchange
+        // just above, generalized so a field doesn't need its own special
+        // case hardcoded here the way relOnchange currently is.
+        const fieldOnchange = f.onchange ? ' onchange="' + f.onchange + '"' : "";
+        input = '<select class="input" id="f_' + f.k + '" name="' + f.k + '"' + relOnchange + fieldOnchange + '>' + f.options.map(o => '<option value="' + esc(o.v) + '"' + (String(val) === String(o.v) ? " selected" : "") + ">" + esc(o.l) + "</option>").join("") + "</select>";
       } else if (f.type === "color") {
         // Preset swatches in front of the plain native color input -- see
         // COLOR_PALETTE/UI.setColorField up top. The swatches are plain

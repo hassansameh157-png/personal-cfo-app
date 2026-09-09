@@ -1014,6 +1014,21 @@ account can be deleted, a card's Available/Limit stay consistent).
   every account's own static opening balance holds regardless of a
   derive() cutoff date, so `available` was never actually zero at any real
   past point reachable that way).
+- `check_reconciliation.js` (scenarios 9-10 added) -- real bug reported by
+  a user, screenshot included: opening `receivable_payment`/`debt_payment`
+  from a specific person's own "Pay"/"Collect" button (personId already
+  known) still showed the "Settles" picker listing *every* person's open
+  loans, not just theirs -- confusing, and an easy way to link a payment
+  to the wrong person's loan by mistake. `loanOptions()`'s own
+  `this.state.form.personId` (read fresh on every `FORMS()` call) now
+  scopes the list to that one person whenever a person is already
+  selected, falling back to the flat every-person list only when the
+  field is opened with no person picked yet. Changing Person mid-edit
+  re-scopes the list live via a new `UI.syncSettlesOptions()`, generalized
+  select-field `onchange` support, and the same direct-DOM,
+  no-`render()` convention `setPersonRelation()` already established --
+  a full render() here would wipe out an amount/date/description already
+  typed but not yet submitted, exactly the reason that convention exists.
 
 ## Adding a new one
 

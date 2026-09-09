@@ -152,6 +152,24 @@ require("./_watchdog"); // shared pass/fail detector -- see that file
   await addDebt(800, "Loan D");
   console.log("Loan D (800) auto-settled by the freed excess:", await isSettled("Loan D"));
 
+  console.log("\n=== 9) Real bug reported by a user (screenshot): the Settles dropdown listed EVERY person's open loans, not just the one the payment is actually for ===");
+  await page.click(".navbtn:has-text('People')"); await page.waitForTimeout(200);
+  const ahmedRow = page.locator(".card-row.person-card", { hasText: "Ahmed Fathy" });
+  await ahmedRow.locator("button:has-text('Pay')").click();
+  await page.waitForTimeout(200);
+  const scopedOpts = await page.locator("#f_settlesId option").allInnerTexts();
+  console.log("Settles options (from Ahmed's own Pay button):", JSON.stringify(scopedOpts));
+  console.log("exactly the placeholder + Ahmed's own one open loan, nothing more:", scopedOpts.length === 2);
+  console.log("no OTHER person's name leaked into the list:", !scopedOpts.some(o => o.includes("Hazem") || o.includes("Sameh") || o.includes("Mohamed") || o.includes("Hussein")));
+
+  console.log("\n=== 10) Changing Person mid-modal re-scopes Settles live, without wiping other unsaved fields ===");
+  await page.fill("#f_amount", "321");
+  await page.selectOption("#f_personId", { label: "Hazem" });
+  await page.waitForTimeout(150);
+  const afterSwitch = await page.locator("#f_settlesId option").allInnerTexts();
+  console.log("Settles options updated to Hazem's own (Hazem has none open, so just the auto placeholder):", JSON.stringify(afterSwitch));
+  console.log("amount typed just before the switch was NOT wiped (no full re-render):", await page.locator("#f_amount").inputValue() === "321");
+
   console.log("\nRESULT settlesId pre-fill correct:", settlesPicksLoanA);
   console.log("RESULT cap check fired:", capErr.includes("outstanding"));
   console.log("errors:", errors.length ? errors : "none");

@@ -471,6 +471,28 @@ const UI = {
     const el = document.getElementById("f_color");
     if (el) el.value = rt.color;
   },
+  // receivable_payment/debt_payment's own Person field changing -- same
+  // direct-DOM, no-render() reasoning as setPersonRelation just above (a
+  // full render() here would wipe out an amount/date/description already
+  // typed but not yet submitted). Real bug reported by a user (screenshot):
+  // the Settles dropdown listed every person's open loans, not just the
+  // one the payment is actually for, and picking a person after the modal
+  // was already open didn't narrow it -- this keeps that list scoped to
+  // whoever's currently selected. Rebuilds the select's own options from
+  // Engine.loanRows() (the same data FORMS()'s own loanOptions() already
+  // reads at open time, kept in sync here instead of going stale
+  // mid-edit) rather than re-deriving anything -- an empty personId (the
+  // "—" placeholder) falls back to every open loan across every person,
+  // matching what the field already shows before any person is picked.
+  syncSettlesOptions(personId, kind) {
+    const sel = document.getElementById("f_settlesId");
+    if (!sel) return;
+    const rows = personId ? this.app.loanRows(personId, kind).filter(r => r.rem > 0.001) : this.app.allLoanRows(kind);
+    const blank = '<option value="">' + esc(this.app.L("— No specific loan (auto)", kind === "receivable" ? "— من غير سلفة محددة (تلقائي)" : "— من غير دين محدد (تلقائي)")) + "</option>";
+    sel.innerHTML = blank + rows.map(r =>
+      '<option value="' + esc(r.id) + '">' + esc((personId ? "" : this.app.personName(r.personId) + " — ") + (r.desc || "—") + " — " + this.app.fmtPlain(r.rem)) + "</option>"
+    ).join("");
+  },
   // A preset swatch button click -- same "set the real input's value
   // directly, no render()" reasoning as setPersonRelation just above, so
   // it can't wipe out unsaved text elsewhere in the same modal. fieldKey
@@ -4367,7 +4389,14 @@ const UI = {
         // type's default (see UI.setPersonRelation) -- nothing else uses a
         // select's onchange to touch another field.
         const relOnchange = f.k === "relation" && ["person", "person_edit"].includes(S.modal) ? ' onchange="UI.setPersonRelation(this.value)"' : "";
-        input = '<select class="input" id="f_' + f.k + '" name="' + f.k + '"' + relOnchange + '>' + f.options.map(o => '<option value="' + esc(o.v) + '"' + (String(val) === String(o.v) ? " selected" : "") + ">" + esc(o.l) + "</option>").join("") + "</select>";
+        // f.onchange -- a plain string set directly on the field definition
+        // (see receivable_payment/debt_payment's own personId field in
+        // FORMS() above, the one other current use) -- same "set another
+        // field's live DOM directly, no render()" reasoning as relOnchange
+        // just above, generalized so a field doesn't need its own special
+        // case hardcoded here the way relOnchange currently is.
+        const fieldOnchange = f.onchange ? ' onchange="' + f.onchange + '"' : "";
+        input = '<select class="input" id="f_' + f.k + '" name="' + f.k + '"' + relOnchange + fieldOnchange + '>' + f.options.map(o => '<option value="' + esc(o.v) + '"' + (String(val) === String(o.v) ? " selected" : "") + ">" + esc(o.l) + "</option>").join("") + "</select>";
       } else if (f.type === "color") {
         // Preset swatches in front of the plain native color input -- see
         // COLOR_PALETTE/UI.setColorField up top. The swatches are plain
