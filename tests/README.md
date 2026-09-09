@@ -969,6 +969,51 @@ account can be deleted, a card's Available/Limit stay consistent).
      UI already shows as settled could still be picked and "paid" from the
      dropdown. Tightened to the same `0.001` epsilon everywhere else in
      this feature already uses.
+- `check_dashboard_signal.js` -- the Dashboard's "Signal" redesign (user's
+  explicit choice, after reviewing three published concept mockups): three
+  new, purely additive chart-forward visuals, none of them replacing any
+  existing element or data source.
+
+  **Hero trend chart + delta chip.** `UI.heroTrendChart()` -- a new
+  function, deliberately separate from the small existing `sparkline()` --
+  draws a gradient-filled area + line under the Available-balance headline,
+  from the same 5-point weekly `available` series the small inline
+  sparkline already computes (`weeklyDerives`). A `.delta-chip` next to the
+  headline shows the first-vs-last percentage change across that same
+  window, so the two can't disagree about what "this month" (in the loose
+  ~5-week sense the weekly cadence already uses on this card) means.
+
+  **"Where my money is" -- a proportional stacked bar.** Sits above the
+  existing tile grid, built from the exact same 6 real "money sits here"
+  buckets `positionTiles` already defines (not the 3 derived totals --
+  payables/assets/net worth -- which stay tile-only, nothing real to
+  depict as a share of a whole), reusing each bucket's own tint color so a
+  segment reads as the same color as its tile right below it.
+
+  **"This month" -- a diverging income/expense bar.** The same two numbers
+  the stat boxes above it already show, given a proportional shape between
+  the budget ring and category bars underneath -- both untouched.
+
+  Every element this redesign touches was chosen specifically because
+  nothing already tested it structurally beyond a text/count assertion the
+  new markup doesn't disturb -- confirmed against the whole suite, which
+  passes unmodified (only this one new file was added; no existing test
+  needed updating), unlike the reconciliation feature just above, where an
+  existing test's assumption had to change because the underlying behavior
+  genuinely did.
+
+  Real bug caught in review, covered by a dedicated case here: the delta
+  chip's percentage divided by `Math.abs(heroFirst || 1)` instead of
+  checking `heroFirst > 0` -- a zero (or negative, an overdrawn week)
+  starting balance produced a wildly misleading figure (e.g. "+500000%
+  this month" off a `0 -> 5000` swing) instead of hiding the chip, which is
+  what `Engine.monthOverMonth()`'s own percentage badges already do in the
+  same situation and what this code's own comment claimed to match.
+  Reproduced by stubbing `Engine.derive()` to force every older weekly
+  point to exactly `0` (simply clearing transactions doesn't reach this --
+  every account's own static opening balance holds regardless of a
+  derive() cutoff date, so `available` was never actually zero at any real
+  past point reachable that way).
 
 ## Adding a new one
 

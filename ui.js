@@ -1512,6 +1512,44 @@ const UI = {
     return '<svg class="sparkline" width="' + w + '" height="' + h + '" viewBox="0 0 ' + w + ' ' + h + '" preserveAspectRatio="none" aria-hidden="true">' +
       '<path d="' + d + '" fill="none" stroke="' + color + '" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="filter:drop-shadow(0 0 2px ' + color + ')"/></svg>';
   },
+  // Chart-forward hero trend -- a large gradient-filled area + line, the
+  // signature visual of the Dashboard's "Signal" redesign (as opposed to
+  // sparkline() just above, a small inline indicator that stays exactly as
+  // it was -- this is a second, separate, much bigger chart). `points` is
+  // oldest-first (same convention as sparkline()); a flat/too-short series
+  // draws nothing, same reasoning. Returns its own distinct class
+  // (`.hero-trend`, not `.sparkline`) precisely so it never collides with
+  // the small inline sparkline's own selector, which several existing
+  // tests (check_dashboard_recut.js among them) already assert the count
+  // of inside .hero-card.
+  heroTrendChart(points, w, h) {
+    w = w || 300; h = h || 96;
+    if (points.length < 2 || Math.max(...points) === Math.min(...points)) return "";
+    const max = Math.max(...points), min = Math.min(...points), range = max - min;
+    const step = w / (points.length - 1);
+    // A touch of headroom/footroom (6% of the chart's own height) so the
+    // line's own peak/trough never sits flush against the viewBox edge --
+    // at preserveAspectRatio="none" a point pinned to y=0 gets its stroke
+    // half-clipped by the SVG's own bounds.
+    const pad = h * 0.06;
+    const y = (v) => (h - pad * 2) - (v - min) / range * (h - pad * 2) + pad;
+    const pts = points.map((v, i) => [i * step, y(v)]);
+    const line = pts.map(([x, yy], i) => (i === 0 ? "M" : "L") + x.toFixed(1) + "," + yy.toFixed(1)).join(" ");
+    const area = line + " L" + w + "," + h + " L0," + h + " Z";
+    const last = pts[pts.length - 1];
+    const gid = "heroTrendFill" + Math.random().toString(36).slice(2, 8);
+    return '<div class="hero-trend-wrap">' +
+      '<svg class="hero-trend" viewBox="0 0 ' + w + " " + h + '" preserveAspectRatio="none" aria-hidden="true">' +
+        "<defs><linearGradient id=\"" + gid + "\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\">" +
+          '<stop offset="0%" stop-color="var(--c-accent)" stop-opacity=".38"/>' +
+          '<stop offset="100%" stop-color="var(--c-accent)" stop-opacity="0"/>' +
+        "</linearGradient></defs>" +
+        '<path d="' + area + '" fill="url(#' + gid + ')"/>' +
+        '<path d="' + line + '" fill="none" stroke="var(--c-accent)" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>' +
+        '<circle cx="' + last[0].toFixed(1) + '" cy="' + last[1].toFixed(1) + '" r="3.5" fill="var(--c-text)"/>' +
+      "</svg>" +
+    "</div>";
+  },
   // A circular progress ring -- two concentric circles (a fixed track,
   // then a colored arc drawn via the standard stroke-dasharray/dashoffset
   // trick: the whole circumference as the dash length means one dash that
@@ -1693,10 +1731,36 @@ const UI = {
     // convention as UI.toggleMore()'s nav button.
     const netWorthSparkline = sparkSvg ? '<button type="button" class="spark-trigger" aria-expanded="false" aria-label="' + esc(app.L("Show net worth trend", "اعرض تطور صافي الثروة")) + '" onclick="UI.toggleNwTrend(event)">' + sparkSvg + "</button>" : "";
     const nwTrendExpand = '<section class="dash-section nw-trend-expand" id="nwTrendExpand"></section>';
+    // Signal redesign: the big chart-forward trend area/line under the
+    // headline number -- heroTrendChart() (see its own comment) is a
+    // SEPARATE, bigger visual from availSpark's small inline .sparkline
+    // just above, which stays exactly where it was (several existing
+    // tests assert its own count inside .hero-value/.hero-card).
+    const availSeries = weeklyDerives.map(x => x.available);
+    const heroChart = this.heroTrendChart(availSeries);
+    // Delta chip -- first vs. last of the same 5-week window the chart
+    // itself draws, so the two can't disagree about what "this month" (in
+    // the loose, ~5-week sense the weekly cadence already uses elsewhere
+    // on this card) means. heroFirst > 0, not a Math.abs(heroFirst || 1)
+    // fallback -- real bug caught in review: a zero (or negative, an
+    // overdrawn week) starting balance would otherwise divide by a
+    // fudged 1 and show something like "+500000% this month" instead of
+    // just hiding the chip, the exact opposite of what the comment here
+    // claimed to match -- Engine.monthOverMonth()'s own pct() helper
+    // returns null (no badge at all) whenever its own prior period isn't
+    // a real positive baseline to compare against.
+    const heroFirst = availSeries[0], heroLast = availSeries[availSeries.length - 1];
+    const heroDeltaPct = heroChart && heroFirst > 0 ? Math.round((heroLast - heroFirst) / heroFirst * 1000) / 10 : null;
+    const heroDeltaChip = heroChart && heroDeltaPct !== null ? '<div class="delta-chip ' + (heroDeltaPct >= 0 ? "tone-pos" : "tone-neg") + '">' +
+      svgIcon(heroDeltaPct >= 0 ? "M12 19V5M5 12l7-7 7 7" : "M12 5v14M5 12l7 7 7-7", 11) +
+      '<span class="bdi">' + (heroDeltaPct >= 0 ? "+" : "") + heroDeltaPct + "%</span> " + esc(app.L("this month", "الشهر ده")) +
+    "</div>" : "";
     const hero =
       '<div class="hero-card">' +
         '<div class="hero-label">' + esc(t.availableBalance) + "</div>" +
         '<div class="hero-value">' + app.fmt(D.available) + availSpark + "</div>" +
+        heroDeltaChip +
+        (heroChart ? '<div class="hero-chart-wrap">' + heroChart + "</div>" : "") +
         '<div class="hero-note">' + esc(t.availableNote) + "</div>" +
         spendTodayBanner +
         '<div class="hero-sub-row">' +
@@ -1927,8 +1991,32 @@ const UI = {
       [t.other, D.cards, ICON_CARDS_TILE, "var(--c-neg)"], [t.investmentsShort, D.invValue, ICON_INVESTED_TILE, "var(--cat-4)"], [t.receivables, D.recvTotal, ICON_OWED_TILE, "var(--c-pos)"],
       [t.payables, -D.payTotal], [t.totalAssets, D.assets], [t.netWorth, D.netWorth]
     ];
+    // Signal redesign: a proportional stacked bar, the shape of "where my
+    // money is" at a glance, ahead of the exact-figure tile grid below
+    // (unchanged -- same tiles, same data, still there for whoever wants
+    // the precise numbers). Built from the exact same 6 real "money sits
+    // here" buckets positionTiles already defines (not payables/assets/
+    // net worth, which are derived totals rather than a place value sits),
+    // reusing their own existing tint colors so a bucket reads as the same
+    // color here as it does on its own tile right below. A bucket at or
+    // under 0 (an empty wallet, a card with no credit balance) contributes
+    // no segment/legend row rather than a zero-width sliver or a dangling
+    // 0 EGP line -- same "nothing to draw" instinct heroTrendChart() and
+    // sparkline() both already follow for a degenerate series.
+    const stackBuckets = positionTiles.slice(0, 6).filter(([, v]) => v > 0.001);
+    const stackTotal = stackBuckets.reduce((s, [, v]) => s + v, 0);
+    const stackBar = stackBuckets.length ? '<div class="stack-card">' +
+      '<div class="stack-total"><span class="stack-total-label">' + esc(app.L("Available across every bucket", "متاح في كل الأماكن")) + '</span><span class="stack-total-value">' + app.fmt(stackTotal) + "</span></div>" +
+      '<div class="stack-bar">' + stackBuckets.map(([, v, , tint]) =>
+        '<div class="stack-seg" style="width:' + (v / stackTotal * 100).toFixed(2) + '%;background:' + tint + '"></div>'
+      ).join("") + "</div>" +
+      '<div class="stack-legend">' + stackBuckets.map(([l, v, , tint]) =>
+        '<div class="legend-row"><span class="legend-dot" style="background:' + tint + '"></span><span class="legend-name">' + esc(l) + '</span><span class="legend-val">' + app.fmt(v) + "</span></div>"
+      ).join("") + "</div>" +
+    "</div>" : "";
     const whereMoney = '<section class="dash-section">' +
       '<h2 class="section-title">' + esc(t.whereMoney) + "</h2>" +
+      stackBar +
       '<div class="tile-grid">' + positionTiles.map(([l, v, icon, tint], i) =>
         '<div class="pos-tile' + (i > 6 ? " alt" : icon ? " tinted" : "") + '"' + (icon ? ' style="--tile-tint:color-mix(in srgb, ' + tint + ' 12%, var(--c-surface));--tile-ico-bg:color-mix(in srgb, ' + tint + ' 24%, transparent);--tile-ico-fg:' + tint + '"' : "") + '>' +
         // aria-hidden -- decorative next to .pos-label, which already
@@ -2024,12 +2112,20 @@ const UI = {
         "</div>" +
       "</div>" +
     "</div>" : "";
+    // Signal redesign: a diverging two-color bar under the income/expense
+    // stat boxes -- the same two numbers those boxes already show, just
+    // given a shape too (income's share of income+expense vs. expense's).
+    // Skipped when both are 0 (a month with nothing recorded yet at all)
+    // rather than drawing a meaningless empty/zero-width bar.
+    const divergeTotal = monthIncome + monthExpense;
+    const divergeBar = divergeTotal > 0.001 ? '<div class="diverge"><div class="div-in" style="width:' + (monthIncome / divergeTotal * 100).toFixed(2) + '%"></div><div class="div-out" style="width:' + (monthExpense / divergeTotal * 100).toFixed(2) + '%"></div></div>' : "";
     const thisMonth = '<section class="dash-section">' +
       '<h2 class="section-title">' + esc(t.thisMonth) + "</h2>" +
       '<div class="two-col">' +
         '<div class="stat-box"><div class="pos-label">' + esc(t.income) + '</div><div class="pos-value tone-pos">' + app.fmt(monthIncome) + "</div>" + momBadge(mom.incomePct, false) + "</div>" +
         '<div class="stat-box"><div class="pos-label">' + esc(t.expenses) + '</div><div class="pos-value tone-neg">' + app.fmt(monthExpense) + "</div>" + momBadge(mom.expensePct, true) + "</div>" +
       "</div>" +
+      divergeBar +
       overallBudgetBar +
       (catArr.length ? '<div class="bar-list">' + catArr.slice(0, 5).map(([name, v]) => {
         const budget = (d.budgets || {})[name];

@@ -584,6 +584,26 @@ h1,h2,h3{font-family:var(--font-head);font-weight:600;margin:0;text-wrap:balance
 .nw-trend-expand{display:none}
 .nw-trend-expand.show{display:block}
 
+/* ---- Signal redesign: chart-forward hero trend + delta chip ---- */
+/* A pill next to the headline value, up/down colored the same tone-pos/
+   tone-neg convention as everywhere else -- unlike hero-sub-row's own
+   values (which read that tone off a currentColor border and stay
+   unstyled by tone-pos/neg on purpose, see the comment above hero-sub-row
+   in ui.js), this chip carries its own solid tinted background so it
+   reads correctly regardless of which surface it sits on. */
+.delta-chip{display:inline-flex;align-items:center;gap:4px;border-radius:999px;padding:4px 10px 4px 8px;
+  font-size:12px;font-weight:600;margin-top:8px}
+.delta-chip svg{width:11px;height:11px}
+.delta-chip.tone-pos{background:rgba(112,224,180,.18);color:#8ff0c8}
+.delta-chip.tone-neg{background:rgba(255,138,138,.18);color:#ffb0b0}
+/* Bleeds to the card's own edges (negative margin matching .hero-card's
+   own padding) so the chart reads as one continuous surface with the card
+   itself, the same "breaks out of the padding" treatment .spend-today
+   already uses one section down. */
+.hero-chart-wrap{margin:14px -22px -2px;height:88px}
+.hero-trend-wrap{width:100%;height:100%}
+.hero-trend{width:100%;height:100%;display:block}
+
 /* ---- alerts (needs attention) ---- */
 .alert-list{display:flex;flex-direction:column;gap:8px}
 /* Every Needs Attention card used to get the same red left border
@@ -623,6 +643,27 @@ h1,h2,h3{font-family:var(--font-head);font-weight:600;margin:0;text-wrap:balance
 .pos-value{font-family:var(--font-head);font-size:19px;margin-top:2px;font-variant-numeric:tabular-nums}
 .two-col{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px}
 .stat-box{padding:12px;border-radius:8px;background:var(--c-surface)}
+
+/* ---- Signal redesign: "where my money is" as a proportional composition,
+   ahead of (not instead of) the exact-figure tile grid right below it ---- */
+.stack-card{background:var(--c-surface);border:1px solid var(--c-line);border-radius:var(--radius);padding:14px 16px;margin-bottom:10px}
+.stack-total{display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin-bottom:10px}
+.stack-total-label{font-size:11.5px;color:var(--c-text-faint)}
+.stack-total-value{font-family:var(--font-head);font-size:18px;font-variant-numeric:tabular-nums}
+.stack-bar{display:flex;height:12px;border-radius:999px;overflow:hidden;background:var(--c-surface-3)}
+.stack-seg{height:100%}
+.stack-seg:not(:last-child){border-inline-end:2px solid var(--c-surface)}
+.stack-legend{display:grid;grid-template-columns:1fr 1fr;gap:8px 14px;margin-top:12px}
+.legend-row{display:flex;align-items:center;gap:7px;min-width:0}
+.legend-dot{width:8px;height:8px;border-radius:2px;flex:none}
+.legend-name{font-size:12px;color:var(--c-text-soft);flex:1;min-width:0}
+.legend-val{font-size:12px;font-weight:600;font-family:var(--font-head);font-variant-numeric:tabular-nums}
+
+/* ---- Signal redesign: diverging income/expense bar under "This month"'s
+   own stat boxes -- same two numbers, given a proportional shape too ---- */
+.diverge{display:flex;height:8px;border-radius:999px;overflow:hidden;background:var(--c-surface-3);margin-bottom:12px}
+.div-in{background:linear-gradient(90deg,color-mix(in srgb,var(--c-pos) 85%,white),var(--c-pos))}
+.div-out{background:linear-gradient(90deg,color-mix(in srgb,var(--c-neg) 85%,white),var(--c-neg))}
 
 /* ---- bars ---- */
 .bar-list{display:flex;flex-direction:column;gap:9px}
