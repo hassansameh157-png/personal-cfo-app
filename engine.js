@@ -905,9 +905,46 @@ class Engine {
     const settleType = kind === "receivable" ? "receivable_payment" : "debt_payment";
     const loans = d.tx.filter(t => !t.void && t.personId === personId && t.type === kind)
       .sort((a, b) => a.date < b.date ? -1 : (a.date > b.date ? 1 : 0));
-    let pool = d.tx.filter(t => !t.void && t.personId === personId && t.type === settleType).reduce((s, t) => s + t.amount, 0);
+    const loanIds = new Set(loans.map(t => t.id));
+    // Reconciliation: a payment picked a specific loan to close via its own
+    // "Settles" field (settlesId, set in submit()) is reserved for that loan
+    // alone and never bleeds into any other loan's balance -- listed here per
+    // loan (not just summed) so the UI can show exactly which payment(s)
+    // closed it. Everything left over -- no loan was picked, or the one it
+    // pointed at has since been deleted -- falls into the same shared pool
+    // as before this feature existed, applied oldest-loan-first (FIFO), so
+    // every payment made before today keeps settling exactly as it always
+    // has.
+    const directByLoan = {};
+    let pool = 0;
+    d.tx.filter(t => !t.void && t.personId === personId && t.type === settleType).forEach(t => {
+      if (t.settlesId && loanIds.has(t.settlesId)) (directByLoan[t.settlesId] = directByLoan[t.settlesId] || []).push(t);
+      else pool += t.amount;
+    });
+    pool = Math.round(pool * 100) / 100;
     return loans.map(t => {
-      const paid = Math.min(pool, t.amount); pool = Math.round((pool - paid) * 100) / 100;
+      const directTxs = (directByLoan[t.id] || []).slice().sort((a, b) => a.date < b.date ? -1 : (a.date > b.date ? 1 : 0));
+      const directSum = Math.round(directTxs.reduce((s, x) => s + x.amount, 0) * 100) / 100;
+      // Capped at the loan's own total: submit()'s cap check keeps any one
+      // settlesId payment from exceeding what was left when it was made, but
+      // caps it against a rem that already accounted for pool spillover --
+      // this guards the (extremely unlikely) case of several direct payments
+      // together still summing past the loan itself. Real bug caught in
+      // review: if the loan's own amount is later edited DOWN below what a
+      // direct payment already covered (fixing a data-entry mistake on an
+      // already-settled loan, say), the part of that payment that no longer
+      // fits must flow into the shared pool for this person's OTHER open
+      // loans -- exactly what the old pool-only model already did for free,
+      // since it never reserved money per loan to begin with. Dropping it
+      // instead would make this person's recorded payments (History) and
+      // what loanRows() says was actually applied permanently disagree.
+      const direct = Math.min(directSum, t.amount);
+      const directExcess = Math.round((directSum - direct) * 100) / 100;
+      if (directExcess > 0) pool = Math.round((pool + directExcess) * 100) / 100;
+      const afterDirect = Math.round((t.amount - direct) * 100) / 100;
+      const fromPool = Math.min(pool, afterDirect);
+      pool = Math.round((pool - fromPool) * 100) / 100;
+      const paid = Math.round((direct + fromPool) * 100) / 100;
       const rem = Math.round((t.amount - paid) * 100) / 100;
       // Real bug caught while building this: falling back to t.date (the
       // entry date) when no due date is set meant an indefinite-term loan
@@ -917,7 +954,25 @@ class Engine {
       // balance, same as before this feature existed.
       const due = t.due || null;
       const status = rem <= 0 ? "paid" : !due ? "open" : (paid > 0 ? (due < today ? "overdue" : "partial") : (due < today ? "overdue" : "pending"));
-      return { id: t.id, personId, date: t.date, due, amount: t.amount, paid, rem, status, desc: t.desc };
+      // Real bug caught in review: listing each direct payment's own full
+      // face amount here can outrun the loan's own (possibly since-edited-
+      // down) total -- e.g. two payments of 200+100 validly settled a 300
+      // loan, the loan is later corrected to 250, and the trail would still
+      // read "200 + 100" against a loan that's only 250, the exact
+      // contradiction this trail exists to rule out. Running the same
+      // per-loan cap `direct` above already enforces (oldest payment
+      // first) over each one's own amount instead reports what actually
+      // applied *here* -- summing to exactly `direct`, with anything past
+      // that already accounted for in `directExcess` above, now in the
+      // shared pool for this person's other loans instead.
+      let settledByBudget = direct;
+      const settledBy = directTxs.map(x => {
+        const applied = Math.min(settledByBudget, x.amount);
+        settledByBudget = Math.round((settledByBudget - applied) * 100) / 100;
+        return { id: x.id, date: x.date, amount: applied };
+      });
+      return { id: t.id, personId, date: t.date, due, amount: t.amount, paid, rem, status, desc: t.desc,
+        settledBy, poolPaid: fromPool };
     });
   }
   // All people's still-open plain loans of one direction, for Needs
@@ -927,7 +982,15 @@ class Engine {
     const d = this.state.data;
     const ids = Array.from(new Set(d.tx.filter(t => !t.void && t.type === kind).map(t => t.personId)));
     const out = [];
-    ids.forEach(pid => this.loanRows(pid, kind).filter(r => r.rem > 0).forEach(r => out.push(r)));
+    // > 0.001, not > 0 -- real bug caught in review: this now also feeds
+    // loanOptions() (the "Settles" picker, see FORMS() above), and a bare
+    // `> 0` let a sub-cent rounding residue (e.g. rem: 0.0005, left over
+    // from earlier float math) list as a pickable "open" loan there while
+    // loanRows()'s own status/loanSection's own open-vs-settled split both
+    // already treat that same residue as settled -- letting someone "pay"
+    // a loan the rest of the UI already considers closed. Matches the same
+    // epsilon loanSection() itself filters open rows by.
+    ids.forEach(pid => this.loanRows(pid, kind).filter(r => r.rem > 0.001).forEach(r => out.push(r)));
     return out;
   }
   nextOccurrence(r, from) {
@@ -1320,6 +1383,16 @@ class Engine {
       const isPaid = st.remainingPay <= 0.001;
       return { v: g.id, l: g.name + (isPaid ? " " + this.L("(paid)", "(متسدد)") : " — " + this.fmtPlain(st.remainingPay)) };
     });
+    // Reconciliation: receivable_payment/debt_payment's own optional "Settles"
+    // field -- every still-open plain loan (any person, not just whoever's
+    // picked in Person above), same flat-list-with-the-owner-named-in-the-
+    // label convention as planOptions/groupOptions just above. Submit() reads
+    // this to link the payment to that exact loan (see loanRows()'s own
+    // settlesId handling) instead of the old default of silently settling
+    // whichever open loan is oldest.
+    const loanOptions = (kind) => this.allLoanRows(kind).map(r => ({
+      v: r.id, l: this.personName(r.personId) + " — " + (r.desc || "—") + " — " + this.fmtPlain(r.rem)
+    }));
     // Custom categories the user added in Settings — no ARW translation
     // exists for these (they're free text the user typed), so the language
     // pass below just leaves them as-is via its `|| o.l` fallback.
@@ -1378,8 +1451,8 @@ class Engine {
       // real choice ("Pick a person.").
       receivable: { title: t.aReceivable, fields: [D("date", t.date, "date"), D("amount", t.amount, "number"), D("personId", t.person, "select", { options: [{ v: "", l: "—" }].concat(ppl) }), D("accountId", "Paid out of", "select", { options: [{ v: "", l: "No cash movement (opening balance)" }].concat(accs) }), D("due", "Due date", "date"), D("desc", t.details, "text", { wide: true })] },
       payable: { title: t.aDebt, fields: [D("date", t.date, "date"), D("amount", t.amount, "number"), D("personId", t.person, "select", { options: [{ v: "", l: "—" }].concat(ppl) }), D("accountId", "Received into", "select", { options: [{ v: "", l: "No cash movement (opening balance)" }].concat(accs) }), D("due", "Due date", "date"), D("desc", t.details, "text", { wide: true })] },
-      receivable_payment: { title: t.aCollect, fields: [D("date", t.date, "date"), D("amount", t.amount, "number"), D("personId", t.person, "select", { options: [{ v: "", l: "—" }].concat(ppl) }), D("accountId", "Into account", "select", { options: accs }), D("desc", t.details, "text", { wide: true })] },
-      debt_payment: { title: t.aRepay, fields: [D("date", t.date, "date"), D("amount", t.amount, "number"), D("personId", t.person, "select", { options: [{ v: "", l: "—" }].concat(ppl) }), D("accountId", "Paid from", "select", { options: accs }), D("desc", t.details, "text", { wide: true })] },
+      receivable_payment: { title: t.aCollect, fields: [D("date", t.date, "date"), D("amount", t.amount, "number"), D("personId", t.person, "select", { options: [{ v: "", l: "—" }].concat(ppl) }), D("settlesId", this.L("Settles (optional)", "بتقفل (اختياري)"), "select", { options: [{ v: "", l: this.L("— No specific loan (auto)", "— من غير سلفة محددة (تلقائي)") }].concat(loanOptions("receivable")), hint: this.L("Pick which open loan this closes. Leave blank to settle the oldest one automatically.", "اختار انهي سلفة مفتوحة هتتقفل بالمبلغ ده. سيبها فاضية عشان تتقفل الأقدم تلقائيًا.") }), D("accountId", "Into account", "select", { options: accs }), D("desc", t.details, "text", { wide: true })] },
+      debt_payment: { title: t.aRepay, fields: [D("date", t.date, "date"), D("amount", t.amount, "number"), D("personId", t.person, "select", { options: [{ v: "", l: "—" }].concat(ppl) }), D("settlesId", this.L("Settles (optional)", "بتقفل (اختياري)"), "select", { options: [{ v: "", l: this.L("— No specific loan (auto)", "— من غير دين محدد (تلقائي)") }].concat(loanOptions("payable")), hint: this.L("Pick which open loan this closes. Leave blank to settle the oldest one automatically.", "اختار انهي دين مفتوح هيتقفل بالمبلغ ده. سيبه فاضي عشان يتقفل الأقدم تلقائيًا.") }), D("accountId", "Paid from", "select", { options: accs }), D("desc", t.details, "text", { wide: true })] },
       sale: { title: t.aSale, fields: [D("date", "Sale date", "date"), D("personId", "Customer", "select", { options: ppl }), D("title", "What was sold", "text", { wide: true }), D("total", "Sale total", "number"), D("down", "Down payment", "number"), D("accountId", "Down payment into", "select", { options: [{ v: "", l: "No down payment" }].concat(accs) }), D("count", "Number of installments", "number"), D("freq", "Frequency", "select", { options: [{ v: "monthly", l: "Monthly" }, { v: "weekly", l: "Weekly" }, { v: "quarterly", l: "Quarterly" }] }), D("first", "First due date", "date"), D("balloon", "Final balloon payment", "number", { hint: "Optional. Leave 0 for equal installments." })] },
       purchase: { title: t.aPurchasePlan, fields: [D("date", "Purchase date", "date"), D("personId", "Seller", "select", { options: ppl }), D("title", "What was bought", "text", { wide: true }), D("total", "Total price", "number"), D("down", "Down payment", "number"), D("accountId", "Down payment from", "select", { options: [{ v: "", l: "No down payment" }].concat(accs) }), D("count", "Number of installments", "number"), D("freq", "Frequency", "select", { options: [{ v: "monthly", l: "Monthly" }, { v: "weekly", l: "Weekly" }, { v: "quarterly", l: "Quarterly" }] }), D("first", "First due date", "date"), D("balloon", "Final balloon payment", "number")] },
       installment_payment: { title: t.recordPayment, fields: [D("date", t.date, "date"), D("planId", "Plan", "select", { options: planOptions }), D("amount", t.amount, "number", { hint: "Partial, exact or several installments at once — allocation is automatic." }), D("accountId", "Account", "select", { options: accs }), D("desc", t.details, "text", { wide: true })] },
@@ -1593,6 +1666,28 @@ class Engine {
     if (["income", "expense", "receivable", "payable", "receivable_payment", "debt_payment"].includes(k)) {
       if (!need(N("amount") > 0, "Amount must be greater than zero.")) return false;
       if (["receivable", "payable", "receivable_payment", "debt_payment"].includes(k) && !need(f.personId, "Pick a person.")) return false;
+      // Reconciliation: an optional "Settles" pick on receivable_payment/
+      // debt_payment (loanOptions() in FORMS() above, any person's open
+      // loans, not just whoever's picked in Person). Capped the same
+      // rounding-safe way as installment_payment/statement_payment's own
+      // cap checks above -- editing a payment already linked to this same
+      // loan gets its own amount added back first, so shrinking/growing it
+      // validates against the loan's real remaining, not remaining-minus-
+      // itself. The loan's own person wins over whatever Person was picked
+      // above, same precedent as installment_payment's planId (personId:
+      // plan.personId below) -- so picking a loan from someone else's list
+      // here doesn't silently post the payment against the wrong person.
+      let settlesRow = null;
+      if (["receivable_payment", "debt_payment"].includes(k) && f.settlesId) {
+        const loanKind = k === "receivable_payment" ? "receivable" : "payable";
+        const loanTx = data.tx.find(x => x.id === f.settlesId && x.type === loanKind && !x.void);
+        if (!need(loanTx, "That loan no longer exists.")) return false;
+        settlesRow = this.loanRows(loanTx.personId, loanKind).find(r => r.id === f.settlesId);
+        if (!need(settlesRow, "That loan no longer exists.")) return false;
+        const existingTx = f.id ? data.tx.find(x => x.id === f.id) : null;
+        const cap = (existingTx && existingTx.settlesId === settlesRow.id) ? settlesRow.rem + existingTx.amount : settlesRow.rem;
+        if (!need(N("amount") <= Math.max(cap, Math.round(cap)) + 0.001, "That is more than the " + this.fmtPlain(cap) + " still outstanding on that loan.")) return false;
+      }
       // Split expense: validated up front, alongside everything else, so a
       // bad split blocks the whole submission rather than leaving the
       // expense posted with no matching receivable. Both fields are marked
@@ -1605,11 +1700,16 @@ class Engine {
       if ((hasSplitPerson || hasSplitAmount) && !need(hasSplitPerson && hasSplitAmount, "Pick who to split with, and enter their share — or leave both blank.")) return false;
       const splitting = hasSplitPerson && hasSplitAmount;
       if (splitting && !need(this.n(f.splitAmount) <= N("amount"), "Their share can't be more than the total expense.")) return false;
-      const fields = { date: f.date, amount: N("amount"), accountId: f.accountId || null, fromId: null, toId: null, category: f.category || null, personId: f.personId || null, desc: f.desc || this.FORMS()[k].title, due: f.due || null };
+      const fields = { date: f.date, amount: N("amount"), accountId: f.accountId || null, fromId: null, toId: null, category: f.category || null, personId: (settlesRow ? settlesRow.personId : f.personId) || null, desc: f.desc || this.FORMS()[k].title, due: f.due || null };
       // Tags only exist on income/expense (see FORMS() above); for every
       // other kind here f.tags is simply undefined and this line is a
       // harmless no-op — nothing needs a type check to skip it.
       if (["income", "expense"].includes(k)) fields.tags = (f.tags || "").split(",").map((s) => s.trim()).filter(Boolean);
+      // Reconciliation link -- see the settlesRow validation above. Stored
+      // even when null so editing a previously-linked payment back to "no
+      // specific loan" actually clears it (Object.assign below only ever
+      // adds/overwrites keys, never removes one missing from `fields`).
+      if (["receivable_payment", "debt_payment"].includes(k)) fields.settlesId = settlesRow ? settlesRow.id : null;
       // A refund is the exact same shape as regular income, just stored
       // with tx.type "refund" instead of "income" when the income form's
       // own "type" select (see FORMS().income above) is set to it --

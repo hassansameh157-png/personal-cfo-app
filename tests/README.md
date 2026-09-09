@@ -897,6 +897,78 @@ account can be deleted, a card's Available/Limit stay consistent).
   Caught immediately by actually running the page rather than trusting
   the edit, and restored before this test or the regression suite ever
   saw it.
+- `check_reconciliation.js` -- real feature request: recording a loan/advance
+  and its later repayment as two separate transactions left nothing tying
+  them together, so reviewing a person's page meant eyeballing dates and
+  amounts to work out which payment closed which loan.
+
+  `loanRows()` already settled repayments against open loans automatically
+  (oldest-first, FIFO) -- the gap was that it was never a *choice*, and once
+  a loan hit `rem: 0` it vanished from the person's page with no trace of
+  what closed it. `receivable_payment`/`debt_payment` now carry an optional
+  `settlesId`, picked from a "Settles" field listing every person's open
+  loans (same flat list + label convention as `installment_payment`'s own
+  `planId`), capped to that specific loan's remaining the same
+  rounding-safe way as the installment/statement payment caps above. Picking
+  a loan from someone else's list overrides whatever was picked in the
+  Person field, the same precedent `installment_payment` already set with
+  `personId: plan.personId`.
+
+  `loanRows()` itself now tracks *which* payment(s) closed each loan
+  (`settledBy`, a list of `{id, date, amount}`), not just how much is left.
+  A payment that never picked a loan still falls into the exact same shared
+  FIFO pool as before this feature existed -- nothing about existing data
+  changes; `poolPaid` on the loan row folds all of that into one honest
+  "(auto)" line rather than pretending a choice was made that never was.
+
+  On the person's own page, a fully-settled loan no longer disappears
+  without a trace -- it collapses behind an "N settled" toggle (the same
+  convention Installments' own completed plans already use), and expanding
+  it shows exactly which payment(s) closed it. Every collection/repayment
+  in the History section below shows its own "Settles: ..." line pointing
+  back the other way. A per-loan "Record payment" button (new) opens the
+  payment form pre-filled with that exact loan already picked, instead of
+  the existing person-level Pay/Collect buttons, which still settle the
+  oldest open loan automatically when no particular one matters.
+
+  Real regression caught by the existing suite, not this new test:
+  `shot_person_history.js` had asserted a fully-settled loan's whole
+  section *disappeared* -- true before this feature, wrong now that a
+  settled loan deliberately stays visible (collapsed) so its settlement
+  trail isn't lost. Updated to assert the section stays and shows an "N
+  settled" toggle instead, matching the same expectation
+  `check_installments_recut.js` already established for plans ("the plan
+  is settled, not gone").
+
+  Three real bugs caught in code review before this ever shipped, all
+  covered by dedicated cases in this same test (step 8):
+  1. **Excess from a shrunk, already-settled loan was silently dropped**
+     instead of rejoining the shared pool. Editing a loan's own amount down
+     *after* a direct payment already fully covered it (fixing a data-entry
+     mistake) used to just discard whatever no longer fit -- the person's
+     recorded payments (History) and what `loanRows()` said was actually
+     applied would permanently disagree, and the freed money never reached
+     this person's other open loans the way the old pool-only model already
+     handled this case for free. Fixed by feeding that excess back into
+     `pool` instead of dropping it.
+  2. **The "Settled by" trail could overclaim past the loan's own amount**
+     for the same shrink-after-settlement scenario -- two payments (200 +
+     100) that validly settled a 300 loan would still show "200 + 100"
+     after the loan was corrected to 250, an internal contradiction in the
+     exact trail this feature exists to make trustworthy. Fixed by running
+     the same FIFO cap the loan's own `paid`/`rem` already uses over the
+     *displayed* trail too, so it always sums to exactly what's actually
+     credited to that loan -- oldest payment keeps its full display amount
+     first, any shortfall lands on the newest one.
+  3. **`allLoanRows()`'s open-loan filter used a bare `rem > 0`**, unlike
+     every other open/settled boundary this feature added (`loanSection`'s
+     own split, `loanRows()`'s own `status`), which all treat a sub-cent
+     rounding residue as settled via a `0.001` epsilon. Since this function
+     now also feeds the new "Settles" picker (previously it only fed
+     Dashboard alerts/Forecast), that mismatch meant a loan the rest of the
+     UI already shows as settled could still be picked and "paid" from the
+     dropdown. Tightened to the same `0.001` epsilon everywhere else in
+     this feature already uses.
 
 ## Adding a new one
 

@@ -1087,6 +1087,12 @@ const UI = {
   // it out of the main list by default, the same "N settled" pattern
   // People's own list already established for the same reason.
   togglePlansCompleted() { this._plansCompletedExpanded = !this._plansCompletedExpanded; this.render(); },
+  // Same "N settled" collapse as togglePlansCompleted just above, for the
+  // plain-loan sections on a person's own page (renderPersonDetail) -- one
+  // flag for both directions (owed to me / I owe) since a person rarely has
+  // enough settled loans in each to need separate toggles, and collapsing
+  // both together is one less thing to click through to see the rest.
+  toggleLoansSettled() { this._loansSettledExpanded = !this._loansSettledExpanded; this.render(); },
   exportJson() {
     const d = this.app.state.data;
     this.app.download("personal-cfo-backup.json", JSON.stringify(d, null, 2), "application/json");
@@ -3078,19 +3084,45 @@ const UI = {
       "</div>" +
     "</div>";
 
-    // Every open plain loan/amanah row this person is party to, either
-    // direction, oldest first (loanRows() is already FIFO-ordered) — each
-    // with its own Edit/Delete via the Transactions tab if it was a mistake,
-    // but settled right from here via Pay/Collect on the section below.
+    // Every plain loan/amanah row this person is party to, either direction,
+    // oldest first (loanRows() is already FIFO-ordered) — each with its own
+    // Edit/Delete via the Transactions tab if it was a mistake, but settled
+    // right from here via a per-row "Record payment" that pre-picks this
+    // exact loan (see loanRows()'s own settlesId/settledBy) instead of the
+    // generic Pay/Collect above, which still settles the oldest open one
+    // automatically when no particular loan matters.
+    // Reconciliation: what closed (or is chipping away at) this loan — every
+    // payment that explicitly picked it gets its own date+amount; anything
+    // still coming out of the old shared pool (a payment made before this
+    // feature existed, or one that was never pointed at a specific loan)
+    // folds into one "(auto)" line instead of pretending it was a
+    // deliberate choice that was never actually made.
+    const settledByLine = (row) => {
+      const parts = row.settledBy.map(s => app.fmt(s.amount) + " · " + s.date);
+      if (row.poolPaid > 0.001) parts.push(app.fmt(row.poolPaid) + " " + app.L("(auto)", "(تلقائي)"));
+      return parts.length ? '<div class="card-row-sub" style="margin-top:2px">' + esc(app.L("Settled by: ", "اتقفلت بـ: ")) + parts.join(" + ") + "</div>" : "";
+    };
     const loanSection = (kind, label) => {
-      const rows = app.loanRows(p.id, kind).filter(row => row.rem > 0.001);
-      if (!rows.length) return "";
-      const items = rows.map(row => {
+      const allRows = app.loanRows(p.id, kind);
+      if (!allRows.length) return "";
+      const modalKind = kind === "receivable" ? "receivable_payment" : "debt_payment";
+      const rowHtml = (row) => {
         const dueTxt = !row.due ? "" : (row.status === "overdue" ? app.L("Overdue since ") + row.due : app.L("Due ") + row.due);
-        return '<div class="card-row"><div class="card-row-top"><div><div class="card-row-title">' + esc(row.desc || "—") + '</div><div class="card-row-sub">' + row.date + (dueTxt ? " · " + esc(dueTxt) : "") + "</div></div>" +
-          '<div class="card-row-amt ' + (row.status === "overdue" ? "tone-neg" : "") + '">' + app.fmt(row.rem) + "</div></div></div>";
-      }).join("");
-      return '<h2 class="section-title" style="margin-top:20px">' + esc(label) + '</h2><div class="card-list">' + items + "</div>";
+        const payBtn = row.rem > 0.001 ? '<button class="btn btn-secondary small" onclick="UI.openModal(\'' + modalKind + '\',{personId:\'' + p.id + '\',settlesId:\'' + row.id + '\'})">' + esc(t.recordPayment) + "</button>" : "";
+        return '<div class="card-row"><div class="card-row-top"><div><div class="card-row-title">' + esc(row.desc || "—") + '</div><div class="card-row-sub">' + row.date + (dueTxt ? " · " + esc(dueTxt) : "") + "</div>" + settledByLine(row) + '</div>' +
+          '<div class="card-row-amt ' + (row.status === "overdue" ? "tone-neg" : "") + '">' + app.fmt(row.rem > 0.001 ? row.rem : row.amount) + "</div></div>" + payBtn + "</div>";
+      };
+      const openRows = allRows.filter(row => row.rem > 0.001);
+      const settledRows = allRows.filter(row => row.rem <= 0.001);
+      const openHtml = openRows.map(rowHtml).join("");
+      // Same "N settled" collapse as Installments' own completed plans —
+      // otherwise a loan that's been fully paid off, possibly years ago,
+      // would clutter this section forever with nothing left to act on.
+      const settledHtml = !settledRows.length ? "" :
+        (!this._loansSettledExpanded ?
+          '<button class="btn btn-secondary small block" onclick="UI.toggleLoansSettled()">' + esc(settledRows.length + " " + app.L("settled", "متسدد")) + "</button>" :
+          settledRows.map(rowHtml).join(""));
+      return '<h2 class="section-title" style="margin-top:20px">' + esc(label) + '</h2><div class="card-list">' + openHtml + settledHtml + "</div>";
     };
 
     const planSection = (plans, label) => {
@@ -3127,8 +3159,17 @@ const UI = {
       // wasn't reading it (real bug caught in review: History silently
       // never got the dots despite sharing the exact same helper).
       const accDots = (s.accColors || []).map(c => '<span class="tx-acc-dot" style="background:' + c + '"></span>').join("");
+      // Reconciliation: a collection/repayment that explicitly picked a loan
+      // to close (settlesId, see loanRows()'s own settledBy) shows exactly
+      // which one right here — the whole point of the feature: no digging
+      // through the loan sections above or eyeballing dates/amounts to match
+      // this payment back to what it was for. A dangling settlesId (its loan
+      // has since been deleted) just shows nothing, same as if it were never
+      // linked — the payment itself is still perfectly real.
+      const loanTx = x.settlesId ? d.tx.find(t => t.id === x.settlesId) : null;
+      const settlesNote = loanTx ? '<div class="card-row-sub" style="margin-top:2px">' + esc(app.L("Settles: ", "بتقفل: ")) + esc(loanTx.desc || "—") + " · " + loanTx.date + "</div>" : "";
       return '<div class="card-row' + (x.void ? " voided" : "") + '">' +
-        '<div class="card-row-top"><div><div class="card-row-title">' + esc(x.desc || "—") + '</div><div class="card-row-sub">' + x.date + " · " + esc(typeLabels[x.type] || x.type) + "</div></div>" +
+        '<div class="card-row-top"><div><div class="card-row-title">' + esc(x.desc || "—") + '</div><div class="card-row-sub">' + x.date + " · " + esc(typeLabels[x.type] || x.type) + "</div>" + settlesNote + "</div>" +
         '<div class="card-row-amt ' + s.tone + '">' + s.amtTxt + "</div></div>" +
         '<div class="card-row-meta"><span>' + accDots + esc(s.acc) + "</span></div>" +
         this.txTagChips(x) +

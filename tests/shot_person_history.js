@@ -49,7 +49,7 @@ require("./_watchdog"); // shared pass/fail detector -- see that file
   console.log("amount pre-filled:", await page.locator("#f_amount").inputValue());
   await page.click("button:has-text('Cancel')"); await page.waitForTimeout(150);
 
-  console.log("\n=== 5) Now test: fully settle a small existing loan (e.g. S-Tareq) and confirm it still shows in History even though it disappears from 'Loans owed to me' ===");
+  console.log("\n=== 5) Now test: fully settle a small existing loan (e.g. S-Tareq) and confirm it still shows in History, AND now stays visible (collapsed) under 'Loans owed to me' too -- reconciliation feature: a settled loan keeps showing which payment closed it, same 'N settled' convention Installments already uses, instead of vanishing without a trace ===");
   await page.click(".navbtn:has-text('People')"); await page.waitForTimeout(200);
   await page.locator(".card-row", { hasText: "S-Tareq" }).locator(".link-btn.card-row-title").click();
   await page.waitForTimeout(200);
@@ -59,7 +59,14 @@ require("./_watchdog"); // shared pass/fail detector -- see that file
   // collect the exact full amount (seed opening balance for stareq is 1020)
   await page.fill("#f_amount", "1020");
   await page.click("button:has-text('Save')"); await page.waitForTimeout(300);
-  console.log("Loans owed to me section gone (fully settled):", await page.locator(".section-title", { hasText: "Loans owed to me" }).count() === 0);
+  console.log("'Loans owed to me' section still shows (the loan is settled, not gone):", await page.locator(".section-title", { hasText: "Loans owed to me" }).count() === 1);
+  const settledToggle = page.locator("button:has-text('settled')");
+  console.log("a 'N settled' collapse toggle is there instead of the loan row itself:", await settledToggle.count() > 0);
+  if (await settledToggle.count() > 0) {
+    await settledToggle.click(); await page.waitForTimeout(150);
+    const settledTrail = await page.locator(".card-row-sub", { hasText: "Settled by" }).first().innerText().catch(() => "MISSING");
+    console.log("expanding it shows which payment closed it:", settledTrail);
+  }
   console.log("History still shows both the original loan AND the collection:", await page.locator(".card-row", { hasText: "Receivable" }).count() > 0 || await page.locator(".card-row", { hasText: "Collection" }).count() > 0);
   await page.screenshot({ path: "shot_person_history_settled.png", fullPage: true });
 
