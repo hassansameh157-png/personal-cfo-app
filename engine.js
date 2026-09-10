@@ -1409,8 +1409,11 @@ class Engine {
     // exists for these (they're free text the user typed), so the language
     // pass below just leaves them as-is via its `|| o.l` fallback.
     const custom = d.customCategories || { income: [], expense: [] };
-    const cats = ["Food", "Transportation", "Rent", "Electricity", "Water", "Internet", "Mobile", "Shopping", "Clothing", "Medical", "Education", "Entertainment", "Family", "Children", "Car", "Home", "Subscriptions", "Loans", "Other"].concat(custom.expense || []).map(c => ({ v: c, l: c }));
-    const inc = ["Salary", "Freelance", "Business", "Commission", "Rental", "Interest", "Selling items", "Other"].concat(custom.income || []).map(c => ({ v: c, l: c }));
+    // activeBuiltinCategories(), not the raw literal list -- a built-in
+    // name the user renamed or deleted away (Settings) must actually stop
+    // showing up here, its one real job (see that method's own comment).
+    const cats = this.activeBuiltinCategories("expense").concat(custom.expense || []).map(c => ({ v: c, l: c }));
+    const inc = this.activeBuiltinCategories("income").concat(custom.income || []).map(c => ({ v: c, l: c }));
     const D = (k, l, type, extra) => Object.assign({ k, label: l, type: type || "text" }, extra || {});
     // Card-face styling fields -- shared by account/account_edit/card so
     // the three don't drift (approved from the card customizer preview:
@@ -1915,12 +1918,39 @@ class Engine {
       const clean = (f.name || "").trim();
       if (!need(clean, this.L("Give the category a name.", "اكتب اسم للفئة."))) return false;
       data.customCategories = data.customCategories || { income: [], expense: [] };
+      data.hiddenBuiltinCategories = data.hiddenBuiltinCategories || { income: [], expense: [] };
       const list = data.customCategories[kind2] || (data.customCategories[kind2] = []);
+      const hiddenList = data.hiddenBuiltinCategories[kind2] || (data.hiddenBuiltinCategories[kind2] = []);
       const idx = list.indexOf(oldName);
-      if (!need(idx !== -1, this.L("Category not found.", "الفئة مش موجودة."))) return false;
-      const others = this.builtinCategories(kind2).concat(list.filter((_, i) => i !== idx));
+      // Real gap fixed: this used to only ever find oldName in the custom
+      // list above -- a built-in category (Food, Rent, ...) has no entry
+      // there at all, so editing one (its chip in Settings now offers the
+      // exact same Edit button a custom one always had, see
+      // renderSettings()) silently failed "Category not found." Checked
+      // via activeBuiltinCategories(), not the raw builtinCategories()
+      // list, so a name already renamed/deleted away can't be "found" and
+      // edited a second time under its old, now-gone identity.
+      const isBuiltin = idx === -1 && this.activeBuiltinCategories(kind2).includes(oldName);
+      if (!need(idx !== -1 || isBuiltin, this.L("Category not found.", "الفئة مش موجودة."))) return false;
+      const others = this.activeBuiltinCategories(kind2).filter(c => c !== oldName).concat(list.filter((_, i) => i !== idx));
       if (!need(!others.some(c => c.toLowerCase() === clean.toLowerCase()), this.L("That category already exists.", "الفئة دي موجودة بالفعل."))) return false;
-      list[idx] = clean;
+      if (isBuiltin) {
+        // A built-in category's own name can't be rewritten in place --
+        // builtinCategories() is the same hardcoded list on every install,
+        // not this user's own data -- so a REAL rename (clean !== oldName)
+        // instead hides the old name (activeBuiltinCategories() stops
+        // offering it anywhere) and promotes the new name into
+        // customCategories, a real, independently editable/deletable
+        // category from here on, same as any other. A pure recolor/
+        // re-icon (clean === oldName) needs neither: the category stays
+        // built-in, only its categoryStyles entry below changes.
+        if (clean !== oldName) {
+          if (!hiddenList.includes(oldName)) hiddenList.push(oldName);
+          list.push(clean);
+        }
+      } else {
+        list[idx] = clean;
+      }
       data.categoryStyles = data.categoryStyles || {};
       // Keyed "kind|name", not bare name -- see categoryColor()'s own
       // comment on why (an expense and an income category can share a
@@ -2396,6 +2426,23 @@ class Engine {
       ? ["Salary", "Freelance", "Business", "Commission", "Rental", "Interest", "Selling items", "Other"]
       : ["Food", "Transportation", "Rent", "Electricity", "Water", "Internet", "Mobile", "Shopping", "Clothing", "Medical", "Education", "Entertainment", "Family", "Children", "Car", "Home", "Subscriptions", "Loans", "Other"];
   }
+  // Real gap fixed: a built-in category (Food, Rent, ...) used to have no
+  // way to rename, recolor or delete it -- Settings' own Categories
+  // section only ever listed customCategories, and builtinCategories()
+  // above is baked into every install's own code, not per-user data, so
+  // there was never anywhere to persist "the user renamed/deleted this
+  // one." hiddenBuiltinCategories (a data field, same shape as
+  // customCategories) is that place: this filters a hidden name back out
+  // wherever a built-in list is offered as pickable, without touching the
+  // static list itself or any transaction that already carries the old
+  // name. Shared by FORMS()' own cats/inc option lists, renderSettings()'
+  // chip list, and addCategory's/category_edit's uniqueness checks, so
+  // the three can't drift out of agreement on which built-in names are
+  // still actually live.
+  activeBuiltinCategories(kind) {
+    const hidden = ((this.state.data.hiddenBuiltinCategories || {})[kind]) || [];
+    return this.builtinCategories(kind).filter(c => !hidden.includes(c));
+  }
   // Custom income/expense categories — added from Settings, then show up
   // in every category dropdown (FORMS()) right alongside the built-in ones.
   addCategory(kind, name) {
@@ -2404,7 +2451,10 @@ class Engine {
     const data = JSON.parse(JSON.stringify(this.state.data));
     data.customCategories = data.customCategories || { income: [], expense: [] };
     const list = data.customCategories[kind] || (data.customCategories[kind] = []);
-    if (this.builtinCategories(kind).concat(list).some(c => c.toLowerCase() === clean.toLowerCase())) {
+    // activeBuiltinCategories(), not the raw builtinCategories() list --
+    // a built-in name already renamed/deleted away (Settings) is free to
+    // be picked again (see that method's own comment).
+    if (this.activeBuiltinCategories(kind).concat(list).some(c => c.toLowerCase() === clean.toLowerCase())) {
       return { ok: false, error: this.L("That category already exists.", "الفئة دي موجودة بالفعل.") };
     }
     list.push(clean);
@@ -2485,7 +2535,23 @@ class Engine {
   deleteCategory(kind, name) {
     const data = JSON.parse(JSON.stringify(this.state.data));
     data.customCategories = data.customCategories || { income: [], expense: [] };
-    data.customCategories[kind] = (data.customCategories[kind] || []).filter(c => c !== name);
+    const list = data.customCategories[kind] || [];
+    const wasCustom = list.includes(name);
+    data.customCategories[kind] = list.filter(c => c !== name);
+    // Real gap fixed: a built-in category (Food, Rent, ...) isn't in
+    // customCategories at all, so the filter above was always a silent
+    // no-op for one -- deleting it did literally nothing, with no error to
+    // say why. It can't be removed from the app's own hardcoded
+    // builtinCategories() list either (same code on every install, not
+    // this user's data) -- hidden instead, via hiddenBuiltinCategories,
+    // which activeBuiltinCategories() (and so every picker built from it)
+    // then treats exactly like it's gone. Effectively identical to a real
+    // delete for anything the user can actually observe.
+    if (!wasCustom && this.builtinCategories(kind).includes(name)) {
+      data.hiddenBuiltinCategories = data.hiddenBuiltinCategories || { income: [], expense: [] };
+      const hidden = data.hiddenBuiltinCategories[kind] || (data.hiddenBuiltinCategories[kind] = []);
+      if (!hidden.includes(name)) hidden.push(name);
+    }
     // Drop its own color/icon override too (see the "category_edit" branch
     // in submit()) -- nothing else can ever reach it once the name itself
     // is gone, so leaving it behind would just be a silently growing,

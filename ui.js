@@ -4282,6 +4282,31 @@ const UI = {
     const app = this.app, d = app.state.data;
     const custom = d.customCategories || { income: [], expense: [] };
     const catStyles = d.categoryStyles || {};
+    // Real gap fixed, requested directly by a user: this chip list used to
+    // be custom categories ONLY -- a built-in one (Food, Rent, ...) had no
+    // Edit/Remove of its own anywhere, so fixing a typo, giving it a real
+    // color, or dropping an old unused one meant it was simply stuck.
+    // app.activeBuiltinCategories() (built-ins minus whatever's since been
+    // renamed/deleted away -- see its own comment) is concatenated ahead
+    // of the custom list so every category actually offered anywhere in
+    // the app -- built-in or custom -- gets the exact same Edit/Remove
+    // chip here, not a second, differently-capable UI for each origin.
+    // "Other" is the one deliberate exception, filtered back out: it's not
+    // an ordinary category name, it's a structural fallback several
+    // aggregations (monthCategorySpend, Reports' catMap/srcMap, the
+    // Transactions "Other" filter) hardcode as the literal string every
+    // UNCATEGORIZED transaction buckets under regardless of what's in this
+    // picker (see the `category || "Other"` convention documented at each
+    // of those call sites). Real bug caught in code review: hiding or
+    // renaming it here would stop offering "Other" as an explicit pick
+    // (or rename it to something those hardcoded fallbacks never look
+    // for) while every one of those aggregations kept showing a real
+    // "Other" bucket regardless -- a name the user could then no longer
+    // select or reconcile against anywhere. Same reasoning already exists
+    // for it being excluded from customCategories (there's no add-a-
+    // second-"Other" path either); this just keeps Settings from offering
+    // a way to remove the first one.
+    const catList = (kind) => app.activeBuiltinCategories(kind).filter(c => c !== "Other").concat(custom[kind] || []);
     // Real missing feature fixed: a custom category could only ever be
     // added or deleted -- fixing a typo, or giving it a real color/icon
     // instead of the flat neutral gray + plain tag every one of them used
@@ -4312,14 +4337,14 @@ const UI = {
       }).join("") + "</div>" :
       // No body text -- the section intro right above already explains
       // what to do, so a second line here would just repeat it.
-      this.emptyState(ICON_PLUS, app.L("No custom categories yet", "مفيش فئات مخصصة لسه"));
-    const categoriesSection = '<section class="dash-section"><h2 class="section-title">' + esc(app.L("Categories")) + '</h2><p class="muted small">' + esc(app.L("Add your own income and expense categories — they show up in every entry form alongside the built-in ones.", "ضيف فئات دخل ومصروف خاصة بيك — هتظهر في كل نموذج إدخال جمب الفئات الجاهزة.")) + '</p>' +
+      this.emptyState(ICON_PLUS, app.L("No categories yet", "مفيش فئات لسه"));
+    const categoriesSection = '<section class="dash-section"><h2 class="section-title">' + esc(app.L("Categories")) + '</h2><p class="muted small">' + esc(app.L("Every category is editable here, built-in or your own — rename it, recolor it, or remove it. Add your own below; they show up in every entry form alongside the built-in ones.", "أي فئة هنا قابلة للتعديل، جاهزة كانت أو مخصصة — غيّر اسمها أو لونها أو امسحها. ضيف فئات خاصة بيك تحت — هتظهر في كل نموذج إدخال جمب الفئات الجاهزة.")) + '</p>' +
       '<div class="field-grid">' +
         '<label class="field"><span class="field-label">' + esc(app.L("Add expense category")) + '</span><div class="btn-row"><input class="input" id="newExpenseCat" type="text" placeholder="' + esc(app.L("e.g. Gym")) + '"><button class="btn btn-secondary" onclick="UI.addCategoryC(\'expense\')">' + esc(app.L("Add")) + "</button></div></label>" +
         '<label class="field"><span class="field-label">' + esc(app.L("Add income category")) + '</span><div class="btn-row"><input class="input" id="newIncomeCat" type="text" placeholder="' + esc(app.L("e.g. Bonus")) + '"><button class="btn btn-secondary" onclick="UI.addCategoryC(\'income\')">' + esc(app.L("Add")) + "</button></div></label>" +
       "</div>" +
-      '<div style="margin-top:12px"><div class="field-label" style="margin-bottom:6px">' + esc(t.expenses) + "</div>" + catChips("expense", custom.expense || []) + "</div>" +
-      '<div style="margin-top:12px"><div class="field-label" style="margin-bottom:6px">' + esc(t.income) + "</div>" + catChips("income", custom.income || []) + "</div>" +
+      '<div style="margin-top:12px"><div class="field-label" style="margin-bottom:6px">' + esc(t.expenses) + "</div>" + catChips("expense", catList("expense")) + "</div>" +
+      '<div style="margin-top:12px"><div class="field-label" style="margin-bottom:6px">' + esc(t.income) + "</div>" + catChips("income", catList("income")) + "</div>" +
     "</section>";
     // Reuses the exact same expense-category list (built-in + custom) the
     // entry forms already build, rather than a second copy of the built-in

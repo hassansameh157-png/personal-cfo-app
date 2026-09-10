@@ -1177,6 +1177,58 @@ account can be deleted, a card's Available/Limit stay consistent).
   case now reads the hero's own value + `.hero-trend` presence rather than
   counting `.chart-bar` elements -- same real behavior it always tested,
   just read off the new markup.
+- `check_builtin_categories.js` -- two real gaps reported directly by a
+  user, one with a screenshot.
+
+  **The delta-chip color.** Reports/People's net worth delta-chip (see
+  `check_dashboard_signal.js`'s own entry above) used the exact same
+  hardcoded pastel-mint-on-dark-tint pairing as Dashboard's own hero-chip
+  -- correct for Dashboard's `.hero-card`, which is a FIXED dark glass
+  panel regardless of site theme, but `.hero-card.alt` (Reports/People)
+  genuinely follows the theme, so in light mode it sat on a near-white
+  surface: a washed-out, uncomfortable-to-read mint on a barely-tinted
+  pale chip. Fixed by scoping `.hero-card.alt .delta-chip.tone-pos/-neg`
+  to the app's own already-contrast-checked `--c-pos`/`--c-neg` tokens (a
+  teal/blue in light mode, not green -- see that token's own P1
+  accessibility-fix comment) instead of a third hardcoded pairing.
+  Dashboard's own `.hero-card` chip is untouched (confirmed both stay
+  exactly as before).
+
+  **Built-in category editing.** Settings' Categories section used to
+  list custom categories ONLY -- a built-in one (Food, Rent, ...) had no
+  Edit/Remove anywhere, so fixing a typo, giving it a real color, or
+  dropping an old unused one was simply impossible; a user asked for
+  exactly this directly. `builtinCategories()` is the same hardcoded list
+  on every install (not this user's own data), so it can't be rewritten
+  in place -- `hiddenBuiltinCategories` (a new data field, same shape as
+  `customCategories`) and `Engine.activeBuiltinCategories()` (built-ins
+  minus whatever's been hidden) are the actual mechanism: a pure recolor/
+  re-icon needs neither (the category stays built-in, only its
+  `categoryStyles` entry changes), but a real RENAME hides the old name
+  and promotes the new one into `customCategories`, a real, independently
+  editable/deletable category from then on -- reusing the exact same
+  tx/budget/recurring-rule rename cascade `check_batch12.js` already
+  proved for a custom category, now confirmed to reach a built-in
+  category's own history too. Deleting an unused built-in now actually
+  hides it (previously a silent no-op, since `deleteCategory()` only ever
+  filtered `customCategories`); deleting an IN-USE one still warns first,
+  identical to a custom one, since `categoryInUse()`/`deleteCategoryC()`
+  never cared about a category's origin to begin with.
+
+  Real bug caught in code review: "Other" is not an ordinary category --
+  `monthCategorySpend`, Reports' own `catMap`/`srcMap`, and the
+  Transactions "Other" filter all hardcode it as the literal fallback
+  bucket every UNCATEGORIZED transaction buckets under
+  (`category || "Other"`), regardless of what this picker offers.
+  `categoryInUse()` only counts transactions explicitly TAGGED "Other" (a
+  different, smaller set), so hiding or renaming it here would have
+  sailed through with no in-use warning while every one of those
+  aggregations kept showing a real "Other" bucket the user could then no
+  longer select or reconcile against anywhere. Fixed by excluding "Other"
+  from the editable chip list entirely (same scope boundary it already
+  had as a name no one could add a duplicate custom category under) --
+  confirmed it stays a real, pickable category everywhere else, just with
+  no Edit/Remove exposed for it specifically.
 
 ## Adding a new one
 

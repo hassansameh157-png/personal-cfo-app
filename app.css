@@ -605,8 +605,26 @@ h1,h2,h3{font-family:var(--font-head);font-weight:600;margin:0;text-wrap:balance
 .delta-chip{display:inline-flex;align-items:center;gap:4px;border-radius:999px;padding:4px 10px 4px 8px;
   font-size:12px;font-weight:600;margin-top:8px}
 .delta-chip svg{width:11px;height:11px}
+/* Base (light mint/rose on a dark tint) -- correct for Dashboard's own
+   .hero-card, which is a FIXED dark glass panel regardless of the site's
+   theme (see .hero-card's own comment), so this never needs to change
+   with light/dark. */
 .delta-chip.tone-pos{background:rgba(112,224,180,.18);color:#8ff0c8}
 .delta-chip.tone-neg{background:rgba(255,138,138,.18);color:#ffb0b0}
+/* Real bug reported by the user (screenshot): this same pastel-on-dark-
+   tint pairing also landed on .hero-card.alt (Reports/People), which --
+   unlike .hero-card -- genuinely follows the site's own theme, so in
+   light mode it sat on a near-white surface: a washed-out mint on a
+   barely-tinted pale chip, uncomfortable to read. .hero-card.alt's own
+   surface already tracks --c-pos/--c-neg (the app's real, contrast-
+   checked tone tokens -- a teal/blue in light mode, not green, per the
+   P1 accessibility fix on --c-pos itself), so scoping the override to
+   just that context reuses those instead of inventing a third pos/neg
+   pairing. Needs no light/dark guard of its own: --c-pos/--c-neg already
+   resolve per-theme, and .hero-card.alt's surface tracks the same theme
+   in lockstep. */
+.hero-card.alt .delta-chip.tone-pos{background:var(--c-pos-bg);color:var(--c-pos)}
+.hero-card.alt .delta-chip.tone-neg{background:var(--c-neg-bg);color:var(--c-neg)}
 /* Bleeds to the card's own edges (negative margin matching .hero-card's
    own padding) so the chart reads as one continuous surface with the card
    itself, the same "breaks out of the padding" treatment .spend-today
