@@ -1017,6 +1017,24 @@ button.bar-row{width:100%;border:0;background:none;padding:6px 0;min-height:44px
 .priority-name{font-size:11px;margin-top:7px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--c-text-soft)}
 .priority-amt{font-family:var(--font-head);font-size:11px;margin-top:1px;font-variant-numeric:tabular-nums}
 
+/* ---- Accounts' own "Needs a look" chip -- same .priority-strip
+   container as People's (already self-contained, see its own comment
+   above), but a card-shaped chip instead of an avatar-ring one: a card's
+   name + a status dot, a short reason (usage % or the exact due text
+   daysUntilText() already gives every tile), and the real amount. ---- */
+.acct-priority-chip{flex:none;width:136px;padding:11px 12px;border-radius:13px;background:var(--c-surface-2);border:1px solid var(--c-line)}
+.acct-priority-chip.warn{border-color:color-mix(in srgb, var(--c-warn) 45%, var(--c-line))}
+.acct-priority-chip.neg{border-color:color-mix(in srgb, var(--c-neg) 45%, var(--c-line))}
+.acct-priority-top{display:flex;align-items:center;justify-content:space-between;gap:6px}
+.acct-priority-name{font-family:var(--font-head);font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.acct-priority-dot{width:7px;height:7px;border-radius:50%;flex:none;background:var(--c-text-faint)}
+.acct-priority-dot.warn{background:var(--c-warn)}
+.acct-priority-dot.neg{background:var(--c-neg)}
+.acct-priority-detail{font-size:10.5px;color:var(--c-text-faint);margin-top:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.acct-priority-amt{font-family:var(--font-head);font-size:13.5px;margin-top:2px;font-variant-numeric:tabular-nums}
+.acct-priority-chip.warn .acct-priority-amt{color:var(--c-warn)}
+.acct-priority-chip.neg .acct-priority-amt{color:var(--c-neg)}
+
 .sched-list{display:flex;flex-direction:column;gap:4px;margin-top:8px;padding-top:8px;border-top:1px solid var(--c-line)}
 .sched-row{display:flex;justify-content:space-between;font-size:13.5px;padding:4px 0;gap:8px}
 .sched-row span{white-space:nowrap}

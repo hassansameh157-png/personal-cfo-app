@@ -1229,6 +1229,35 @@ account can be deleted, a card's Available/Limit stay consistent).
   had as a name no one could add a duplicate custom category under) --
   confirmed it stays a real, pickable category everywhere else, just with
   no Edit/Remove exposed for it specifically.
+- `check_accounts_ledger.js` -- Accounts' own "Ledger" pass, completing
+  the redesign across every screen (Dashboard/People/Transactions/
+  Reports/Accounts). Additive next to the existing Accounts Recut
+  structure (tile groups, `ccSummary`, flip/action-sheet/sparkline/usage-
+  bar tiles) -- none of it changed, confirmed still there.
+
+  **Portfolio hero.** No page had a single "net across everything this
+  screen tracks" figure before -- deliberately its OWN figure, not a
+  duplicate of Dashboard's (Available, cash-only) or Reports' (net worth,
+  investments/receivables included too): every non-card account's
+  balance minus every card's own debt, scoped to exactly what this page
+  lists so it can never disagree with the tiles below it. Confirmed
+  against an independent recomputation, not just checked for presence.
+  Real edge case handled: a ledger of nothing but credit cards still gets
+  a real (negative) hero and a real trend -- `weeklyDerives`' own gate
+  widened from "has a balance tile" to "has any account at all", since
+  the hero needs it even when every account is a card.
+
+  **"Needs a look" strip.** Same triage-row idea People's own portfolio
+  page already established, for what actually needs a look on Accounts:
+  a card nearing its own limit (>=70%, red past 90%), or carrying a due-
+  within-7-days/overdue statement (`stmtSoon`, matching Dashboard's own
+  Needs Attention alert window exactly, not a second definition) -- none
+  of which had an aggregate view before, only buried one tile at a time.
+  Confirmed against real seed data, not an invented scenario: Platinum
+  carries a genuinely overdue statement (well under 70% usage on its
+  own, proving the two severity triggers are independent) and sorts
+  first; Titanium's statement is due this week and sorts second, flagged
+  gold not red.
 
 ## Adding a new one
 

@@ -2313,10 +2313,82 @@ const UI = {
     // they already have covers "how full" for them instead of a trend).
     // Same weeklyDerives pattern Dashboard's own hero-card sparklines use
     // (see renderDashboard()'s own comment on that) -- 5 weekly derive()
-    // cutoffs, each one's own D.bal map read per account. Only actually
-    // computed when there's at least one balance tile to spend it on.
-    const hasBalanceTiles = tileAccs.some(a => a.type !== "card");
-    const weeklyDerives = hasBalanceTiles ? [4, 3, 2, 1, 0].map(w => app.derive(app.iso(app.addDays(new Date(), -7 * w)))) : null;
+    // cutoffs, each one's own D.bal map read per account. "Ledger"
+    // redesign: also feeds the new portfolio hero's own trend chart below,
+    // so the gate is "any account at all" (was just the balance tiles this
+    // originally existed for) -- a ledger of nothing but credit cards
+    // still gets a real net-across-accounts trend (just a negative one).
+    const weeklyDerives = accs.length ? [4, 3, 2, 1, 0].map(w => app.derive(app.iso(app.addDays(new Date(), -7 * w)))) : null;
+
+    // "Ledger" redesign: a portfolio-level hero -- no page today shows one
+    // real "net across everything this screen tracks" figure with its own
+    // trend. Deliberately its own, different figure from Dashboard's own
+    // hero (Available -- cash-only accounts) and Reports' (net worth --
+    // broader still, investments/receivables included): scoped to exactly
+    // what THIS page lists, every non-card account's balance minus every
+    // card's own debt, so it can never disagree with the tiles below it.
+    const nonCardAccs = accs.filter(a => a.type !== "card");
+    const cardDebtNow = cardAccs.reduce((s, a) => s + Math.abs(Math.min(0, D.bal[a.id])), 0);
+    const nonCardNow = nonCardAccs.reduce((s, a) => s + D.bal[a.id], 0);
+    const heroNet = nonCardNow - cardDebtNow;
+    const heroSeries = weeklyDerives ? weeklyDerives.map(wd => {
+      const nonCard = nonCardAccs.reduce((s, a) => s + (wd.bal[a.id] || 0), 0);
+      const cardDebt = cardAccs.reduce((s, a) => s + Math.abs(Math.min(0, wd.bal[a.id] || 0)), 0);
+      return nonCard - cardDebt;
+    }) : [];
+    const heroChart = this.heroTrendChart(heroSeries);
+    // Same heroFirst > 0 guard every other delta chip in this app already
+    // uses (see Reports'/Dashboard's own comment on the real bug this
+    // avoids): a zero or negative starting point hides the chip instead of
+    // dividing by a fudged 1.
+    const heroFirst = heroSeries[0], heroLast = heroSeries[heroSeries.length - 1];
+    const heroDeltaPct = heroChart && heroFirst > 0 ? Math.round((heroLast - heroFirst) / heroFirst * 1000) / 10 : null;
+    const heroDeltaChip = heroChart && heroDeltaPct !== null ? '<div class="delta-chip ' + (heroDeltaPct >= 0 ? "tone-pos" : "tone-neg") + '">' +
+      svgIcon(heroDeltaPct >= 0 ? "M12 19V5M5 12l7-7 7 7" : "M12 5v14M5 12l7 7 7-7", 11) +
+      '<span class="bdi">' + (heroDeltaPct >= 0 ? "+" : "") + heroDeltaPct + "%</span> " + esc(app.L("last 5 weeks", "آخر 5 أسابيع")) +
+    "</div>" : "";
+    const heroCard = !accs.length ? "" : '<div class="hero-card alt">' +
+      '<div class="hero-label">' + esc(app.L("Net across your accounts", "صافي حساباتك")) + "</div>" +
+      '<div class="hero-value">' + app.fmt(heroNet) + "</div>" +
+      heroDeltaChip +
+      (heroChart ? '<div class="hero-chart-wrap">' + heroChart + "</div>" : "") +
+      '<div class="hero-sub-row">' +
+        '<div><div class="hero-sub-label">' + esc(app.L("Cash + bank + wallets", "كاش وبنوك ومحافظ")) + '</div><div class="hero-sub-value tone-pos">' + app.fmt(nonCardNow) + "</div></div>" +
+        '<div><div class="hero-sub-label">' + esc(app.L("Card debt", "مديونية الكروت")) + '</div><div class="hero-sub-value tone-neg">' + app.fmt(cardDebtNow) + "</div></div>" +
+        '<div><div class="hero-sub-label">' + esc(app.L("Accounts", "الحسابات")) + '</div><div class="hero-sub-value">' + accs.length + "</div></div>" +
+      "</div>" +
+    "</div>";
+
+    // "Ledger" redesign: a "Needs a look" triage row ahead of the full
+    // list, same idea People's own portfolio page already established --
+    // cards nearing their own limit, or carrying an overdue/soon-due
+    // statement, today buried one tile at a time with no way to see which
+    // ones actually need attention without opening every tile in turn.
+    // stmtSoon mirrors Dashboard's own Needs Attention alert window (see
+    // its own "before it's actually late" comment) so "soon" means the
+    // same 7 days everywhere in this app, not a second definition.
+    const stmtSoon = app.iso(app.addDays(new Date(), 7));
+    const priorityCards = cardAccs.map(a => {
+      const owed = Math.abs(Math.min(0, D.bal[a.id]));
+      const usagePct = a.limit > 0 ? Math.round(owed / a.limit * 100) : 0;
+      const stmt = D.cardStatements.filter(s => s.accountId === a.id && s.status !== "paid").sort((x, y) => x.due < y.due ? -1 : 1)[0];
+      const overdue = !!(stmt && stmt.overdue);
+      const dueSoon = !!(stmt && !stmt.overdue && stmt.due <= stmtSoon);
+      // neg (red): actually overdue, or effectively maxed out (>=90%).
+      // warn (gold): a statement due within the week, or just running high
+      // (>=70%). Anything else doesn't need a look yet.
+      const sev = (overdue || usagePct >= 90) ? "neg" : (dueSoon || usagePct >= 70) ? "warn" : null;
+      return { a, owed, usagePct, stmt, overdue, dueSoon, sev };
+    }).filter(x => x.sev)
+      .sort((x, y) => (y.sev === "neg") - (x.sev === "neg") || y.usagePct - x.usagePct)
+      .slice(0, 6);
+    const priorityStrip = !priorityCards.length ? "" : '<h2 class="section-title mobile-only" style="font-size:13px;margin-bottom:8px">' + esc(app.L("Needs a look", "محتاج نظرة")) + '</h2>' +
+      '<div class="priority-strip mobile-only">' + priorityCards.map(({ a, owed, usagePct, stmt, overdue, dueSoon, sev }) => {
+        const detail = (overdue || dueSoon) ? this.daysUntilText(stmt.due) : usagePct + app.L("% of limit used", "% من الحد مستخدم");
+        const amt = (overdue || dueSoon) ? stmt.remaining : owed;
+        return '<div class="acct-priority-chip ' + sev + '"><div class="acct-priority-top"><span class="acct-priority-name">' + esc(a.name) + '</span><span class="acct-priority-dot ' + sev + '"></span></div>' +
+          '<div class="acct-priority-detail">' + esc(detail) + '</div><div class="acct-priority-amt bdi">' + app.fmt(amt) + "</div></div>";
+      }).join("") + "</div>";
 
     const tileHtml = (a) => {
       const bal = D.bal[a.id];
@@ -2437,7 +2509,7 @@ const UI = {
 
     return this.tabHeader(t.accounts, accs.length + app.L(" accounts · transfers never hit income or expense", " حساب · التحويلات لا تُحسب إيراداً ولا مصروفاً"),
       [[t.aAccount, "UI.openModal('account')"], [t.aCard, "UI.openModal('card')"], [t.transfer, "UI.openModal('transfer')"]]) +
-      ccSummary + tileBlocks + rowsBlock;
+      heroCard + priorityStrip + ccSummary + tileBlocks + rowsBlock;
   },
   // Opens the account-edit form pre-filled from the account itself -- same
   // shape (id/name/bank/opening/limit/color/color2/pattern/textColor) the
