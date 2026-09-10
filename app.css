@@ -926,6 +926,49 @@ button.bar-row{width:100%;border:0;background:none;padding:6px 0;min-height:44px
 .person-avatar.lg{width:52px;height:52px;font-size:22px}
 .person-tag{display:inline-flex;align-items:center;gap:3px}
 
+/* ---- People "Ledger" redesign: a status ring around the existing avatar
+   (conic-gradient, so a settled person with no --ring-c set just shows the
+   plain --c-line track -- no color implies no status to flag) instead of a
+   badge stuck on top of it. Wraps .person-avatar rather than replacing it,
+   so every existing rule above (including the .sm/.lg size variants) still
+   applies unchanged -- this only adds the ring around whatever avatar
+   already renders. */
+.avatar-ring{display:inline-flex;border-radius:50%;padding:2.5px;flex:none;
+  background:conic-gradient(var(--ring-c,var(--c-line)) 100%, var(--c-line) 0)}
+.avatar-ring.sm{padding:2px}
+.avatar-ring.lg{padding:3px}
+/* Small uppercase label under a person's own net amount ("owes you" / "you
+   owe" / "settled") -- same role catBar()'s own budget suffix plays
+   elsewhere: the number alone already carries sign/color, this just names
+   what it means without the reader doing the "positive = ?" translation
+   themselves. */
+.amt-tag{display:block;font-size:9.5px;letter-spacing:.05em;text-transform:uppercase;
+  color:var(--c-text-faint);font-weight:500;margin-top:2px}
+
+/* ---- Priority strip: a horizontal-scroll ring-avatar row for whoever
+   most needs a look right now (overdue, due soon, or simply the largest
+   open balance) -- triage before the full list, the same "surface what
+   needs attention first" instinct Dashboard's own Needs Attention and
+   People's own urgency-sort already share, just given a glanceable visual
+   form here instead of a card list. ---- */
+/* display:none base + its own @media override below, not a bare
+   display:flex relying on .mobile-only's own display:none to hide this at
+   desktop widths -- real bug caught in review: two same-specificity class
+   selectors (.priority-strip, .mobile-only) fighting over one element's
+   display property resolve by SOURCE ORDER, not by which one "means" the
+   element hidden -- and .priority-strip's own flex rule sits later in this
+   file than .mobile-only's, so it silently won on every viewport, desktop
+   included, defeating the .mobile-only class already sitting right next to
+   it in the markup. Self-contained like this, .priority-strip never
+   depends on winning a tie against another class for its own visibility. */
+.priority-strip{display:none;gap:16px;overflow-x:auto;padding:2px 2px 6px}
+@media (max-width:780px){ .priority-strip{display:flex} }
+.priority-chip{flex:none;width:62px;text-align:center}
+.priority-chip .avatar-ring{width:56px;height:56px;margin:0 auto}
+.priority-chip .person-avatar{width:100%;height:100%;font-size:20px}
+.priority-name{font-size:11px;margin-top:7px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--c-text-soft)}
+.priority-amt{font-family:var(--font-head);font-size:11px;margin-top:1px;font-variant-numeric:tabular-nums}
+
 .sched-list{display:flex;flex-direction:column;gap:4px;margin-top:8px;padding-top:8px;border-top:1px solid var(--c-line)}
 .sched-row{display:flex;justify-content:space-between;font-size:13.5px;padding:4px 0;gap:8px}
 .sched-row span{white-space:nowrap}

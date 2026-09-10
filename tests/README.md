@@ -1029,6 +1029,61 @@ account can be deleted, a card's Available/Limit stay consistent).
   no-`render()` convention `setPersonRelation()` already established --
   a full render() here would wipe out an amount/date/description already
   typed but not yet submitted, exactly the reason that convention exists.
+- `check_people_ledger.js` -- the People screen's "Ledger" redesign. After
+  the user rejected several earlier rounds of alternative concepts as "not
+  what I pictured" with no concrete reference to work from, this is a
+  single committed direction (not more alternatives), pushed for real
+  visual craft: a private-wealth-management feel with a status ring around
+  every avatar, a portfolio-level hero, and a "Needs a look" priority strip
+  -- all additive next to the existing People Recut structure (`.person-card`,
+  `.card-row-meta`, the count-summary tile, search, settled-collapse...),
+  none of which changed, so the whole existing suite kept passing unmodified.
+
+  **Portfolio hero.** The exact same `.hero-card.alt` treatment Person
+  Detail's own page already uses for one person's net position, reused
+  here for everyone's combined position -- Owed to me / I owe / a people
+  count in the same sub-row layout, so the list and detail pages read as
+  one system rather than a plain list leading into a nicely-designed
+  detail page.
+
+  **Status rings.** `ringColor()` -- new, shared logic between the list and
+  Person Detail's own header avatar -- picks a ring color: overdue (a real
+  overdue plan installment or plain loan, regardless of which direction
+  the balance runs) always wins over a merely-positive or merely-negative
+  net, which only wins over a genuinely settled (net ~0, nothing overdue)
+  person, who gets a plain neutral ring. Confirmed against real seed data,
+  not an invented scenario: Hazem carries a large positive net (owed to
+  me) *and* a genuinely overdue MacBook Pro installment, so his ring
+  correctly reads as overdue (rose), not positive (teal) -- and he
+  correctly appears in the priority strip despite an overall healthy
+  balance.
+
+  **Priority strip.** A horizontal-scroll triage row ahead of the full
+  list -- overdue people float first, then largest open balance, both
+  already true of `activeRows`' own existing sort.
+
+  Two real bugs caught in code review before this shipped, both covered by
+  dedicated cases here:
+  1. **`.priority-strip{display:flex}` silently defeated `.mobile-only`'s
+     own `display:none` on desktop.** Two same-specificity class selectors
+     (`.priority-strip`, `.mobile-only`) setting the same element's
+     `display` resolve by *source order*, not by which one is meant to win
+     -- and `.priority-strip`'s own rule sat later in app.css, so it won on
+     every viewport, desktop included, showing the "Needs a look" strip
+     next to the desktop table it was never meant to appear beside. Fixed
+     by making `.priority-strip` self-contained (`display:none` base + its
+     own `@media (max-width:780px)` override), never depending on winning
+     a tie against another class for its own visibility.
+  2. **An empty `--ring-c:` doesn't trigger CSS's `var()` fallback.**
+     `ringColor()` originally returned `""` for a settled person, written
+     into the inline style as `--ring-c:` (a valid, if empty, custom
+     property) -- but `var(--ring-c, var(--c-line))` only substitutes the
+     fallback when the property is *unset or invalid*, not merely empty,
+     so the ring's `conic-gradient()` got a missing color argument, invalid
+     at computed-value time, and the whole background dropped instead of
+     showing the intended neutral ring. Fixed by having `ringColor()`
+     always return a real value (`var(--c-line)` for "nothing to flag"),
+     removing the reliance on the fallback trick entirely.
 
 ## Adding a new one
 

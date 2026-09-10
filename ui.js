@@ -3074,12 +3074,55 @@ const UI = {
   },
   renderPeople(D, t) {
     const app = this.app, S = app.state, d = app.state.data;
+    // "Ledger" redesign: an overdue flag per person (any overdue plan
+    // installment, or any overdue plain loan in either direction) feeds
+    // the new status ring around their avatar and the priority strip below
+    // -- computed once up front (allLoanRows() is a full scan) rather than
+    // re-filtering per person in the row map.
+    const overduePeople = new Set(app.allLoanRows("payable").concat(app.allLoanRows("receivable"))
+      .filter(r => r.status === "overdue").map(r => r.personId));
     const rows = d.people.map(p => {
       const planIn = D.plans.filter(x => x.personId === p.id && x.direction === "in").reduce((s, x) => s + x.remaining, 0);
       const planOut = D.plans.filter(x => x.personId === p.id && x.direction === "out").reduce((s, x) => s + x.remaining, 0);
       const r = Math.max(0, D.recv[p.id] || 0) + planIn, y = Math.max(0, D.pay[p.id] || 0) + planOut;
-      return { p, r, y, net: r - y };
+      const overdue = overduePeople.has(p.id) || D.plans.some(x => x.personId === p.id && x.overdue > 0);
+      return { p, r, y, net: r - y, overdue };
     }).sort((a, b) => Math.abs(b.net) - Math.abs(a.net));
+    // Ring color for a person's avatar: overdue always wins (needs a look
+    // regardless of which direction the balance runs), otherwise the sign
+    // of net -- settled (net ~0, nothing overdue) gets no ring color at
+    // all (avatar-ring's own CSS falls back to a plain --c-line track),
+    // same "no color implies nothing to flag" reasoning the tile-tint
+    // convention on Dashboard's own position tiles already follows.
+    // Always a real value (var(--c-line) for "nothing to flag"), never "" --
+    // real bug caught in review: an inline `--ring-c:` with nothing after
+    // the colon is still a VALID (empty) custom-property declaration, and
+    // CSS's var(--ring-c, fallback) only substitutes the fallback when the
+    // property is unset/invalid -- not when it's set-but-empty. An empty
+    // value here left .avatar-ring's own conic-gradient() with a missing
+    // color argument, invalid at computed-value time, so the *entire*
+    // background dropped instead of showing the intended plain line-color
+    // ring the comment on .avatar-ring's own CSS promises.
+    const ringColor = (row) => row.overdue ? "var(--c-neg)" : row.net > 0.001 ? "var(--c-pos)" : row.net < -0.001 ? "var(--c-neg)" : "var(--c-line)";
+
+    // "Ledger" redesign: a portfolio-level hero, the same .hero-card.alt
+    // treatment Person Detail's own page already uses for one person's net
+    // position -- here it's everyone's, so the two pages read as one
+    // system rather than the list feeling like a plainer, un-designed lead-
+    // in to a nicely-designed detail page. Built from the full `rows` (not
+    // filteredRows) -- a portfolio total that shifted every keystroke of a
+    // search would be more confusing than reassuring, same reasoning
+    // Dashboard's own hero-card never reacts to a Transactions filter.
+    const heroOwed = rows.reduce((s, row) => s + row.r, 0), heroOwe = rows.reduce((s, row) => s + row.y, 0);
+    const heroCard = !rows.length ? "" : '<div class="hero-card alt">' +
+      '<div class="hero-label">' + esc(app.L("Net position across everyone", "صافي موقفك مع الكل")) + '</div>' +
+      '<div class="hero-value ' + (heroOwed - heroOwe >= 0 ? "tone-pos" : "tone-neg") + '">' + app.fmt(heroOwed - heroOwe) + "</div>" +
+      '<div class="hero-sub-row">' +
+        '<div><div class="hero-sub-label">' + esc(t.owesMe) + '</div><div class="hero-sub-value tone-pos">' + app.fmt(heroOwed) + "</div></div>" +
+        '<div><div class="hero-sub-label">' + esc(t.iOwe) + '</div><div class="hero-sub-value tone-neg">' + app.fmt(heroOwe) + "</div></div>" +
+        '<div><div class="hero-sub-label">' + esc(app.L("Relationships", "الناس")) + '</div><div class="hero-sub-value">' + rows.length + "</div></div>" +
+      "</div>" +
+    "</div>";
 
     // 42 (People Recut): name/phone/notes search -- its own S.peopleQ, not
     // Transactions' filt.q, so searching here never leaks into (or gets
@@ -3118,6 +3161,22 @@ const UI = {
     const settledRows = filteredRows.filter(row => Math.abs(row.net) <= 0.001);
     const settledCollapsed = !q && !this._peopleSettledExpanded && settledRows.length > 0;
 
+    // "Ledger" redesign: a triage strip ahead of the full list -- overdue
+    // people float first (same tie-break priority Dashboard's own alerts
+    // give an overdue item), then whoever's carrying the largest open
+    // balance, since activeRows is already sorted that way from `rows`.
+    // Purely a shortcut to the same people the list below already shows in
+    // full, so it's built from activeRows (mobile-only usage, matching
+    // every other mobile-only affordance on this page) rather than a
+    // separate query.
+    const priorityRows = activeRows.slice().sort((a, b) => (b.overdue - a.overdue) || (Math.abs(b.net) - Math.abs(a.net))).slice(0, 6);
+    const priorityStrip = !priorityRows.length ? "" : '<h2 class="section-title mobile-only" style="font-size:13px;margin-bottom:8px">' + esc(app.L("Needs a look", "محتاج نظرة")) + '</h2>' +
+      '<div class="priority-strip mobile-only">' + priorityRows.map(row => {
+        const ring = ringColor(row);
+        return '<div class="priority-chip"><span class="avatar-ring" style="--ring-c:' + ring + '">' + this.personAvatar(row.p) + "</span>" +
+          '<div class="priority-name">' + esc(row.p.name) + '</div><div class="priority-amt" style="color:' + (ring || "var(--c-text-faint)") + '">' + app.fmt(Math.abs(row.net)) + "</div></div>";
+      }).join("") + "</div>";
+
     // "Add a balance for this person" — this is just the existing
     // receivable/payable form pre-filled with who it's for, reachable
     // directly from the person instead of only from Receivables & Payables.
@@ -3151,8 +3210,15 @@ const UI = {
 
     const cardHtml = (row) => { const { p, r, y, net } = row;
       const lastActivity = this.personLastActivityText(p.id);
-      return '<div class="card-row person-card" style="border-inline-start:4px solid ' + this.personColor(p) + '"><div class="card-row-top"><div class="person-id">' + this.personAvatar(p) + '<div><button class="link-btn card-row-title" onclick="UI.viewPerson(\'' + p.id + '\')">' + esc(p.name) + '</button><div class="card-row-sub">' + this.personTag(p) + (p.phone ? " · " + esc(p.phone) + this.personPhoneLinks(p.phone) : "") + "</div></div></div>" +
-      '<div class="card-row-amt ' + (net >= 0 ? "tone-pos" : "tone-neg") + '">' + app.fmt(net) + "</div></div>" +
+      // "Ledger" redesign: the avatar now sits inside a status ring
+      // (ringColor(row), see its own comment above) instead of plain, and
+      // the net amount carries a small "owes you"/"you owe"/"settled" tag
+      // underneath it -- same role a category bar's budget suffix plays,
+      // naming what the number means instead of leaving the reader to
+      // translate sign/color themselves.
+      const amtTag = net > 0.001 ? app.L("owes you", "عنده ليك") : net < -0.001 ? app.L("you owe", "عليك له") : app.L("settled", "متسدد");
+      return '<div class="card-row person-card" style="border-inline-start:4px solid ' + this.personColor(p) + '"><div class="card-row-top"><div class="person-id"><span class="avatar-ring" style="--ring-c:' + ringColor(row) + '">' + this.personAvatar(p) + '</span><div><button class="link-btn card-row-title" onclick="UI.viewPerson(\'' + p.id + '\')">' + esc(p.name) + '</button><div class="card-row-sub">' + this.personTag(p) + (p.phone ? " · " + esc(p.phone) + this.personPhoneLinks(p.phone) : "") + "</div></div></div>" +
+      '<div class="card-row-amt ' + (net >= 0 ? "tone-pos" : "tone-neg") + '">' + app.fmt(net) + '<span class="amt-tag">' + esc(amtTag) + "</span></div></div>" +
       '<div class="card-row-meta"><span>' + esc(t.owesMe) + ": " + app.fmt(r) + '</span><span>' + esc(t.iOwe) + ": " + app.fmt(y) + "</span>" + (lastActivity ? "<span>" + esc(lastActivity) + "</span>" : "") + "</div>" +
       '<div class="btn-row wrap"><button class="link-btn small" onclick="UI.viewPersonTx(\'' + p.id + '\')">' + esc(t.viewTx) + "</button>" + primaryAction(row) + "</div></div>";
     };
@@ -3163,7 +3229,7 @@ const UI = {
         : '<h2 class="section-title mobile-only">' + esc(app.L("Settled", "متسدد")) + '</h2><div class="card-list mobile-only">' + settledRows.map(cardHtml).join("") + "</div>");
 
     return this.tabHeader(t.people, d.people.length + app.L(" people · balances computed from the ledger", " شخص · الأرصدة محسوبة من السجل"), [[t.aPerson, "UI.openModal('person')"]]) +
-      summaryTile + searchRow + table + cards + settledSection;
+      heroCard + priorityStrip + summaryTile + searchRow + table + cards + settledSection;
   },
 
   // ---- Person detail (everything tied to one person, in one place) --------
@@ -3185,6 +3251,15 @@ const UI = {
     const r = Math.max(0, D.recv[p.id] || 0) + planIn.reduce((s, x) => s + x.remaining, 0);
     const y = Math.max(0, D.pay[p.id] || 0) + planOut.reduce((s, x) => s + x.remaining, 0);
     const net = r - y;
+    // Same ring-color rule as the People list (see its own ringColor()
+    // comment) -- overdue wins regardless of direction, otherwise the
+    // sign of net.
+    const overdue = planIn.concat(planOut).some(x => x.overdue > 0) ||
+      app.loanRows(p.id, "payable").concat(app.loanRows(p.id, "receivable")).some(x => x.status === "overdue");
+    // Always a real value, never "" -- see the People list's own ringColor()
+    // comment for the real bug this avoids (an empty custom-property value
+    // does not trigger CSS's var() fallback the way an unset one does).
+    const ringColor = overdue ? "var(--c-neg)" : net > 0.001 ? "var(--c-pos)" : net < -0.001 ? "var(--c-neg)" : "var(--c-line)";
 
     // .hero-card.alt -- same page-level "headline number" treatment
     // Forecast/Cash Flow already give their own single most important
@@ -3322,7 +3397,7 @@ const UI = {
     // Same avatar as the People list, just bigger -- a colored header
     // instead of the plain "Hazem" / "Sameh Hassan" title every person used
     // to share the exact same look under.
-    const header = '<div class="tab-head"><div class="person-id">' + this.personAvatar(p, "lg") +
+    const header = '<div class="tab-head"><div class="person-id"><span class="avatar-ring lg" style="--ring-c:' + ringColor + '">' + this.personAvatar(p, "lg") + "</span>" +
       '<div><h1 class="tab-title">' + esc(p.name) + '</h1><div class="tab-sub">' + sub + "</div></div></div></div>";
 
     return backBtn + header + summary + actions +
