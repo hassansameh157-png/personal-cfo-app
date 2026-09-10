@@ -4101,7 +4101,11 @@ const UI = {
     const freqLabel = { daily: app.L("Daily"), weekly: app.L("Weekly"), monthly: app.L("Monthly"), quarterly: app.L("Quarterly"), yearly: app.L("Yearly") };
     const cards = d.recurring.map(r => {
       const next = app.nextOccurrence(r, new Date());
-      const editArgs = JSON.stringify({ id: r.id, name: r.name, type: r.type, amount: r.amount, accountId: r.accountId, category: r.category, freq: r.freq, day: r.day }).replace(/"/g, "&quot;");
+      // month: same fallback nextOccurrence() itself uses for a rule saved
+      // before this field existed (#30) -- the current month -- so the
+      // edit form's own pre-filled value always matches what "Next" above
+      // is actually computed from, not a stale/undefined blank.
+      const editArgs = JSON.stringify({ id: r.id, name: r.name, type: r.type, amount: r.amount, accountId: r.accountId, category: r.category, freq: r.freq, month: r.month != null ? r.month : new Date().getMonth(), day: r.day }).replace(/"/g, "&quot;");
       const canDelete = app.recurringCanDelete(r.id);
       return '<div class="card-row"><div class="card-row-top"><div><div class="card-row-title">' + esc(r.name) + '</div><div class="card-row-sub">' + freqLabel[r.freq] + " · " + esc(t.nextDate) + " " + app.dshort(next) + "</div></div>" +
         '<div class="card-row-amt ' + (r.type === "income" ? "tone-pos" : "tone-neg") + '">' + app.fmtS(r.type === "income" ? r.amount : -r.amount) + "</div></div>" +

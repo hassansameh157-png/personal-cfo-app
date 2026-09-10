@@ -2476,7 +2476,17 @@ class Engine {
     const base = new Date(from);
     if (r.freq === "weekly") { return this.addDays(base, 7); }
     if (r.freq === "daily") { return this.addDays(base, 1); }
-    if (r.freq === "yearly") { const x = new Date(base.getFullYear(), 0, r.day || 1); x.setMonth(new Date(base).getMonth()); if (x < base) x.setFullYear(x.getFullYear() + 1); return x; }
+    // Real bug fixed (#30): this used to read x.setMonth(new
+    // Date(base).getMonth()) -- base's OWN month, at whatever moment this
+    // happens to be called -- instead of a real month stored on the rule
+    // itself, so a yearly rule's computed "next occurrence" silently
+    // drifted to match whichever month you happened to check Forecast/
+    // Dashboard in, rather than staying pinned to a real anniversary
+    // month. r.month (0-11, set via FORMS()' own Month field) fixes that;
+    // falls back to base.getMonth() only for a rule saved before this
+    // field existed, so an untouched legacy rule keeps behaving exactly
+    // as it already did rather than jumping to a new month on its own.
+    if (r.freq === "yearly") { const month = r.month != null ? r.month : base.getMonth(); const x = new Date(base.getFullYear(), month, r.day || 1); if (x < base) x.setFullYear(x.getFullYear() + 1); return x; }
     const step = r.freq === "quarterly" ? 3 : 1;
     let x = new Date(base.getFullYear(), base.getMonth(), Math.min(r.day || 1, 28));
     while (x < base) x = this.addMonths(x, step);
@@ -2893,6 +2903,15 @@ class Engine {
     // showing up here, its one real job (see that method's own comment).
     const cats = this.activeBuiltinCategories("expense").concat(custom.expense || []).map(c => ({ v: c, l: c }));
     const inc = this.activeBuiltinCategories("income").concat(custom.income || []).map(c => ({ v: c, l: c }));
+    // Real bug fixed (#30): a "yearly" recurring rule stored only a day of
+    // month, never a month -- nextOccurrence()'s own yearly branch faked
+    // one by reading whatever month `from` (usually "right now") happened
+    // to be at call time, so the computed next occurrence silently drifted
+    // to the CURRENT month instead of a real, fixed annual month. Locale-
+    // aware month names (toLocaleDateString, same convention Cash Flow's
+    // own month label already uses) rather than a hand-typed Arabic array
+    // that could drift from the app's real date formatting elsewhere.
+    const monthOptions = Array.from({ length: 12 }, (_, m) => ({ v: String(m), l: new Date(2000, m, 1).toLocaleDateString(this.state.lang === "ar" ? "ar-EG" : "en-GB", { month: "long" }) }));
     const D = (k, l, type, extra) => Object.assign({ k, label: l, type: type || "text" }, extra || {});
     // Card-face styling fields -- shared by account/account_edit/card so
     // the three don't drift (approved from the card customizer preview:
@@ -3075,12 +3094,12 @@ class Engine {
       // an existing payment against an already-finished group possible.
       group_payment: { title: this.L("Record contribution"), fields: [D("date", t.date, "date"), D("groupId", "Group", "select", { options: groupOptions }), D("amount", t.amount, "number"), D("accountId", "Paid from", "select", { options: accs })] },
       group_payout: { title: this.L("Record payout received"), fields: [D("date", t.date, "date"), D("groupId", "Group", "select", { options: groupOptions }), D("amount", t.amount, "number"), D("accountId", "Into account", "select", { options: accs })] },
-      recurring: { title: t.aRecurring, fields: [D("name", t.name, "text"), D("type", t.type, "select", { options: [{ v: "income", l: "Income" }, { v: "expense", l: "Expense" }] }), D("amount", t.amount, "number"), D("accountId", t.account, "select", { options: accs }), D("category", t.category, "select", { options: inc.concat(cats) }), D("freq", t.frequency, "select", { options: [{ v: "daily", l: "Daily" }, { v: "weekly", l: "Weekly" }, { v: "monthly", l: "Monthly" }, { v: "quarterly", l: "Quarterly" }, { v: "yearly", l: "Yearly" }] }), D("day", "Day of month", "number")] },
+      recurring: { title: t.aRecurring, fields: [D("name", t.name, "text"), D("type", t.type, "select", { options: [{ v: "income", l: "Income" }, { v: "expense", l: "Expense" }] }), D("amount", t.amount, "number"), D("accountId", t.account, "select", { options: accs }), D("category", t.category, "select", { options: inc.concat(cats) }), D("freq", t.frequency, "select", { options: [{ v: "daily", l: "Daily" }, { v: "weekly", l: "Weekly" }, { v: "monthly", l: "Monthly" }, { v: "quarterly", l: "Quarterly" }, { v: "yearly", l: "Yearly" }] }), D("month", this.L("Month (yearly only)", "الشهر (للقواعد السنوية بس)"), "select", { options: monthOptions }), D("day", "Day of month", "number")] },
       // Real bug fix: a recurring rule had no edit or delete path anywhere
       // in the app once created -- a typo'd amount/account or a cancelled
       // subscription was permanent. Same fields as "recurring" above, just
       // pre-filled from the existing rule.
-      recurring_edit: { title: this.L("Edit recurring rule", "تعديل القاعدة المتكررة"), fields: [D("name", t.name, "text"), D("type", t.type, "select", { options: [{ v: "income", l: "Income" }, { v: "expense", l: "Expense" }] }), D("amount", t.amount, "number"), D("accountId", t.account, "select", { options: accs }), D("category", t.category, "select", { options: inc.concat(cats) }), D("freq", t.frequency, "select", { options: [{ v: "daily", l: "Daily" }, { v: "weekly", l: "Weekly" }, { v: "monthly", l: "Monthly" }, { v: "quarterly", l: "Quarterly" }, { v: "yearly", l: "Yearly" }] }), D("day", "Day of month", "number")] },
+      recurring_edit: { title: this.L("Edit recurring rule", "تعديل القاعدة المتكررة"), fields: [D("name", t.name, "text"), D("type", t.type, "select", { options: [{ v: "income", l: "Income" }, { v: "expense", l: "Expense" }] }), D("amount", t.amount, "number"), D("accountId", t.account, "select", { options: accs }), D("category", t.category, "select", { options: inc.concat(cats) }), D("freq", t.frequency, "select", { options: [{ v: "daily", l: "Daily" }, { v: "weekly", l: "Weekly" }, { v: "monthly", l: "Monthly" }, { v: "quarterly", l: "Quarterly" }, { v: "yearly", l: "Yearly" }] }), D("month", this.L("Month (yearly only)", "الشهر (للقواعد السنوية بس)"), "select", { options: monthOptions }), D("day", "Day of month", "number")] },
       // Plain reminders -- no amount, no account, on purpose: see
       // submit()'s "todo"/"todo_edit" branches, which never call push(),
       // so this can never touch a balance or show up in derive() output.
@@ -3112,6 +3131,11 @@ class Engine {
     // pre-fill a real person by default — this is one of the agreed P1 items,
     // left as a documented follow-up rather than silently changed here.
     const form = { date: this.today(), freq: "monthly", count: 12, down: 0, balloon: 0, type: kind === "recurring" ? "expense" : undefined, day: 1,
+      // #30: a new yearly rule defaults to the CURRENT month, not the
+      // generic "first option" fallback below (January) every select
+      // field without its own default gets -- far more likely to be near
+      // the actual renewal month the user is about to set up.
+      month: new Date().getMonth(),
       relation: kind === "person" ? "other" : undefined,
       // 38 (Accounts Recut): "account"/"card" get a rotating auto-pick
       // (see nextAccountAutoColor()) instead of the same flat grey/navy
@@ -3599,13 +3623,17 @@ class Engine {
       }
     } else if (k === "recurring") {
       if (!need(f.name && this.n(f.amount) > 0, "Name and amount are required.")) return false;
-      data.recurring.push({ id: this.uid("r"), name: f.name, type: f.type, amount: N("amount"), accountId: f.accountId, category: f.category, freq: f.freq, day: Math.max(1, Math.min(28, Math.round(N("day")) || 1)) });
+      // month (0-11): only actually read by nextOccurrence() for a yearly
+      // rule (see its own comment, #30), same "always saved, only some
+      // frequencies care" convention `day` itself already follows here.
+      data.recurring.push({ id: this.uid("r"), name: f.name, type: f.type, amount: N("amount"), accountId: f.accountId, category: f.category, freq: f.freq, month: Math.max(0, Math.min(11, Math.round(N("month")) || 0)), day: Math.max(1, Math.min(28, Math.round(N("day")) || 1)) });
       note = "Recurring rule " + f.name;
     } else if (k === "recurring_edit") {
       if (!need(f.name && this.n(f.amount) > 0, "Name and amount are required.")) return false;
       const r = data.recurring.find(x => x.id === f.id);
       if (!need(r, "Pick a recurring rule.")) return false;
       r.name = f.name; r.type = f.type; r.amount = N("amount"); r.accountId = f.accountId; r.category = f.category; r.freq = f.freq;
+      r.month = Math.max(0, Math.min(11, Math.round(N("month")) || 0));
       r.day = Math.max(1, Math.min(28, Math.round(N("day")) || 1));
       note = "Updated recurring rule " + r.name;
     } else if (k === "todo") {
@@ -8226,7 +8254,11 @@ const UI = {
     const freqLabel = { daily: app.L("Daily"), weekly: app.L("Weekly"), monthly: app.L("Monthly"), quarterly: app.L("Quarterly"), yearly: app.L("Yearly") };
     const cards = d.recurring.map(r => {
       const next = app.nextOccurrence(r, new Date());
-      const editArgs = JSON.stringify({ id: r.id, name: r.name, type: r.type, amount: r.amount, accountId: r.accountId, category: r.category, freq: r.freq, day: r.day }).replace(/"/g, "&quot;");
+      // month: same fallback nextOccurrence() itself uses for a rule saved
+      // before this field existed (#30) -- the current month -- so the
+      // edit form's own pre-filled value always matches what "Next" above
+      // is actually computed from, not a stale/undefined blank.
+      const editArgs = JSON.stringify({ id: r.id, name: r.name, type: r.type, amount: r.amount, accountId: r.accountId, category: r.category, freq: r.freq, month: r.month != null ? r.month : new Date().getMonth(), day: r.day }).replace(/"/g, "&quot;");
       const canDelete = app.recurringCanDelete(r.id);
       return '<div class="card-row"><div class="card-row-top"><div><div class="card-row-title">' + esc(r.name) + '</div><div class="card-row-sub">' + freqLabel[r.freq] + " · " + esc(t.nextDate) + " " + app.dshort(next) + "</div></div>" +
         '<div class="card-row-amt ' + (r.type === "income" ? "tone-pos" : "tone-neg") + '">' + app.fmtS(r.type === "income" ? r.amount : -r.amount) + "</div></div>" +

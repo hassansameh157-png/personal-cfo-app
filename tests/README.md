@@ -1258,6 +1258,36 @@ account can be deleted, a card's Available/Limit stay consistent).
   own, proving the two severity triggers are independent) and sorts
   first; Titanium's statement is due this week and sorts second, flagged
   gold not red.
+- `check_recurring_yearly.js` -- a real, long-pending bug (task #30): a
+  yearly recurring rule stored only a day of month, never a month at all.
+  `Engine.nextOccurrence()`'s own yearly branch faked one via
+  `x.setMonth(new Date(base).getMonth())` -- `base`'s OWN month, at
+  whatever moment this happened to be called -- so the computed "next
+  occurrence" silently drifted to match whichever month you happened to
+  check Forecast/Dashboard in, instead of staying pinned to a real fixed
+  annual month. A December-25th yearly rule, checked from January, July
+  and October in turn, used to come back December/July/October
+  respectively -- now comes back December every time, confirmed directly
+  against `nextOccurrence()`, not just eyeballed on a screen.
+
+  Fixed with a real `month` field (FORMS()' own locale-aware 12-name
+  select, same `toLocaleDateString` convention Cash Flow's own month
+  label already uses, not a hand-typed Arabic array that could drift from
+  the app's real date formatting elsewhere) -- `nextOccurrence()` reads
+  `r.month` directly, falling back to `base.getMonth()` (the exact
+  previous behavior) only for a rule saved before this field existed, so
+  an untouched legacy rule keeps behaving exactly as it already did
+  rather than jumping to a new month on its own. Confirmed against the
+  real seed data's own pre-existing "Streaming bundle" rule, which
+  genuinely has no stored month -- still returns a valid date, not a
+  crash. The year-rollover case (checked after this year's date has
+  already passed) still correctly advances to next year, not stuck in
+  the past. New rules default to the current month rather than the
+  generic "first option" every other select field without its own
+  default falls back to (January) -- far more likely to be near the real
+  renewal month being set up. End-to-end: a real yearly rule created
+  through the actual modal persists the chosen month, `nextOccurrence()`
+  agrees with it, and re-opening Edit shows the same month pre-filled.
 
 ## Adding a new one
 
