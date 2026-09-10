@@ -1128,9 +1128,6 @@ button.bar-row{width:100%;border:0;background:none;padding:6px 0;min-height:44px
   :root:not([data-theme="light"]) .tag-chip{background:hsl(var(--tag-h) 40% 22%);color:hsl(var(--tag-h) 65% 80%)}
 }
 :root[data-theme="dark"] .tag-chip{background:hsl(var(--tag-h) 40% 22%);color:hsl(var(--tag-h) 65% 80%)}
-.proj-bar{height:8px;border-radius:999px;background:var(--c-surface-3);overflow:hidden;margin-top:14px}
-.proj-fill{height:100%}
-
 .chart-cols{display:flex;align-items:flex-end;gap:10px;height:120px;padding:0 4px 4px}
 .chart-col{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%}
 .chart-bar{width:70%;border-radius:6px 6px 0 0;min-height:4px;cursor:pointer}
@@ -7901,6 +7898,40 @@ const UI = {
   renderSavingsGoals(D, t) {
     const app = this.app;
     const goals = D.savingsGoals.slice().sort((a, b) => (a.due || "9999") < (b.due || "9999") ? -1 : 1);
+    // "Ledger" redesign: a portfolio hero -- this page never had a single
+    // "how much have I saved, across every goal" figure, only a scroll of
+    // individual cards. Same heroTrendChart()/delta-chip language every
+    // other "Ledger" hero already carries; the trend itself reuses
+    // Engine.derive(cutoff)'s own savingsGoalStates() (the exact function
+    // D.savingsGoals is built from) at 5 weekly cutoffs, the same
+    // weeklyDerives pattern Accounts'/Dashboard's own hero trends already
+    // established, rather than a second way to compute "saved so far".
+    const weeklyDerives = D.savingsGoals.length ? [4, 3, 2, 1, 0].map(w => app.derive(app.iso(app.addDays(new Date(), -7 * w)))) : null;
+    const heroSeries = weeklyDerives ? weeklyDerives.map(wd => wd.savingsGoals.reduce((s, g) => s + g.saved, 0)) : [];
+    const heroChart = this.heroTrendChart(heroSeries);
+    // Same heroFirst > 0 guard every other delta chip in this app already
+    // uses (see Reports'/Dashboard's own comment on the real bug this
+    // avoids): a zero starting point (no goals yet 5 weeks ago) hides the
+    // chip instead of dividing by a fudged 1.
+    const heroFirst = heroSeries[0], heroLast = heroSeries[heroSeries.length - 1];
+    const heroDeltaPct = heroChart && heroFirst > 0 ? Math.round((heroLast - heroFirst) / heroFirst * 1000) / 10 : null;
+    const heroDeltaChip = heroChart && heroDeltaPct !== null ? '<div class="delta-chip ' + (heroDeltaPct >= 0 ? "tone-pos" : "tone-neg") + '">' +
+      svgIcon(heroDeltaPct >= 0 ? "M12 19V5M5 12l7-7 7 7" : "M12 5v14M5 12l7 7 7-7", 11) +
+      '<span class="bdi">' + (heroDeltaPct >= 0 ? "+" : "") + heroDeltaPct + "%</span> " + esc(app.L("last 5 weeks", "آخر 5 أسابيع")) +
+    "</div>" : "";
+    const heroSaved = D.savingsGoals.reduce((s, g) => s + g.saved, 0);
+    const heroRemaining = D.savingsGoals.reduce((s, g) => s + g.remaining, 0);
+    const heroCard = !D.savingsGoals.length ? "" : '<div class="hero-card alt">' +
+      '<div class="hero-label">' + esc(app.L("Saved across your goals", "المدخر في كل أهدافك")) + "</div>" +
+      '<div class="hero-value">' + app.fmt(heroSaved) + "</div>" +
+      heroDeltaChip +
+      (heroChart ? '<div class="hero-chart-wrap">' + heroChart + "</div>" : "") +
+      '<div class="hero-sub-row">' +
+        '<div><div class="hero-sub-label">' + esc(app.L("Saved", "المدخر")) + '</div><div class="hero-sub-value tone-pos">' + app.fmt(heroSaved) + "</div></div>" +
+        '<div><div class="hero-sub-label">' + esc(app.L("Still needed", "لسه محتاج")) + '</div><div class="hero-sub-value">' + app.fmt(heroRemaining) + "</div></div>" +
+        '<div><div class="hero-sub-label">' + esc(app.L("Goals", "الأهداف")) + '</div><div class="hero-sub-value">' + D.savingsGoals.length + "</div></div>" +
+      "</div>" +
+    "</div>";
     // Real gap fix, same pattern already applied to Installments (#53) and
     // Savings groups: a reached goal used to stay inline forever, right
     // alongside still-active ones, sorted purely by its (now moot) due
@@ -7933,7 +7964,7 @@ const UI = {
       '<h2 class="section-title">' + esc(app.L("Reached", "متحقق")) + '</h2><div class="card-list">' + completedGoals.map(goalCard).join("") + "</div>");
     const emptyGoals = goals.length ? "" : '<div style="margin-top:14px">' + this.emptyState(ICON_PLUS, app.L("No savings goals yet", "لسه مفيش أهداف ادخار"), app.L("Add one above to start tracking progress toward it.", "ضيف هدف من فوق تبدأ تتابع تقدمك فيه.")) + "</div>";
     return this.tabHeader(t.goals, goals.length + app.L(" goal(s) · progress follows the linked account's own balance since the goal was set", " هدف · التقدم بيتابع رصيد الحساب المرتبط من وقت ما اتحدد الهدف"),
-      [[t.aGoal, "UI.openModal('goal')"]]) +
+      [[t.aGoal, "UI.openModal('goal')"]]) + heroCard +
       (activeGoals.length ? '<div class="card-list" style="margin-top:14px">' + activeCards + "</div>" : "") + completedSection + emptyGoals;
   },
   toggleGoalsCompleted() { this._goalsCompletedExpanded = !this._goalsCompletedExpanded; this.render(); },
@@ -7994,6 +8025,38 @@ const UI = {
     const app = this.app;
     const byUrgency = (a, b) => (b.overdue > 0) - (a.overdue > 0) || (a.next ? a.next.due : "9999-99").localeCompare(b.next ? b.next.due : "9999-99");
     const sorted = D.groups.slice().sort(byUrgency);
+    // "Ledger" redesign: a portfolio hero -- same gap as Savings Goals'
+    // own (see its comment): this page never had one "net across every
+    // group" figure, only a scroll of individual cards. Same
+    // heroTrendChart()/delta-chip language, trend built from
+    // Engine.derive(cutoff)'s own groupState() results (D.groups' own
+    // source) at 5 weekly cutoffs, the same weeklyDerives pattern used
+    // everywhere else rather than a second way to compute this.
+    const weeklyDerives = D.groups.length ? [4, 3, 2, 1, 0].map(w => app.derive(app.iso(app.addDays(new Date(), -7 * w)))) : null;
+    const heroSeries = weeklyDerives ? weeklyDerives.map(wd => wd.groups.reduce((s, g) => s + g.net, 0)) : [];
+    const heroChart = this.heroTrendChart(heroSeries);
+    // Same heroFirst > 0 guard every other delta chip already uses (see
+    // Reports'/Dashboard's own comment on the real bug this avoids).
+    const heroFirst = heroSeries[0], heroLast = heroSeries[heroSeries.length - 1];
+    const heroDeltaPct = heroChart && heroFirst > 0 ? Math.round((heroLast - heroFirst) / heroFirst * 1000) / 10 : null;
+    const heroDeltaChip = heroChart && heroDeltaPct !== null ? '<div class="delta-chip ' + (heroDeltaPct >= 0 ? "tone-pos" : "tone-neg") + '">' +
+      svgIcon(heroDeltaPct >= 0 ? "M12 19V5M5 12l7-7 7 7" : "M12 5v14M5 12l7 7 7-7", 11) +
+      '<span class="bdi">' + (heroDeltaPct >= 0 ? "+" : "") + heroDeltaPct + "%</span> " + esc(app.L("last 5 weeks", "آخر 5 أسابيع")) +
+    "</div>" : "";
+    const heroPaidTotal = D.groups.reduce((s, g) => s + g.paidTotal, 0);
+    const heroReceived = D.groups.reduce((s, g) => s + g.received, 0);
+    const heroNet = heroPaidTotal - heroReceived;
+    const heroCard = !D.groups.length ? "" : '<div class="hero-card alt">' +
+      '<div class="hero-label">' + esc(app.L("Net across your groups", "صافي جمعياتك")) + "</div>" +
+      '<div class="hero-value">' + app.fmt(heroNet) + "</div>" +
+      heroDeltaChip +
+      (heroChart ? '<div class="hero-chart-wrap">' + heroChart + "</div>" : "") +
+      '<div class="hero-sub-row">' +
+        '<div><div class="hero-sub-label">' + esc(t.paidIn) + '</div><div class="hero-sub-value tone-pos">' + app.fmt(heroPaidTotal) + "</div></div>" +
+        '<div><div class="hero-sub-label">' + esc(app.L("Received", "المقبوض")) + '</div><div class="hero-sub-value">' + app.fmt(heroReceived) + "</div></div>" +
+        '<div><div class="hero-sub-label">' + esc(app.L("Groups", "الجمعيات")) + '</div><div class="hero-sub-value">' + D.groups.length + "</div></div>" +
+      "</div>" +
+    "</div>";
     // Real bug caught in review: gating this on remainingPay alone moved a
     // fully-paid-in group into the collapsed section even when its own
     // payout hasn't been collected yet -- "Payout not collected yet" and
@@ -8040,7 +8103,7 @@ const UI = {
     const emptyGroups = D.groups.length ? "" : '<div style="margin-top:16px">' + this.emptyState(ICON_PLUS, app.L("No savings groups yet", "لسه مفيش جمعيات"), app.L("A gam3ya you add above will show up here, with its own contribution schedule.", "أي جمعية تضيفها من فوق هتظهر هنا مع جدول أقساطها الخاص.")) + "</div>";
 
     return this.tabHeader(t.groups, app.L("Contributions out, one payout in at your turn", "أقساط تدفعها، ودفعة واحدة تقبضها في دورك"), [[t.aGroup, "UI.openModal('group')"]]) +
-      this.dueThisMonthBanner(D) + '<div class="card-list">' + activeCards + "</div>" + completedSection + emptyGroups;
+      heroCard + this.dueThisMonthBanner(D) + '<div class="card-list">' + activeCards + "</div>" + completedSection + emptyGroups;
   },
   // The sheet UI.openGroupActions() opens -- reuses the exact .sheet/
   // .sheet-backdrop markup every other action sheet in the app already
@@ -8294,8 +8357,22 @@ const UI = {
     const fc = app.forecastWithWhatIf(S.horizon, D);
     const horizons = ["7", "30", "90", "180", "365"];
     const pills = horizons.map(h => '<button class="pill' + (S.horizon == h ? " on" : "") + '" onclick="UI.setHorizon(' + h + ')">' + h + esc(app.L(" days", " يوم")) + "</button>").join("");
-    const maxAbs = Math.max(Math.abs(D.available), Math.abs(fc.projected), 1);
-    const track = '<div class="proj-bar"><div class="proj-fill" style="width:' + Math.min(100, Math.abs(fc.projected) / maxAbs * 100) + '%;background:' + (fc.projected >= 0 ? "var(--c-pos)" : "var(--c-neg)") + '"></div></div>';
+    // "Ledger" redesign: the same gold heroTrendChart() line every other
+    // hero already draws, replacing the old plain two-color proj-bar --
+    // fc.points (Engine.forecast()'s own running-balance trajectory
+    // across the horizon, already computed for the event list's own
+    // `.running` field) is exactly the series this needs, so nothing new
+    // has to be derived here, just read.
+    const heroSeries = fc.points.map(p => p[1]);
+    const heroChart = this.heroTrendChart(heroSeries);
+    // Same heroFirst > 0 guard every other delta chip already uses (see
+    // Reports'/Dashboard's own comment on the real bug this avoids).
+    const heroFirst = heroSeries[0], heroLast = heroSeries[heroSeries.length - 1];
+    const heroDeltaPct = heroChart && heroFirst > 0 ? Math.round((heroLast - heroFirst) / heroFirst * 1000) / 10 : null;
+    const heroDeltaChip = heroChart && heroDeltaPct !== null ? '<div class="delta-chip ' + (heroDeltaPct >= 0 ? "tone-pos" : "tone-neg") + '">' +
+      svgIcon(heroDeltaPct >= 0 ? "M12 19V5M5 12l7-7 7 7" : "M12 5v14M5 12l7 7 7-7", 11) +
+      '<span class="bdi">' + (heroDeltaPct >= 0 ? "+" : "") + heroDeltaPct + "%</span> " + esc(app.L("over " + S.horizon + " days", "خلال " + S.horizon + " يوم")) +
+    "</div>" : "";
     const events = fc.events.slice(0, 40).map(e => '<div class="event-row"><span class="event-dot ' + (e.amount > 0 ? "pos" : "neg") + '"></span><span class="event-title">' + esc(e.title) + '</span><span class="event-when">' + app.dshort(e.date) + '</span><span class="event-amt ' + (e.amount > 0 ? "tone-pos" : "tone-neg") + '">' + app.fmtS(e.amount) + "</span></div>").join("");
 
     // "What if" — a hypothetical, never-saved income/expense the user can
@@ -8321,7 +8398,8 @@ const UI = {
 
     return this.tabHeader(t.forecast, app.L("If nothing changes, this is your runway"), []) +
       '<div class="pill-row">' + pills + "</div>" +
-      '<div class="hero-card alt"><div class="hero-label">' + esc(t.timeline) + '</div><div class="hero-value">' + app.fmt(fc.projected) + "</div>" + track +
+      '<div class="hero-card alt"><div class="hero-label">' + esc(t.timeline) + '</div><div class="hero-value">' + app.fmt(fc.projected) + "</div>" +
+      heroDeltaChip + (heroChart ? '<div class="hero-chart-wrap">' + heroChart + "</div>" : "") +
       '<div class="two-col" style="margin-top:14px"><div class="stat-box"><div class="pos-label">' + esc(app.L("Available today")) + '</div><div class="pos-value">' + app.fmt(D.available) + "</div></div>" +
       '<div class="stat-box"><div class="pos-label">' + esc(app.L("Expected inflows")) + '</div><div class="pos-value tone-pos">' + app.fmt(fc.inflow) + "</div></div></div></div>" +
       '<h2 class="section-title">' + esc(app.L("Expected outflows")) + " " + app.fmt(Math.abs(fc.outflow)) + '</h2><div class="event-list">' + (events || '<p class="muted">—</p>') + "</div>" +

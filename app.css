@@ -1065,9 +1065,6 @@ button.bar-row{width:100%;border:0;background:none;padding:6px 0;min-height:44px
   :root:not([data-theme="light"]) .tag-chip{background:hsl(var(--tag-h) 40% 22%);color:hsl(var(--tag-h) 65% 80%)}
 }
 :root[data-theme="dark"] .tag-chip{background:hsl(var(--tag-h) 40% 22%);color:hsl(var(--tag-h) 65% 80%)}
-.proj-bar{height:8px;border-radius:999px;background:var(--c-surface-3);overflow:hidden;margin-top:14px}
-.proj-fill{height:100%}
-
 .chart-cols{display:flex;align-items:flex-end;gap:10px;height:120px;padding:0 4px 4px}
 .chart-col{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%}
 .chart-bar{width:70%;border-radius:6px 6px 0 0;min-height:4px;cursor:pointer}

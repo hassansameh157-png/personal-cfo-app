@@ -1288,6 +1288,35 @@ account can be deleted, a card's Available/Limit stay consistent).
   renewal month being set up. End-to-end: a real yearly rule created
   through the actual modal persists the chosen month, `nextOccurrence()`
   agrees with it, and re-opening Edit shows the same month pre-filled.
+- `check_goals_groups_forecast_ledger.js` -- three more screens carry
+  "Ledger" language, after checking each one for a genuine gap first
+  rather than mechanically reapplying the same hero everywhere (see the
+  in-app discussion this round: Installments already has a full KPI
+  tile-grid, so it was deliberately left alone -- a second hero there
+  would just be a duplicate, not a fix).
+
+  **Savings Goals / Savings Groups: a new portfolio hero, on each.**
+  Neither page ever had one "across everything" figure before, only a
+  scroll of individual cards -- the same real gap Accounts had. The
+  trend itself reuses `Engine.derive(cutoff)`'s own
+  `savingsGoalStates()`/`groupState()` results (exactly what
+  `D.savingsGoals`/`D.groups` are already built from) at 5 weekly
+  cutoffs, the same `weeklyDerives` pattern Dashboard/Accounts already
+  established, rather than a second way to compute "saved so far" or
+  "net position." Confirmed against an independent recomputation, not
+  just checked for presence -- including Savings Groups' own hero, whose
+  real seed value is negative (received so far exceeds paid-in), proving
+  the sign isn't silently clamped.
+
+  **Forecast: the old plain proj-bar becomes the same gold trend line.**
+  `Engine.forecast()` already computed a full running-balance trajectory
+  across the selected horizon (`fc.points`, built for the event list's
+  own `.running` field) -- this only had to be READ into
+  `heroTrendChart()`, not recomputed. Confirmed the old `.proj-bar`
+  element is gone (not left dangling alongside the new chart) and that
+  switching the horizon pill (7 vs. 365 days) genuinely changes both the
+  chart and the hero's own projected value, proving it tracks the real
+  selected horizon rather than a cached figure.
 
 ## Adding a new one
 
