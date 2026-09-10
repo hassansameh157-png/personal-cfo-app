@@ -390,6 +390,17 @@ h1,h2,h3{font-family:var(--font-head);font-weight:600;margin:0;text-wrap:balance
 .section-title{font-size:18px;margin:22px 0 10px}
 .section-title:first-child{margin-top:0}
 .section-head{display:flex;justify-content:space-between;align-items:baseline}
+/* "Ledger" redesign (Reports): a one-line callout, e.g. "Rent leads at
+   34%", nested INSIDE the same <h2 class="section-title"> as its own last
+   child (never a sibling wrapper div around the h2) -- real regression
+   caught by the full suite: check_batch16.js finds the by-source bar-list
+   via the h2's own xpath following-sibling::div[1], which a new wrapper
+   would have broken. .has-note only applies to a heading that actually
+   carries one, so every OTHER .section-title in the app (still just plain
+   block text) is completely unaffected. font-weight:400 so the note reads
+   as an annotation, not a second bold heading fighting the real one. */
+.section-title.has-note{display:flex;justify-content:space-between;align-items:baseline;gap:10px}
+.section-note{font-size:11px;font-weight:400;color:var(--c-text-faint);white-space:nowrap}
 .dash-section{margin-bottom:6px}
 
 /* amount strings: <bdi dir="ltr"> already forces LTR run order (the actual
@@ -665,6 +676,15 @@ h1,h2,h3{font-family:var(--font-head);font-weight:600;margin:0;text-wrap:balance
 .div-in{background:linear-gradient(90deg,color-mix(in srgb,var(--c-pos) 85%,white),var(--c-pos))}
 .div-out{background:linear-gradient(90deg,color-mix(in srgb,var(--c-neg) 85%,white),var(--c-neg))}
 
+/* ---- "Ledger" redesign (Reports): the period's own in/out as one
+   self-contained card -- same panel treatment .stack-card already
+   established, .diverge/.div-in/.div-out above reused as-is. ---- */
+.flow-card{background:var(--c-surface);border:1px solid var(--c-line);border-radius:var(--radius);padding:14px 16px;margin-bottom:14px}
+.flow-top{display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin-bottom:10px}
+.flow-label{font-size:11.5px;color:var(--c-text-faint)}
+.flow-net{font-family:var(--font-head);font-size:18px;font-variant-numeric:tabular-nums}
+.flow-legend{display:flex;justify-content:space-between;font-size:12px}
+
 /* ---- bars ---- */
 .bar-list{display:flex;flex-direction:column;gap:9px}
 .bar-row{display:grid;grid-template-columns:112px 1fr auto;gap:9px;align-items:center;font-size:14.5px}
@@ -690,6 +710,10 @@ button.bar-row{width:100%;border:0;background:none;padding:6px 0;min-height:44px
 .bar-fill.pos-fill{background:var(--c-pos)}
 .bar-fill.warn-fill{background:var(--c-warn)}
 .bar-val{font-variant-numeric:tabular-nums;white-space:nowrap;font-size:13.5px}
+/* "Ledger" redesign (Reports): this row's share of the list's whole total,
+   right after the amount -- explicit color (not inherited) so it doesn't
+   also turn tone-neg when .bar-val does for an over-budget row. */
+.bar-pct{font-size:10.5px;color:var(--c-text-faint);font-weight:400;margin-inline-start:4px}
 
 /* Overall monthly expense budget (Settings) -- one cap across every
    expense, shown right in "This month" next to the per-category bars
@@ -840,8 +864,14 @@ button.bar-row{width:100%;border:0;background:none;padding:6px 0;min-height:44px
    spaces it from what's above/below; :first-child drops the extra top
    padding since the very first header IS the list's first child. */
 .tx-date-header{font-family:var(--font-head);font-size:12.5px;font-weight:600;color:var(--c-text-faint);
-  padding:8px 2px 0;text-transform:uppercase;letter-spacing:.04em}
+  padding:8px 2px 0;text-transform:uppercase;letter-spacing:.04em;
+  display:flex;align-items:baseline;justify-content:space-between;gap:8px}
 .tx-date-header:first-child{padding-top:0}
+/* "Ledger" redesign: the day's own net total, right-aligned opposite the
+   date label -- text-transform/letter-spacing reset back to normal case so
+   a real signed number doesn't get stretched like the all-caps date label
+   next to it, and font-variant-numeric so amount columns stay tabular. */
+.tx-date-net{font-variant-numeric:tabular-nums;text-transform:none;letter-spacing:normal;font-weight:600}
 .card-row{border:1px solid var(--c-line);border-radius:10px;padding:12px 14px;background:var(--c-surface)}
 .card-row.voided{opacity:.5}
 /* ---- swipe-to-reveal (Edit/Delete) -- see initSwipeRows() in ui.js ----

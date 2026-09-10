@@ -37,6 +37,10 @@ require("./_watchdog"); // shared pass/fail detector -- see that file
   await page.click(".sheet-item:has-text('Reports')"); await page.waitForTimeout(200);
   console.log("defaults to '6 months', not an unscoped all-time total:", await page.locator(".pill.on").innerText() === "6 months");
   const catThisMonth = await page.locator(".bar-list").first().innerText();
+  // "Ledger" redesign: the net worth hero's own figure, captured before
+  // touching the period pills at all -- it must stay exactly what it was,
+  // below.
+  const heroBefore = await page.locator(".hero-card.alt .hero-value").innerText();
   await page.click(".pill:has-text('This month')");
   await page.waitForTimeout(150);
   const catAllTime = await page.locator(".bar-list").first().innerText();
@@ -44,7 +48,15 @@ require("./_watchdog"); // shared pass/fail detector -- see that file
   console.log("'All time' is still reachable for the old behavior:", await page.locator(".pill:has-text('All time')").count() === 1);
   await page.click(".pill:has-text('All time')");
   await page.waitForTimeout(150);
-  console.log("net worth trend chart is untouched by the period pills (still its own fixed 6-month view):", await page.locator(".chart-bar").count() === 6);
+  // Real gap fix, still true after the "Ledger" redesign -- the net worth
+  // trend is its own fixed 6-month view (nwTrendMonths()), never scoped by
+  // this page's own period pills; the chart itself moved from a bare
+  // barChart() to heroTrendChart() (see check_batch3.js/check_batch3_fixes.js
+  // for where the tap-tooltip .chart-bar coverage moved instead), but the
+  // "untouched by the period pills" behavior this section actually tests is
+  // unchanged -- same figure, same chart, regardless of which pill is on.
+  console.log("net worth hero is untouched by the period pills (still its own fixed 6-month view):", await page.locator(".hero-card.alt .hero-value").innerText() === heroBefore);
+  console.log("its trend chart (heroTrendChart, replacing the old bar chart) is present:", await page.locator(".hero-card.alt .hero-trend").count() === 1);
 
   console.log("\n=== 3) Real gap fixed: Cash Flow can now navigate to a previous month, not locked to 'now' ===");
   await page.click(".navbtn:has-text('More')"); await page.waitForTimeout(150);

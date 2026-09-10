@@ -1084,6 +1084,99 @@ account can be deleted, a card's Available/Limit stay consistent).
      showing the intended neutral ring. Fixed by having `ringColor()`
      always return a real value (`var(--c-line)` for "nothing to flag"),
      removing the reliance on the fallback trick entirely.
+- `check_txreports_ledger.js` -- Transactions and Reports both carry the
+  "Ledger" language the Dashboard/People redesigns already established,
+  shown to the user as mockups first and applied once approved. Additive
+  next to each page's own existing structure (Transactions Recut's search/
+  filter-row/date-headers, Reports' own period-preset pills), so nothing
+  pre-existing needed to change behavior -- only three OTHER tests did, for
+  a real reason each (see below).
+
+  **Transactions: a type quick-pill row.** A curated, always-visible
+  `.tx-type-pills` row (All / Income / Expense / Transfer) next to search,
+  the one filter dimension reached for most -- a second way to set the
+  exact same `F.type` the existing 5-dropdown `.filter-row` already sets,
+  so the two can't disagree (confirmed: opening the panel after tapping a
+  pill shows the native `<select>` already agreeing). The `.filter-row`
+  itself, and `check_transactions_recut.js`'s own `select count === 5`
+  assertion, are completely untouched -- this is a second control, not a
+  replacement. Real testing gotcha caught in review: the row count on
+  screen is capped by pagination (`S.txVisible`, 25 of 217 seed rows), so
+  narrowing a filter doesn't necessarily shrink what's rendered -- the test
+  reads the real match total off `.tab-sub` ("N records match your
+  filters") instead of counting `.card-row` elements.
+
+  **Transactions: a per-day net total.** Each `.tx-date-header` now carries
+  its own day's signed total next to the date, summed from the same
+  already-filtered, already-signed `items` the cards below it render from
+  (so it can't disagree with what's actually listed) -- confirmed against
+  an independent recomputation of that day's real rows, not just checked
+  for presence. Real bug caught in code review, covered by a dedicated
+  case: the first version summed every row for the day unconditionally,
+  but `txSign()` never zeroes a *voided* row's own `signed` amount -- it
+  only mutes the row's display (opacity, strikethrough, a `muted-amt`
+  tone) -- so a voided expense would still silently count toward the day's
+  printed total, disagreeing with what the strikethrough row itself
+  visually says. Fixed with a plain `!it.r.void` filter, matching how
+  `D.live` already drops void rows entirely everywhere else in the app;
+  regression-tested by seeding a huge voided expense on today's date and
+  confirming the printed total doesn't move at all.
+
+  **Reports: a net worth hero.** The plain `barChart()` net worth trend
+  replaced with the same `heroTrendChart()` gradient area/line + delta-chip
+  language Dashboard's own Available balance and People's own portfolio
+  hero already carry, in a `.hero-card.alt` panel -- cross-screen cohesion,
+  not a one-off redesign. Same `nwFirst > 0` delta-chip guard as
+  Dashboard's own (see its entry above) against the same divide-by-a-
+  fudged-1 bug. `nwTrendMonths()` itself, and the fixed-6-month-regardless-
+  of-the-period-pills behavior it gives, are unchanged -- confirmed the
+  hero's own value and chart don't move when the period preset does.
+
+  **Reports: a period income-vs-expense diverge bar.** A `.flow-card`
+  ahead of the category/source breakdown, reusing the exact `.diverge`/
+  `.div-in`/`.div-out` component Dashboard's own "This month" section
+  already validated -- `catTotal`/`srcTotal` (the same expense-only /
+  income+refund+investment_return-only split the bars below it already
+  use) feed both this bar and each row's own new "% of total", so the two
+  can't drift apart. Real wording bug caught in code review: this card was
+  first labeled "Cash flow this period", with a comment claiming
+  `catTotal`/`srcTotal` were "the period's total out/in" -- but the app
+  already has a real Cash Flow Statement page (Operating/Investing/
+  Financing, every money movement) that label would misleadingly overlap,
+  and the actual totals here are only the narrower income/expense split
+  Dashboard's own "This month" already uses (a debt payment or an
+  investment buy, for instance, moves real money but lands in neither
+  map). Relabeled "Income vs. expense this period" and the comment
+  corrected to say so plainly, rather than widening the feature's scope to
+  match the old label.
+
+  **Reports: % of total + a top-item callout on each bar list.**
+  `catBar()` gained an optional trailing `pct` param (Dashboard's own "This
+  month" call site leaves it `undefined`, so nothing there changed --
+  confirmed no stray `%` appears on Dashboard's own category bars) and a
+  "leads at N%" note next to the top category/source. Real regression
+  caught by the *existing* suite, not this one: the note was first built
+  as a sibling `<div class="section-head">` wrapping the `<h2>`, which
+  broke `check_batch16.js`'s own `h2:has-text('By source')` ->
+  `xpath=following-sibling::div[1]` lookup for the bar-list underneath (the
+  wrapper div, not the bar-list, was now the first following sibling div).
+  Fixed by nesting the note *inside* the same `<h2>` as its last child
+  (`.section-title.has-note` makes just that heading a flex row) instead of
+  wrapping it -- the `<h2>` stays exactly where every existing test already
+  expects it, and every other `.section-title` in the app (no note) is
+  completely unaffected.
+
+  Two more existing tests needed a real update, not a code fix -- both lost
+  their target when Reports' own net worth chart stopped being a
+  `barChart()` (SVG `.chart-bar` tap-tooltip elements) and became
+  `heroTrendChart()` (a decorative, `aria-hidden` SVG line with no tooltip
+  of its own): `check_batch3.js`'s and `check_batch3_fixes.js`'s own chart-
+  tooltip cases now exercise Cash Flow's own 6-month operating trend
+  instead, which still uses the shared `barChart()` unchanged. And
+  `check_batch9.js`'s "net worth trend is untouched by the period pills"
+  case now reads the hero's own value + `.hero-trend` presence rather than
+  counting `.chart-bar` elements -- same real behavior it always tested,
+  just read off the new markup.
 
 ## Adding a new one
 

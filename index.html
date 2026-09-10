@@ -453,6 +453,17 @@ h1,h2,h3{font-family:var(--font-head);font-weight:600;margin:0;text-wrap:balance
 .section-title{font-size:18px;margin:22px 0 10px}
 .section-title:first-child{margin-top:0}
 .section-head{display:flex;justify-content:space-between;align-items:baseline}
+/* "Ledger" redesign (Reports): a one-line callout, e.g. "Rent leads at
+   34%", nested INSIDE the same <h2 class="section-title"> as its own last
+   child (never a sibling wrapper div around the h2) -- real regression
+   caught by the full suite: check_batch16.js finds the by-source bar-list
+   via the h2's own xpath following-sibling::div[1], which a new wrapper
+   would have broken. .has-note only applies to a heading that actually
+   carries one, so every OTHER .section-title in the app (still just plain
+   block text) is completely unaffected. font-weight:400 so the note reads
+   as an annotation, not a second bold heading fighting the real one. */
+.section-title.has-note{display:flex;justify-content:space-between;align-items:baseline;gap:10px}
+.section-note{font-size:11px;font-weight:400;color:var(--c-text-faint);white-space:nowrap}
 .dash-section{margin-bottom:6px}
 
 /* amount strings: <bdi dir="ltr"> already forces LTR run order (the actual
@@ -728,6 +739,15 @@ h1,h2,h3{font-family:var(--font-head);font-weight:600;margin:0;text-wrap:balance
 .div-in{background:linear-gradient(90deg,color-mix(in srgb,var(--c-pos) 85%,white),var(--c-pos))}
 .div-out{background:linear-gradient(90deg,color-mix(in srgb,var(--c-neg) 85%,white),var(--c-neg))}
 
+/* ---- "Ledger" redesign (Reports): the period's own in/out as one
+   self-contained card -- same panel treatment .stack-card already
+   established, .diverge/.div-in/.div-out above reused as-is. ---- */
+.flow-card{background:var(--c-surface);border:1px solid var(--c-line);border-radius:var(--radius);padding:14px 16px;margin-bottom:14px}
+.flow-top{display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin-bottom:10px}
+.flow-label{font-size:11.5px;color:var(--c-text-faint)}
+.flow-net{font-family:var(--font-head);font-size:18px;font-variant-numeric:tabular-nums}
+.flow-legend{display:flex;justify-content:space-between;font-size:12px}
+
 /* ---- bars ---- */
 .bar-list{display:flex;flex-direction:column;gap:9px}
 .bar-row{display:grid;grid-template-columns:112px 1fr auto;gap:9px;align-items:center;font-size:14.5px}
@@ -753,6 +773,10 @@ button.bar-row{width:100%;border:0;background:none;padding:6px 0;min-height:44px
 .bar-fill.pos-fill{background:var(--c-pos)}
 .bar-fill.warn-fill{background:var(--c-warn)}
 .bar-val{font-variant-numeric:tabular-nums;white-space:nowrap;font-size:13.5px}
+/* "Ledger" redesign (Reports): this row's share of the list's whole total,
+   right after the amount -- explicit color (not inherited) so it doesn't
+   also turn tone-neg when .bar-val does for an over-budget row. */
+.bar-pct{font-size:10.5px;color:var(--c-text-faint);font-weight:400;margin-inline-start:4px}
 
 /* Overall monthly expense budget (Settings) -- one cap across every
    expense, shown right in "This month" next to the per-category bars
@@ -903,8 +927,14 @@ button.bar-row{width:100%;border:0;background:none;padding:6px 0;min-height:44px
    spaces it from what's above/below; :first-child drops the extra top
    padding since the very first header IS the list's first child. */
 .tx-date-header{font-family:var(--font-head);font-size:12.5px;font-weight:600;color:var(--c-text-faint);
-  padding:8px 2px 0;text-transform:uppercase;letter-spacing:.04em}
+  padding:8px 2px 0;text-transform:uppercase;letter-spacing:.04em;
+  display:flex;align-items:baseline;justify-content:space-between;gap:8px}
 .tx-date-header:first-child{padding-top:0}
+/* "Ledger" redesign: the day's own net total, right-aligned opposite the
+   date label -- text-transform/letter-spacing reset back to normal case so
+   a real signed number doesn't get stretched like the all-caps date label
+   next to it, and font-variant-numeric so amount columns stay tabular. */
+.tx-date-net{font-variant-numeric:tabular-nums;text-transform:none;letter-spacing:normal;font-weight:600}
 .card-row{border:1px solid var(--c-line);border-radius:10px;padding:12px 14px;background:var(--c-surface)}
 .card-row.voided{opacity:.5}
 /* ---- swipe-to-reveal (Edit/Delete) -- see initSwipeRows() in ui.js ----
@@ -5645,7 +5675,12 @@ const UI = {
   // as a status (red ring + red value), not a color fight: the category
   // keeps its own identity color underneath instead of being overridden by
   // a solid "neg-fill" the way it used to.
-  catBar(name, v, max, kind, over, suffix) {
+  // `pct` (optional): this bar's share of the WHOLE list's total (not just
+  // the top-8 slice actually drawn), appended after the amount as a small
+  // muted percentage -- Reports' own "Ledger" redesign is the only caller
+  // that passes it; Dashboard's "This month" call site leaves it undefined,
+  // so nothing there changes.
+  catBar(name, v, max, kind, over, suffix, pct) {
     const app = this.app;
     const catColor = app.categoryColor(name, kind);
     const ring = over ? ";outline:2px solid var(--c-neg);outline-offset:1px" : "";
@@ -5662,7 +5697,7 @@ const UI = {
     // .bar-name's flex `gap` already places it, not this badge's margin.
     return '<button class="bar-row" onclick="UI.viewCategoryTx(\'' + escJsArg(name) + "','" + escJsArg(kind) + '\')"><span class="bar-name"><span class="cat-badge" style="background:' + catColor + ";color:" + this.catBadgeIconColor(catColor) + ';margin-inline-end:0">' + svgIcon(categoryIcon(app, name, kind, app.state.data.categoryStyles), 12) + '</span><span class="bar-name-text">' + esc(name) + "</span></span>" +
       '<div class="bar-track"><div class="bar-fill" style="width:' + Math.max(4, v / max * 100) + '%;background:' + catColor + ring + '"></div></div>' +
-      '<span class="bar-val' + (over ? " tone-neg" : "") + '">' + app.fmt(v) + (suffix || "") + "</span></button>";
+      '<span class="bar-val' + (over ? " tone-neg" : "") + '">' + app.fmt(v) + (suffix || "") + (pct != null ? '<span class="bar-pct">' + Math.round(pct) + "%</span>" : "") + "</span></button>";
   },
 
   // ---- Dashboard (fix #5: single summary pass, Needs Attention promoted) --
@@ -6924,7 +6959,29 @@ const UI = {
       // entry is .single, so `!entry.single` alone would never fire there;
       // S.groupTx is the only real guard needed.
       if (S.groupTx) return row;
-      const header = entry.single.r.date !== lastTxDate ? '<div class="tx-date-header">' + esc(this.txDateGroupLabel(entry.single.r.date)) + "</div>" : "";
+      let header = "";
+      if (entry.single.r.date !== lastTxDate) {
+        // "Ledger" redesign: the day's own net total next to its date --
+        // summed from `items` (this page's already-signed, already-
+        // filtered rows), the same source cardRow()/table both read, so a
+        // day's total can never disagree with what's actually listed under
+        // it. Scoped to `items` (the current page of `visible`, not the
+        // full filtered `rows`) on purpose: a day split across the
+        // load-more boundary shows the total for what's actually on screen
+        // right now, same "only counts what's rendered" limit loadMoreTx()
+        // already has everywhere else on this page. Real bug caught in
+        // review: a voided row (r.void) still carries its own real
+        // r.signed amount from txSign() -- txSign() only mutes its DISPLAY
+        // (opacity, strikethrough, "muted-amt" tone), it never zeroes the
+        // row out -- so an unfiltered sum here would silently count money
+        // the row itself is shown as NOT counting. !it.r.void excludes it,
+        // matching every other real total in this app (D.live itself drops
+        // void:true rows entirely before Dashboard/Reports ever see them).
+        const dayNet = items.filter(it => it.r.date === entry.single.r.date && !it.r.void).reduce((s, it) => s + it.signed, 0);
+        header = '<div class="tx-date-header"><span>' + esc(this.txDateGroupLabel(entry.single.r.date)) + '</span>' +
+          (Math.abs(dayNet) > 0.001 ? '<span class="tx-date-net ' + (dayNet > 0 ? "tone-pos" : "tone-neg") + '">' + app.fmtS(dayNet) + "</span>" : "") +
+        "</div>";
+      }
       lastTxDate = entry.single.r.date;
       return header + row;
     }).join("") + "</div>";
@@ -6979,6 +7036,20 @@ const UI = {
       '<input id="txSearch" class="input" type="search" placeholder="' + esc(t.search) + '" value="' + esc(F.q) + '" oninput="UI.setFilter(\'q\', this.value)">' +
       '<button type="button" class="btn btn-secondary filters-toggle mobile-only" aria-expanded="' + (this._txFiltersOpen ? "true" : "false") + '" onclick="UI.toggleTxFilters()">' + esc(app.L("Filters", "الفلاتر")) + (activeFilterCount ? '<span class="filter-count">' + activeFilterCount + "</span>" : "") + "</button>" +
     "</div>";
+    // "Ledger" redesign: a tactile pill row for the single dimension
+    // actually reached for most (People's own search-row comment above
+    // makes the same "the one thing reached for without deciding to go
+    // filter something" case) -- curated to the 3 real F.type values common
+    // enough to deserve a one-tap shortcut, not a second copy of every
+    // option the Type <select> inside .filter-row already covers
+    // exhaustively (that select, and its own count === 5 assertion in
+    // check_transactions_recut.js, are untouched). Purely a second way to
+    // set the exact same F.type -- both stay in sync since both just read/
+    // write it, same as the select and this row would if either changed it.
+    const quickTypes = [["all", app.L("All", "الكل")], ["income", typeLabels.income], ["expense", typeLabels.expense], ["transfer", typeLabels.transfer]];
+    const typePillRow = '<div class="pill-row tx-type-pills">' + quickTypes.map(([v, l]) =>
+      '<button type="button" class="pill' + (F.type === v ? " on" : "") + '" onclick="UI.setFilter(\'type\',\'' + v + '\')">' + esc(l) + "</button>"
+    ).join("") + "</div>";
     const filters = '<div class="filter-row' + (this._txFiltersOpen ? "" : " collapsed") + '">' +
       '<select class="input" onchange="UI.setFilter(\'type\', this.value)">' + typeOptions + "</select>" +
       '<select class="input" onchange="UI.setFilter(\'account\', this.value)">' + accOptions + "</select>" +
@@ -7003,7 +7074,7 @@ const UI = {
 
     return this.tabHeader(t.transactions, total + app.L(" records match your filters", " حركة مطابقة للفلاتر"),
       [[t.aIncome, "UI.openModal('income')"], [t.aTransfer, "UI.openModal('transfer')"]]) +
-      timeline + searchRow + filters + groupToggle + (total ? table + cards + loadMore : this.emptyState(ICON_SEARCH, t.noMatches, app.L("Try a different search or clear a filter above.", "جرب بحث تاني أو امسح فلتر من فوق.")));
+      timeline + searchRow + typePillRow + filters + groupToggle + (total ? table + cards + loadMore : this.emptyState(ICON_SEARCH, t.noMatches, app.L("Try a different search or clear a filter above.", "جرب بحث تاني أو امسح فلتر من فوق.")));
   },
 
   // ---- People ----------------------------------------------------------------
@@ -8054,7 +8125,31 @@ const UI = {
   // ---- Reports (uses derive(asOf) to build a real 6-month trend) --------
   renderReports(D, t) {
     const app = this.app, S = app.state;
-    const nwChart = this.barChart(this.nwTrendMonths(), (i) => i.value >= 0 ? "var(--c-pos)" : "var(--c-neg)");
+    // "Ledger" redesign: the same gold-rule glass hero + gradient area/
+    // line trend + delta chip Dashboard's own Available balance and
+    // People's own portfolio hero already carry -- net worth gets one more
+    // instance of this shared language instead of staying the one screen
+    // still drawing its headline number as a plain bar chart. nwTrendMonths()
+    // itself is untouched (still shared with Dashboard's own expandable nw
+    // trend, see its own comment) -- only how THIS page draws it changed.
+    const nwPoints = this.nwTrendMonths();
+    const nwSeries = nwPoints.map(x => x.value);
+    const nwChart = this.heroTrendChart(nwSeries);
+    // Same nwFirst > 0 guard as Dashboard's own heroDeltaChip (see its own
+    // comment on the real bug this avoids): a zero or negative starting net
+    // worth hides the chip instead of dividing by a fudged 1.
+    const nwFirst = nwSeries[0], nwLast = nwSeries[nwSeries.length - 1];
+    const nwDeltaPct = nwChart && nwFirst > 0 ? Math.round((nwLast - nwFirst) / nwFirst * 1000) / 10 : null;
+    const nwDeltaChip = nwChart && nwDeltaPct !== null ? '<div class="delta-chip ' + (nwDeltaPct >= 0 ? "tone-pos" : "tone-neg") + '">' +
+      svgIcon(nwDeltaPct >= 0 ? "M12 19V5M5 12l7-7 7 7" : "M12 5v14M5 12l7 7 7-7", 11) +
+      '<span class="bdi">' + (nwDeltaPct >= 0 ? "+" : "") + nwDeltaPct + "%</span> " + esc(app.L("last 6 months", "آخر 6 شهور")) +
+    "</div>" : "";
+    const heroCard = '<div class="hero-card alt">' +
+      '<div class="hero-label">' + esc(t.netWorth) + "</div>" +
+      '<div class="hero-value">' + app.fmt(D.netWorth) + "</div>" +
+      nwDeltaChip +
+      (nwChart ? '<div class="hero-chart-wrap">' + nwChart + "</div>" : "") +
+    "</div>";
 
     // Real gap fix: "By category"/"By source" used to sum D.live outright
     // -- every transaction ever recorded, with no way to scope it down.
@@ -8078,18 +8173,57 @@ const UI = {
     const catMap = {}; liveScoped.filter(x => x.type === "expense").forEach(x => catMap[x.category || "Other"] = (catMap[x.category || "Other"] || 0) + x.amount);
     const catArr = Object.entries(catMap).sort((a, b) => b[1] - a[1]).slice(0, 8);
     const maxCat = Math.max(1, ...catArr.map(c => c[1]));
+    // "Ledger" redesign: the SAME total this page already computed (every
+    // expense in the scoped period, not just the top-8 slice actually
+    // drawn) -- both the diverging in/out bar and each row's own "% of
+    // total" read off this one sum, so they can't disagree about what the
+    // period's real total was.
+    const catTotal = Object.values(catMap).reduce((s, v) => s + v, 0);
+    const catTopPct = catArr.length && catTotal > 0.001 ? Math.round(catArr[0][1] / catTotal * 100) : null;
+    // Nested INSIDE the same <h2>, not a sibling wrapper div around it --
+    // real regression caught by the full suite: check_batch16.js locates
+    // the by-source bar-list via h2's own xpath following-sibling::div[1],
+    // and a new wrapper div between the h2 and that bar-list would put the
+    // wrapper itself in that spot instead. .section-title.has-note (below)
+    // makes the *heading* a flex row instead, so the h2 stays exactly
+    // where every existing test already expects it.
+    const catNote = catTopPct !== null ? '<span class="section-note">' + esc(catArr[0][0]) + esc(app.L(" leads at " + catTopPct + "%", " الأعلى بنسبة " + catTopPct + "%")) + "</span>" : "";
 
     const srcMap = {}; liveScoped.filter(x => ["income", "refund", "investment_return"].includes(x.type)).forEach(x => srcMap[x.category || "Other"] = (srcMap[x.category || "Other"] || 0) + x.amount);
     const srcArr = Object.entries(srcMap).sort((a, b) => b[1] - a[1]).slice(0, 8);
     const maxSrc = Math.max(1, ...srcArr.map(c => c[1]));
+    const srcTotal = Object.values(srcMap).reduce((s, v) => s + v, 0);
+    const srcTopPct = srcArr.length && srcTotal > 0.001 ? Math.round(srcArr[0][1] / srcTotal * 100) : null;
+    const srcNote = srcTopPct !== null ? '<span class="section-note">' + esc(srcArr[0][0]) + esc(app.L(" is " + srcTopPct + "% of income", " هو " + srcTopPct + "% من الدخل")) + "</span>" : "";
 
-    const barList = (arr, max, kind) => '<div class="bar-list">' + arr.map(([name, v]) => this.catBar(name, v, max, kind, false)).join("") + "</div>";
+    // "Ledger" redesign: the period's own income vs. expense told as one
+    // diverging bar (the same component, and the same catMap/srcMap
+    // definition of "income"/"expense" -- expense only, income/refund/
+    // investment_return only -- Dashboard's own "This month" section
+    // already uses), ahead of the category/source breakdown below it.
+    // Deliberately NOT labeled "cash flow" -- this app already has a real
+    // Cash Flow Statement page (Operating/Investing/Financing, every money
+    // movement, see renderCashFlow()) that a "Cash flow this period" label
+    // here would misleadingly duplicate/contradict; catTotal/srcTotal are
+    // only the same narrower income/expense split the bars below already
+    // show, not a full accounting of every liveScoped row (a debt payment
+    // or an investment buy, for instance, moves real money but counts in
+    // neither map, same as Dashboard's own monthIncome/monthExpense).
+    const flowTotal = catTotal + srcTotal;
+    const flowBar = flowTotal > 0.001 ? '<div class="flow-card">' +
+      '<div class="flow-top"><span class="flow-label">' + esc(app.L("Income vs. expense this period", "الدخل مقابل المصروف للفترة")) + '</span><span class="flow-net ' + (srcTotal - catTotal >= 0 ? "tone-pos" : "tone-neg") + '">' + app.fmtS(srcTotal - catTotal) + "</span></div>" +
+      '<div class="diverge"><div class="div-in" style="width:' + (srcTotal / flowTotal * 100).toFixed(2) + '%"></div><div class="div-out" style="width:' + (catTotal / flowTotal * 100).toFixed(2) + '%"></div></div>' +
+      '<div class="flow-legend"><span class="tone-neg">' + esc(app.L("Out — ", "خارج — ")) + app.fmt(catTotal) + '</span><span class="tone-pos">' + esc(app.L("In — ", "داخل — ")) + app.fmt(srcTotal) + "</span></div>" +
+    "</div>" : "";
+
+    const barList = (arr, max, kind, total) => '<div class="bar-list">' + arr.map(([name, v]) => this.catBar(name, v, max, kind, false, undefined, total > 0.001 ? v / total * 100 : null)).join("") + "</div>";
 
     return this.tabHeader(t.reports, app.L("Net worth trend plus category and source analysis for the period below", "اتجاه صافي الثروة وتحليل الفئات والمصادر للفترة تحت"), []) +
-      '<h2 class="section-title">' + esc(t.netWorthTrend) + "</h2>" + nwChart +
+      heroCard +
       periodPills +
-      '<h2 class="section-title">' + esc(t.byCategory) + "</h2>" + (catArr.length ? barList(catArr, maxCat, "expense") : '<p class="muted">—</p>') +
-      '<h2 class="section-title">' + esc(t.bySource) + "</h2>" + (srcArr.length ? barList(srcArr, maxSrc, "income") : '<p class="muted">—</p>');
+      flowBar +
+      '<h2 class="section-title' + (catNote ? " has-note" : "") + '">' + esc(t.byCategory) + catNote + "</h2>" + (catArr.length ? barList(catArr, maxCat, "expense", catTotal) : '<p class="muted">—</p>') +
+      '<h2 class="section-title' + (srcNote ? " has-note" : "") + '">' + esc(t.bySource) + srcNote + "</h2>" + (srcArr.length ? barList(srcArr, maxSrc, "income", srcTotal) : '<p class="muted">—</p>');
   },
   setReportsPreset(v) { this.app.state.reportsPreset = v; this.render(); },
 

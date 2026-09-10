@@ -47,8 +47,13 @@ require("./_watchdog"); // shared pass/fail detector -- see that file
   console.log("dialogs/errors triggered so far:", errors.length ? errors : "none");
 
   console.log("\n=== 3) Tooltip clears on page navigation ===");
+  // Was Reports' own net worth trend -- the "Ledger" redesign replaced
+  // that chart with heroTrendChart() (a decorative SVG, no tap-tooltip);
+  // Cash Flow's own 6-month operating trend still uses the shared
+  // barChart() component this test actually exercises, untouched (see
+  // check_batch3.js's own comment on the same move).
   await page.click(".navbtn:has-text('More')"); await page.waitForTimeout(150);
-  await page.click(".sheet-item:has-text('Reports')"); await page.waitForTimeout(200);
+  await page.click(".sheet-item:has-text('Cash flow')"); await page.waitForTimeout(200);
   const bar = page.locator(".chart-bar").first();
   await bar.click(); await page.waitForTimeout(150);
   console.log("tooltip shown after tap:", (await page.locator("#chartTooltip.show").count()) > 0);

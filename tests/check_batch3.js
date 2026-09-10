@@ -28,9 +28,14 @@ require("./_watchdog"); // shared pass/fail detector -- see that file
   console.log("\n=== 2) Chart tooltip ===");
   await page.click(".navbtn:has-text('Dashboard')"); await page.waitForTimeout(200);
   const bar = page.locator(".chart-bar, .bar-row").first();
-  // "This month" bars are .bar-row (catBar), not .chart-bar -- go to Reports for a real .chart-bar
+  // "This month" bars are .bar-row (catBar), not .chart-bar -- go to Cash
+  // Flow for a real .chart-bar. Was Reports' own net worth trend, but the
+  // "Ledger" redesign replaced that chart with heroTrendChart() (a
+  // decorative SVG area/line, aria-hidden, no tap-tooltip of its own) --
+  // Cash Flow's own 6-month operating trend still uses the shared
+  // barChart() component this test actually exercises, untouched.
   await page.click(".navbtn:has-text('More')"); await page.waitForTimeout(150);
-  await page.click(".sheet-item:has-text('Reports')"); await page.waitForTimeout(200);
+  await page.click(".sheet-item:has-text('Cash flow')"); await page.waitForTimeout(200);
   const chartBar = page.locator(".chart-bar").first();
   console.log("chart-bar present:", await chartBar.count() > 0);
   await chartBar.click(); await page.waitForTimeout(150);
