@@ -1379,6 +1379,23 @@ button.bar-row{width:100%;border:0;background:none;padding:6px 0;min-height:44px
 .icon-swatch{width:34px;height:34px;border-radius:50%;border:2px solid transparent;background:var(--c-surface-2);color:var(--c-text-soft);cursor:pointer;padding:0;flex:none;display:flex;align-items:center;justify-content:center}
 .icon-swatch:hover{transform:scale(1.06)}
 .icon-swatch.on{border-color:var(--c-accent);color:var(--c-accent);background:var(--c-surface-3)}
+/* Card theme gallery (CARD_THEMES/UI.setCardTheme, "cardTheme" field type)
+   -- each button's own background IS a real UI.cardBackground() gradient
+   (the exact CSS the account/card tile itself would render), so a tap
+   previews precisely what picking it produces, not a stand-in swatch. Name
+   sits at the bottom on a dark scrim (always -- these gradients are all
+   rich/saturated by design, see CARD_THEMES' own comment, so a fixed
+   light-on-dark label reads reliably regardless of theme, the same
+   "picked, not computed" reasoning .cc-name already uses on the real
+   tiles). A 3-up grid keeps every swatch a genuine mini card (2.5:1-ish),
+   not a cramped chip -- narrower still wraps to fewer columns rather than
+   shrinking the aspect ratio away. */
+.card-theme-row{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:6px}
+.card-theme-swatch{position:relative;aspect-ratio:2.2/1;border-radius:10px;border:2px solid transparent;cursor:pointer;padding:0;overflow:hidden}
+.card-theme-swatch:hover{transform:scale(1.03)}
+.card-theme-swatch.on{border-color:var(--c-accent);box-shadow:0 0 0 2px var(--c-surface),0 0 0 4px var(--c-accent)}
+.card-theme-name{position:absolute;inset-inline:0;bottom:0;padding:4px 6px;font-size:10px;line-height:1.2;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.6);background:linear-gradient(to top,rgba(0,0,0,.55),transparent);text-align:start}
+@media (max-width:420px){.card-theme-row{grid-template-columns:repeat(2,1fr)}}
 /* Vivid category picker -- a --pill-c custom property per button (each
    category's own categoryColor(), a CSS var reference like var(--cat-3))
    drives both the tinted background and the small color dot, same

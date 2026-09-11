@@ -169,6 +169,39 @@ const COLOR_PALETTE = [
   "#7c3aed", "#8b5cf6", "#a855f7", "#6d28d9", "#db2777", "#ec4899", "#be185d", "#e11d48",
   "#dc2626", "#f43f5e", "#d97706", "#f59e0b", "#ca8a04", "#334155", "#1e293b", "#475569"
 ];
+// Curated card themes (real gap fixed per direct user feedback: the raw
+// color1/color2/pattern trio was flexible but never actually looked like a
+// distinctive card until composed by hand) -- each bundles a name plus the
+// exact color/color2/pattern UI.setCardTheme writes in one tap. color/
+// color2 pulled from (or close kin of) COLOR_PALETTE above so a themed
+// card and a hand-picked one still read as the same family; `pattern`
+// picked per pair for how it actually looks (mostly "mesh" -- see
+// UI.cardBackground -- for the soft, blended-corners look real bank cards
+// have, not a hard diagonal/split edge). textColor is deliberately NOT
+// stored here -- setCardTheme always resets it to "auto" so legibility
+// stays the existing tested algorithm's job, never a guess baked into a
+// preset that could go stale if a color above ever changes.
+// `id` is the only thing UI.setCardTheme/the "on" match ever key off of --
+// `name`/`nameAr` are display-only (run through app.L at render time, same
+// as every other label in this form), so switching the app to Arabic can
+// never break which swatch is selected the way matching on the visible
+// label itself would (the exact class of bug this session already hit
+// twice today with fragile text-based locators, just in the app's own UI
+// logic instead of a test this time).
+const CARD_THEMES = [
+  { id: "ocean", name: "Ocean Current", nameAr: "تيار المحيط", color: "#0ea5e9", color2: "#1d4ed8", pattern: "mesh" },
+  { id: "amethyst", name: "Midnight Amethyst", nameAr: "جمشت الليل", color: "#7c3aed", color2: "#1e1b4b", pattern: "mesh" },
+  { id: "rosegold", name: "Rose Gold", nameAr: "ذهبي وردي", color: "#ec4899", color2: "#f59e0b", pattern: "mesh" },
+  { id: "emerald", name: "Emerald Tide", nameAr: "موجة الزمرد", color: "#10b981", color2: "#0d9488", pattern: "mesh" },
+  { id: "sunset", name: "Sunset Blaze", nameAr: "توهج الغروب", color: "#f43f5e", color2: "#d97706", pattern: "radial" },
+  { id: "sapphire", name: "Royal Sapphire", nameAr: "ياقوت ملكي", color: "#1d4ed8", color2: "#172554", pattern: "diag2" },
+  { id: "graphite", name: "Graphite Noir", nameAr: "جرافيت داكن", color: "#334155", color2: "#0b0f19", pattern: "mesh" },
+  { id: "berry", name: "Berry Punch", nameAr: "توت منعش", color: "#be185d", color2: "#6d28d9", pattern: "mesh" },
+  { id: "goldhour", name: "Golden Hour", nameAr: "الساعة الذهبية", color: "#f59e0b", color2: "#b45309", pattern: "radial" },
+  { id: "crimson", name: "Crimson Eclipse", nameAr: "كسوف قرمزي", color: "#dc2626", color2: "#18181b", pattern: "radial" },
+  { id: "tealcurrent", name: "Teal Current", nameAr: "تيار فيروزي", color: "#0d9488", color2: "#0369a1", pattern: "mesh" },
+  { id: "onyx", name: "Onyx", nameAr: "أونيكس", color: "#27272a", color2: "#09090b", pattern: "diag2" }
+];
 
 const UI = {
   app: null,
@@ -554,6 +587,31 @@ const UI = {
     if (el) el.value = key;
     document.querySelectorAll(".icon-swatch").forEach(b => {
       const on = b.getAttribute("aria-label") === key;
+      b.classList.toggle("on", on);
+      b.setAttribute("aria-pressed", on ? "true" : "false");
+    });
+  },
+  // A card-theme swatch click (see CARD_THEMES/the "cardTheme" field type
+  // above) -- writes all four real fields at once, same direct-set,
+  // no-render() reasoning as setColorField/setIconField. Marks BOTH color
+  // touch flags: a theme is exactly as deliberate a Secondary-color choice
+  // as clicking its own swatch would be, so syncColor2Default must not
+  // later overwrite it if the user nudges the primary color afterward.
+  // Resets Text color to "auto" too -- picking a theme is meant to be a
+  // clean one-tap replacement, not layered on top of a stale white/dark
+  // pin left over from a previous edit.
+  setCardTheme(id) {
+    const th = CARD_THEMES.find(x => x.id === id);
+    if (!th) return;
+    const setVal = (k, v) => { const el = document.getElementById("f_" + k); if (el) el.value = v; };
+    setVal("color", th.color);
+    setVal("color2", th.color2);
+    setVal("pattern", th.pattern);
+    setVal("textColor", "auto");
+    this._catColorTouched = true;
+    this._color2Touched = true;
+    document.querySelectorAll(".card-theme-swatch").forEach(b => {
+      const on = b.getAttribute("data-theme-id") === id;
       b.classList.toggle("on", on);
       b.setAttribute("aria-pressed", on ? "true" : "false");
     });
@@ -2304,11 +2362,11 @@ const UI = {
   // Card face background -- pattern-driven (approved from the card
   // customizer preview). "diag1" is the long-standing default and needs
   // only the account's own color, auto-darkening a second stop the same
-  // way it always has; the other three patterns use color2 explicitly,
-  // falling back to that same auto-darkened shade if the user picked one
-  // of them but never actually set a second color, so nothing renders
-  // broken (a diagonal/radial/split against itself is still a valid,
-  // if unexciting, gradient).
+  // way it always has; the other patterns use color2 explicitly, falling
+  // back to that same auto-darkened shade if the user picked one of them
+  // but never actually set a second color, so nothing renders broken (a
+  // diagonal/radial/split/mesh against itself is still a valid, if
+  // unexciting, gradient).
   cardBackground(a) {
     const c1 = a.color || "#7d7979";
     const dark = "color-mix(in srgb, " + c1 + " 62%, black)";
@@ -2317,6 +2375,17 @@ const UI = {
       case "diag2": return "linear-gradient(135deg, " + c1 + ", " + c2 + ")";
       case "radial": return "radial-gradient(130% 120% at 15% 0%, " + c1 + ", " + c2 + " 75%)";
       case "split": return "linear-gradient(102deg, " + c1 + " 0%, " + c1 + " 47%, " + c2 + " 53%, " + c2 + " 100%)";
+      // New (card themes): the "real card" blended look every curated
+      // CARD_THEMES preset actually uses -- two soft ambient pools of each
+      // color anchored at opposite corners, fading into a diagonal base
+      // that already runs between them, instead of a single hard edge
+      // (split) or one color pushed to a corner (radial). No new stop
+      // math for cardTextColor() to learn: it's still visually an even
+      // split of the face, same as diag2/split already assume (see that
+      // function's own w=0.5 default for "any pattern but diag1/radial").
+      case "mesh": return "radial-gradient(90% 90% at 12% 15%, " + c1 + " 0%, transparent 60%), " +
+        "radial-gradient(90% 90% at 88% 85%, " + c2 + " 0%, transparent 60%), " +
+        "linear-gradient(135deg, " + c1 + ", " + c2 + ")";
       default: return "linear-gradient(135deg, " + c1 + ", " + dark + ")";
     }
   },
@@ -5010,6 +5079,25 @@ const UI = {
         const cur = val || "tag";
         const swatches = ICON_PICKER.map(([key, path]) => '<button type="button" class="icon-swatch' + (cur === key ? " on" : "") + '" onclick="UI.setIconField(\'' + key + '\')" aria-label="' + esc(key) + '" aria-pressed="' + (cur === key ? "true" : "false") + '">' + svgIcon(path, 18) + "</button>").join("");
         input = '<div class="icon-swatch-row">' + swatches + '</div><input type="hidden" id="f_' + f.k + '" name="' + f.k + '" value="' + esc(cur) + '">';
+      } else if (f.type === "cardTheme") {
+        // One-tap curated looks -- see CARD_THEMES/UI.setCardTheme. No
+        // hidden input (unlike the icon swatches above): this field isn't
+        // real account data of its own, purely a fast path that writes
+        // into the real color/color2/pattern/textColor fields below, so a
+        // plain, non-form-associated button is enough (same reasoning the
+        // raw color swatches already rely on). "on" is a genuine match
+        // against the form's CURRENT color/color2/pattern rather than a
+        // separate stored choice, so reopening Edit on an account that
+        // already happens to match a preset exactly highlights it too.
+        const curColor = (form.color || "").toLowerCase(), curColor2 = (form.color2 || "").toLowerCase(), curPattern = form.pattern || "diag1";
+        const swatches = CARD_THEMES.map(th => {
+          const on = curColor === th.color.toLowerCase() && curColor2 === th.color2.toLowerCase() && curPattern === th.pattern;
+          const label = app.L(th.name, th.nameAr);
+          // data-theme-id, not the (localized) label, is what UI.setCardTheme
+          // actually matches against -- see CARD_THEMES' own comment on why.
+          return '<button type="button" class="card-theme-swatch' + (on ? " on" : "") + '" style="background:' + this.cardBackground(th) + '" onclick="UI.setCardTheme(\'' + th.id + '\')" data-theme-id="' + th.id + '" aria-label="' + esc(label) + '" aria-pressed="' + (on ? "true" : "false") + '"><span class="card-theme-name">' + esc(label) + "</span></button>";
+        }).join("");
+        input = '<div class="card-theme-row">' + swatches + "</div>";
       } else {
         // Description → category autocomplete, income/expense only: as the
         // user types, suggest whatever category their past entries with a

@@ -1460,6 +1460,41 @@ account can be deleted, a card's Available/Limit stay consistent).
   15 consecutive local runs where the unscoped version had been failing
   roughly half the time.
 
+- `check_card_themes.js` -- real gap fixed, per direct user feedback on
+  Accounts after the "Ledger" refresh: the raw color/color2/pattern trio
+  (`cardStyleFields()`) was flexible but never actually LOOKED like a
+  distinctive card until composed by hand, and none of the existing
+  patterns (diag1/diag2/radial/split) genuinely blend two colors the way a
+  real bank card's face does -- split in particular is a hard edge, not a
+  blend. `CARD_THEMES`/`UI.setCardTheme` (ui.js) add a one-tap gallery of
+  12 curated looks (each bundling color/color2/pattern) in front of the
+  same three raw fields, which stay for anyone fine-tuning past a preset;
+  a new `mesh` pattern (two soft ambient color pools anchored at opposite
+  corners over a diagonal base, `UI.cardBackground`) gives the actually-
+  blended look, available both through presets and directly from the plain
+  Pattern dropdown for any hand-picked pair. Shared `cardStyleFields()`
+  means the gallery is free on the Person form too -- a person's avatar
+  renders through the same `cardBackground()`/`cardTextColor()`.
+
+  **Real bug caught by code review, fixed before it ever shipped:** the
+  first pass hardcoded every theme name in English only, breaking the
+  app's own "every label goes through `this.L(en, ar)`" convention --
+  visibly half-translated for an Arabic-language user on an otherwise
+  fully Arabic form. Fixed by adding `nameAr` per theme and rendering
+  through `app.L()` like everything else. Caught in the same pass: the
+  "on" (currently-selected) highlight and `UI.setCardTheme`'s own match
+  were keyed off the swatch's visible `aria-label` text -- exactly the
+  fragile "match on a rendered label, not a stable identifier" pattern
+  this same session's `check_swipe_actions.js`/
+  `check_goals_groups_forecast_ledger.js` fixes (above) had just spent a
+  while chasing as TEST bugs, just written into the app itself this time:
+  switching to Arabic would have made every theme's own selection
+  matching silently stop working. Fixed by matching on a stable
+  `data-theme-id` attribute instead, unrelated to whichever language the
+  visible name renders in -- test 8 below switches the app to Arabic
+  mid-run and checks the real Arabic label renders, not just that nothing
+  crashes.
+
 ## Adding a new one
 
 Match the existing shape: launch Chromium (respecting `PW_CHROMIUM_PATH`),

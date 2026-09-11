@@ -1493,12 +1493,26 @@ class Engine {
     // long-standing look, still the default) keeps auto-darkening `color`
     // alone the same way it always has (see UI.cardBackground).
     const cardStyleFields = () => [
+      // One-tap curated looks (real bug/gap fixed per direct user feedback:
+      // the raw Color/Secondary color/Pattern trio below was flexible but
+      // never actually LOOKED like anything until three separate pickers
+      // were combined by hand -- most people just want a distinctive,
+      // already-blended card face without composing one themselves). Each
+      // preset sets color/color2/pattern/textColor together in one click
+      // (UI.setCardTheme) -- the trio below stays untouched underneath for
+      // anyone who wants to fine-tune past a preset, or picks a color no
+      // preset uses. Data (CARD_THEMES) lives in ui.js, same as ICON_PICKER
+      // just below -- this field only reserves the slot; the renderer pulls
+      // its own swatch data the same "visual buttons drive the real
+      // controls" way the icon/color swatches already do.
+      D("cardTheme", this.L("Card style", "شكل الكارت"), "cardTheme", { wide: true, hint: this.L("Pick a ready-made look, or fine-tune with the fields below.", "اختار شكل جاهز، أو ظبط بنفسك من الحقول تحت.") }),
       D("color2", this.L("Secondary color (optional)", "لون تاني (اختياري)"), "color", { hint: this.L("Only used by the two-color patterns below.", "بيتستخدم بس مع الأنماط اللي بلونين.") }),
       D("pattern", this.L("Pattern", "النمط"), "select", { options: [
         { v: "diag1", l: this.L("Diagonal (1 color)", "قطري (لون واحد)") },
         { v: "diag2", l: this.L("Diagonal (2 colors)", "قطري (لونين)") },
         { v: "radial", l: this.L("Radial burst", "انفجار دائري") },
-        { v: "split", l: this.L("Split block", "تقسيمة حادة") }
+        { v: "split", l: this.L("Split block", "تقسيمة حادة") },
+        { v: "mesh", l: this.L("Blended mesh", "مزيج متداخل") }
       ] }),
       D("textColor", this.L("Text color", "لون الخط"), "select", { options: [
         { v: "auto", l: this.L("Auto", "تلقائي") },
