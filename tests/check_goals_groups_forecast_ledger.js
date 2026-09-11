@@ -65,11 +65,30 @@ require("./_watchdog"); // shared pass/fail detector -- see that file
   console.log("the pre-existing 'Available today' / 'Expected inflows' stat boxes are untouched:", await page.locator(".stat-box").count() === 2);
 
   console.log("\n=== 3b) Real behavior check: the chart's own trajectory actually tracks the horizon, not a fixed window ===");
-  await page.click("button:has-text('365')"); // switch horizon
+  // Real, intermittent bug chased down here (not just a test-timing race):
+  // the new notification bell (#36) renders its live attentionCount() right
+  // into the button's own visible text -- <button class="bell-btn" ...>N
+  // <span class="bell-badge">N</span></button> -- so whenever that count
+  // happens to be 7, 17, 27... (it drifts with real wall-clock time, since
+  // several of attentionCount()'s own inputs -- overdue/due-soon windows,
+  // the 3-month unusual-spending comparison -- are relative to `new Date()`
+  // against this seed's fixed dates), a bare `button:has-text('7')` matches
+  // BOTH the bell and the "7 days" horizon pill. Two real failure shapes
+  // came out of that ambiguity depending on exactly how Playwright resolved
+  // it that run: an immediate strict-mode violation, or -- worse -- a
+  // "successful" click that silently landed on the bell (which navigates to
+  // Dashboard, not a horizon change) leaving state.horizon never reaching 7
+  // at all, so a later wait for it just timed out. Scoped to the pills'
+  // own .pill-row container (the bell lives in the topbar, never inside
+  // it) so this can never collide with the bell's badge again regardless
+  // of what attentionCount() happens to be when this runs.
+  await page.click(".pill-row button:has-text('365')"); // switch horizon
+  await page.waitForFunction(() => UI.app.state.horizon === 365);
   await page.waitForTimeout(200);
   console.log("switching horizon still shows a real chart (a full year of seed events is definitely more than a flat line):", await page.locator(".hero-card.alt .hero-trend").count() === 1);
   const yearProjected = await page.locator(".hero-card.alt .hero-value").innerText();
-  await page.click("button:has-text('7')");
+  await page.click(".pill-row button:has-text('7')");
+  await page.waitForFunction(() => UI.app.state.horizon === 7);
   await page.waitForTimeout(200);
   const weekProjected = await page.locator(".hero-card.alt .hero-value").innerText();
   console.log("a 7-day projection differs from a 365-day one (the hero-value genuinely reflects the selected horizon, not a stale figure):", weekProjected !== yearProjected);

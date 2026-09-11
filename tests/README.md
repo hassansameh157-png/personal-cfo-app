@@ -1438,6 +1438,28 @@ account can be deleted, a card's Available/Limit stay consistent).
   clamping the sample point to stay above `.primary-nav`'s own top edge,
   same as where a real finger would actually land.
 
+  **Real, genuinely intermittent bug this batch caused in
+  `check_goals_groups_forecast_ledger.js`**, found the same way -- passed
+  clean on the prior commit, then failed CI (and ~half of local runs) on
+  this one. The new notification bell (#36) renders its own live
+  `attentionCount()` straight into the button's visible text (`<button
+  class="bell-btn">N<span class="bell-badge">N</span></button>`), and that
+  count drifts with real wall-clock time (several of its own inputs --
+  overdue/due-soon windows, the 3-month unusual-spending comparison -- are
+  relative to `new Date()` against this seed's fixed dates). Whenever it
+  happened to land on 7, 17, 27... test 3b's bare `button:has-text('7')`
+  ambiguously matched both the bell AND the Forecast page's own "7 days"
+  horizon pill -- sometimes a strict-mode violation, sometimes a
+  "successful" click that silently hit the bell instead (which just
+  navigates to Dashboard), leaving `state.horizon` never actually reaching
+  7 and a later wait for it timing out. Confirmed by forcing
+  `attentionCount()` to return 17 locally and watching the same ambiguous
+  match happen on demand. Fixed by scoping both horizon clicks to the
+  pills' own `.pill-row` container, which the bell (topbar-only) can never
+  be part of -- verified against the same forced-17 repro, and clean over
+  15 consecutive local runs where the unscoped version had been failing
+  roughly half the time.
+
 ## Adding a new one
 
 Match the existing shape: launch Chromium (respecting `PW_CHROMIUM_PATH`),
