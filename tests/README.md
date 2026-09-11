@@ -1318,6 +1318,44 @@ account can be deleted, a card's Available/Limit stay consistent).
   chart and the hero's own projected value, proving it tracks the real
   selected horizon rather than a cached figure.
 
+- `check_recurring_transfer.js` -- new feature: a recurring rule can now be
+  type "transfer" (an automatic monthly sweep into a savings wallet, say),
+  not just income/expense. `toAccountId` is the new "to" side; `accountId`
+  doubles as "from", same distinct-accounts check (`f.accountId !==
+  f.toAccountId`) the plain "transfer" transaction type already uses.
+  `postRecurring()` posts a real plain-transfer row (`fromId`/`toId`, no
+  category) instead of its usual income/expense shape when it fires.
+  `forecast()`'s own event amount is the rule's REAL impact on
+  `D.available` (cash+bank+wallets+otherBalance, which excludes cards) —
+  confirmed directly against the formula: ~0 between two ordinary accounts
+  (the common case), the real signed amount when a card sits on either
+  side — not a blind `-amount` the way an expense gets. The event-dot/amt
+  tone ternaries (Dashboard's Upcoming 30 days + Forecast's own list) gain
+  a shared `eventTone()` helper with a neutral third state for that ~0
+  case, checked live in Forecast's own rendered event row, not just the
+  underlying number.
+
+  **Real bug caught by code review, fixed and regression-tested in the
+  same pass:** the To-account field is always visible on the recurring
+  form (same "(yearly only)"-labelled-but-always-shown convention the
+  Month field already established for #30 — this app has no per-type
+  dynamic show/hide for form fields), so its value always rides along in
+  the submitted data regardless of which type is actually picked. Without
+  forcing it null for anything but a transfer rule, a plain Expense rule
+  would have silently saved whatever account the untouched `#f_toAccountId`
+  select happened to default to — and `accountCanDelete()`, which
+  (correctly) treats a transfer rule's own `toAccountId` as a real
+  scheduled reference blocking deletion, would have made that unrelated
+  account permanently undeletable for no visible reason. Fixed at both
+  ends: `submit()` now forces `toAccountId`/`category` null for whichever
+  side doesn't apply to the rule's actual type, and `accountCanDelete()`
+  itself re-checks `r.type === "transfer"` rather than trusting a bare
+  non-null check, so neither side depends on the other alone. Covered with
+  an isolated synthetic probe (a scratch account nothing else legitimately
+  references, since every real seed account already has some genuine
+  reference of its own) proving a leftover `toAccountId` on a non-transfer
+  rule no longer blocks deleting that account.
+
 ## Adding a new one
 
 Match the existing shape: launch Chromium (respecting `PW_CHROMIUM_PATH`),

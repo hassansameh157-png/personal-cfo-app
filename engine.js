@@ -1016,9 +1016,22 @@ class Engine {
   forecast(days, D) {
     const start = new Date(), end = this.addDays(start, days), ev = [];
     (this.state.data.recurring || []).forEach(r => {
+      // A transfer rule's real impact on D.available (cash+bank+wallets+
+      // otherBalance, see derive()) is NOT a plain expense -- money moving
+      // between two ordinary accounts (the common "auto-save" case) leaves
+      // available untouched, while a card on either side (excluded from
+      // available) does change it by the full amount. income/expense rules
+      // keep the exact amount they always had.
+      let amount = r.type === "income" ? r.amount : -r.amount;
+      if (r.type === "transfer") {
+        const accounts = this.state.data.accounts || [];
+        const fromCard = (accounts.find(a => a.id === r.accountId) || {}).type === "card";
+        const toCard = (accounts.find(a => a.id === r.toAccountId) || {}).type === "card";
+        amount = (fromCard ? 0 : -r.amount) + (toCard ? 0 : r.amount);
+      }
       let cur = this.nextOccurrence(r, start), guard = 0;
       while (cur <= end && guard++ < 80) {
-        ev.push({ date: this.iso(cur), title: r.name, amount: r.type === "income" ? r.amount : -r.amount, kind: r.type });
+        ev.push({ date: this.iso(cur), title: r.name, amount, kind: r.type });
         const step = r.freq === "weekly" ? 7 : r.freq === "daily" ? 1 : 0;
         cur = step ? this.addDays(cur, step) : this.addMonths(cur, r.freq === "quarterly" ? 3 : r.freq === "yearly" ? 12 : 1);
       }
@@ -1615,12 +1628,20 @@ class Engine {
       // an existing payment against an already-finished group possible.
       group_payment: { title: this.L("Record contribution"), fields: [D("date", t.date, "date"), D("groupId", "Group", "select", { options: groupOptions }), D("amount", t.amount, "number"), D("accountId", "Paid from", "select", { options: accs })] },
       group_payout: { title: this.L("Record payout received"), fields: [D("date", t.date, "date"), D("groupId", "Group", "select", { options: groupOptions }), D("amount", t.amount, "number"), D("accountId", "Into account", "select", { options: accs })] },
-      recurring: { title: t.aRecurring, fields: [D("name", t.name, "text"), D("type", t.type, "select", { options: [{ v: "income", l: "Income" }, { v: "expense", l: "Expense" }] }), D("amount", t.amount, "number"), D("accountId", t.account, "select", { options: accs }), D("category", t.category, "select", { options: inc.concat(cats) }), D("freq", t.frequency, "select", { options: [{ v: "daily", l: "Daily" }, { v: "weekly", l: "Weekly" }, { v: "monthly", l: "Monthly" }, { v: "quarterly", l: "Quarterly" }, { v: "yearly", l: "Yearly" }] }), D("month", this.L("Month (yearly only)", "الشهر (للقواعد السنوية بس)"), "select", { options: monthOptions }), D("day", "Day of month", "number")] },
+      // "transfer" (#35): a real third rule type alongside income/expense --
+      // e.g. an automatic monthly move into a savings wallet. toAccountId
+      // only means anything for that type, but every field here stays
+      // always-visible and unconditionally saved regardless of which type
+      // is picked -- same "(yearly only)"-labelled-but-always-shown
+      // convention the Month field above already established for #30,
+      // rather than inventing per-type dynamic show/hide the form renderer
+      // (ui.js renderModal) has no mechanism for.
+      recurring: { title: t.aRecurring, fields: [D("name", t.name, "text"), D("type", t.type, "select", { options: [{ v: "income", l: "Income" }, { v: "expense", l: "Expense" }, { v: "transfer", l: this.L("Transfer", "تحويل") }] }), D("amount", t.amount, "number"), D("accountId", this.L("Account (from, for a transfer)", "الحساب (بيتحول منه لو تحويل)"), "select", { options: accs }), D("toAccountId", this.L("To account (transfers only)", "لحساب (للتحويلات بس)"), "select", { options: accs }), D("category", t.category, "select", { options: inc.concat(cats) }), D("freq", t.frequency, "select", { options: [{ v: "daily", l: "Daily" }, { v: "weekly", l: "Weekly" }, { v: "monthly", l: "Monthly" }, { v: "quarterly", l: "Quarterly" }, { v: "yearly", l: "Yearly" }] }), D("month", this.L("Month (yearly only)", "الشهر (للقواعد السنوية بس)"), "select", { options: monthOptions }), D("day", "Day of month", "number")] },
       // Real bug fix: a recurring rule had no edit or delete path anywhere
       // in the app once created -- a typo'd amount/account or a cancelled
       // subscription was permanent. Same fields as "recurring" above, just
       // pre-filled from the existing rule.
-      recurring_edit: { title: this.L("Edit recurring rule", "تعديل القاعدة المتكررة"), fields: [D("name", t.name, "text"), D("type", t.type, "select", { options: [{ v: "income", l: "Income" }, { v: "expense", l: "Expense" }] }), D("amount", t.amount, "number"), D("accountId", t.account, "select", { options: accs }), D("category", t.category, "select", { options: inc.concat(cats) }), D("freq", t.frequency, "select", { options: [{ v: "daily", l: "Daily" }, { v: "weekly", l: "Weekly" }, { v: "monthly", l: "Monthly" }, { v: "quarterly", l: "Quarterly" }, { v: "yearly", l: "Yearly" }] }), D("month", this.L("Month (yearly only)", "الشهر (للقواعد السنوية بس)"), "select", { options: monthOptions }), D("day", "Day of month", "number")] },
+      recurring_edit: { title: this.L("Edit recurring rule", "تعديل القاعدة المتكررة"), fields: [D("name", t.name, "text"), D("type", t.type, "select", { options: [{ v: "income", l: "Income" }, { v: "expense", l: "Expense" }, { v: "transfer", l: this.L("Transfer", "تحويل") }] }), D("amount", t.amount, "number"), D("accountId", this.L("Account (from, for a transfer)", "الحساب (بيتحول منه لو تحويل)"), "select", { options: accs }), D("toAccountId", this.L("To account (transfers only)", "لحساب (للتحويلات بس)"), "select", { options: accs }), D("category", t.category, "select", { options: inc.concat(cats) }), D("freq", t.frequency, "select", { options: [{ v: "daily", l: "Daily" }, { v: "weekly", l: "Weekly" }, { v: "monthly", l: "Monthly" }, { v: "quarterly", l: "Quarterly" }, { v: "yearly", l: "Yearly" }] }), D("month", this.L("Month (yearly only)", "الشهر (للقواعد السنوية بس)"), "select", { options: monthOptions }), D("day", "Day of month", "number")] },
       // Plain reminders -- no amount, no account, on purpose: see
       // submit()'s "todo"/"todo_edit" branches, which never call push(),
       // so this can never touch a balance or show up in derive() output.
@@ -2021,9 +2042,11 @@ class Engine {
         // renamed category's own recurring rule quietly posting NEW
         // transactions under the old, now-gone name forever, the exact
         // "orphaned everywhere" failure this whole rename exists to avoid.
-        // recurring.type is already a plain "income"/"expense" (never
+        // recurring.type is "income"/"expense"/"transfer" (never
         // "refund"/"investment_return" -- those only ever come from a
-        // real transaction, not a rule), so kind2 alone is enough here.
+        // real transaction, not a rule), so kind2 alone is enough to match
+        // here; a transfer rule has category === null (#35) and never
+        // matches oldName, so it's correctly left untouched.
         (data.recurring || []).forEach(r => {
           if (r.category === oldName && r.type === kind2) r.category = clean;
         });
@@ -2144,16 +2167,34 @@ class Engine {
       }
     } else if (k === "recurring") {
       if (!need(f.name && this.n(f.amount) > 0, "Name and amount are required.")) return false;
+      // Same distinct-accounts check the plain "transfer" branch above
+      // already uses -- only meaningful (and only checked) for type
+      // "transfer"; income/expense rules never look at toAccountId at all.
+      if (!need(f.type !== "transfer" || f.accountId !== f.toAccountId, "Pick two different accounts.")) return false;
       // month (0-11): only actually read by nextOccurrence() for a yearly
       // rule (see its own comment, #30), same "always saved, only some
       // frequencies care" convention `day` itself already follows here.
-      data.recurring.push({ id: this.uid("r"), name: f.name, type: f.type, amount: N("amount"), accountId: f.accountId, category: f.category, freq: f.freq, month: Math.max(0, Math.min(11, Math.round(N("month")) || 0)), day: Math.max(1, Math.min(28, Math.round(N("day")) || 1)) });
+      // toAccountId forced null except for a "transfer" rule -- the
+      // #f_toAccountId select is always visible (see FORMS()) and its
+      // FormData value always rides along in f, so without this an
+      // income/expense rule would silently save whatever account the
+      // browser happened to default that untouched select to. Real bug
+      // caught by code review: accountCanDelete() trusts a non-null
+      // toAccountId as a real scheduled reference (same as accountId) --
+      // an unrelated account left over in an income/expense rule's own
+      // toAccountId would have made THAT account permanently
+      // undeletable for no visible reason. category is forced null for a
+      // transfer the same way -- also what keeps the rename cascade a few
+      // lines up correct (it assumes a transfer rule's category is always
+      // null).
+      data.recurring.push({ id: this.uid("r"), name: f.name, type: f.type, amount: N("amount"), accountId: f.accountId, toAccountId: f.type === "transfer" ? (f.toAccountId || null) : null, category: f.type === "transfer" ? null : f.category, freq: f.freq, month: Math.max(0, Math.min(11, Math.round(N("month")) || 0)), day: Math.max(1, Math.min(28, Math.round(N("day")) || 1)) });
       note = "Recurring rule " + f.name;
     } else if (k === "recurring_edit") {
       if (!need(f.name && this.n(f.amount) > 0, "Name and amount are required.")) return false;
       const r = data.recurring.find(x => x.id === f.id);
       if (!need(r, "Pick a recurring rule.")) return false;
-      r.name = f.name; r.type = f.type; r.amount = N("amount"); r.accountId = f.accountId; r.category = f.category; r.freq = f.freq;
+      if (!need(f.type !== "transfer" || f.accountId !== f.toAccountId, "Pick two different accounts.")) return false;
+      r.name = f.name; r.type = f.type; r.amount = N("amount"); r.accountId = f.accountId; r.toAccountId = f.type === "transfer" ? (f.toAccountId || null) : null; r.category = f.type === "transfer" ? null : f.category; r.freq = f.freq;
       r.month = Math.max(0, Math.min(11, Math.round(N("month")) || 0));
       r.day = Math.max(1, Math.min(28, Math.round(N("day")) || 1));
       note = "Updated recurring rule " + r.name;
@@ -2295,7 +2336,17 @@ class Engine {
   accountCanDelete(id) {
     const d = this.state.data;
     const used = d.tx.some(t => !t.void && (t.accountId === id || t.fromId === id || t.toId === id));
-    const scheduled = (d.recurring || []).some(r => r.accountId === id);
+    // toAccountId too (#35) -- a transfer rule's "to" side is just as real
+    // a scheduled reference as accountId; missing it would let its target
+    // account be deleted out from under it, same silent-vanish failure as
+    // every other case on this list. Gated on r.type === "transfer" (not
+    // just a bare non-null check) -- submit() already forces toAccountId
+    // null for every other rule type, but this is the one place a stray
+    // value there would actually cause harm (falsely blocking a delete),
+    // so it re-checks type itself rather than trusting that invariant
+    // alone, same belt-and-suspenders reasoning forecast()/postRecurring()
+    // already apply.
+    const scheduled = (d.recurring || []).some(r => r.accountId === id || (r.type === "transfer" && r.toAccountId === id));
     const hasStatement = (d.cardStatements || []).some(s => s.accountId === id);
     // A savings goal watches this account's own balance directly (see
     // goalState) -- deleting the account out from under it would leave the
@@ -2664,7 +2715,14 @@ class Engine {
   }
   postRecurring(r) {
     const data = JSON.parse(JSON.stringify(this.state.data));
-    data.tx.push({ id: this.uid("t"), date: this.today(), type: r.type, amount: r.amount, accountId: r.accountId, category: r.category, personId: null, desc: r.name + " (recurring)", void: false, created: new Date().toISOString(), recurringId: r.id });
+    // A "transfer" rule posts a real plain-transfer row (fromId/toId, no
+    // category -- same shape the "transfer" branch in submit() builds by
+    // hand) instead of the income/expense shape every other rule uses.
+    if (r.type === "transfer") {
+      data.tx.push({ id: this.uid("t"), date: this.today(), type: "transfer", amount: r.amount, fromId: r.accountId, toId: r.toAccountId, desc: r.name + " (recurring)", void: false, created: new Date().toISOString(), recurringId: r.id });
+    } else {
+      data.tx.push({ id: this.uid("t"), date: this.today(), type: r.type, amount: r.amount, accountId: r.accountId, category: r.category, personId: null, desc: r.name + " (recurring)", void: false, created: new Date().toISOString(), recurringId: r.id });
+    }
     this.persist(data, "Posted recurring " + r.name);
   }
 }

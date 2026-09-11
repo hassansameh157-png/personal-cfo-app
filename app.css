@@ -766,6 +766,10 @@ button.bar-row{width:100%;border:0;background:none;padding:6px 0;min-height:44px
 .event-dot{width:7px;height:7px;border-radius:999px;flex:none}
 .event-dot.pos{background:var(--c-pos)}
 .event-dot.neg{background:var(--c-neg)}
+/* A same-account-type recurring transfer (#35) nets to ~0 impact on
+   available money -- neither a gain nor a loss, so it gets its own
+   neutral dot/amount tone instead of falsely reading red. */
+.event-dot.neu{background:var(--c-text-faint)}
 .event-title{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .event-when{color:var(--c-text-faint);font-size:13px;white-space:nowrap}
 .event-amt{font-variant-numeric:tabular-nums;font-weight:600;font-size:14px;white-space:nowrap}

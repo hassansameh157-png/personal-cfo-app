@@ -42,6 +42,15 @@ function svgIcon(d, size) {
   size = size || 16;
   return '<svg width="' + size + '" height="' + size + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="' + d + '"></path></svg>';
 }
+// Shared by both forecast-event lists (Dashboard's "Upcoming 30 days" and
+// Forecast's own event list) -- a plain income/expense event is always
+// firmly positive or negative, but a recurring-transfer event (#35) can
+// legitimately net to ~0 (moving money between two non-card accounts
+// doesn't change D.available at all), which used to fall into "neg" by a
+// bare > 0 check and read as a false loss.
+function eventTone(amount) {
+  return Math.abs(amount) < 0.005 ? "neu" : (amount > 0 ? "pos" : "neg");
+}
 // One glyph per built-in category (engine.js's own expense/income category
 // lists -- see FORMS()'s `cats`/`inc` arrays), so a category reads at a
 // glance instead of only by its color, which needs a legend to decode.
@@ -2061,7 +2070,7 @@ const UI = {
     const next30 = '<section class="dash-section">' +
       '<div class="section-head"><h2 class="section-title">' + esc(t.upcoming30) + '</h2><button class="link-btn" onclick="UI.setPage(\'forecast\')">' + esc(t.seeForecast) + "</button></div>" +
       (upcoming.length ? '<div class="event-list">' + upcoming.map(e =>
-        '<div class="event-row"><span class="event-dot ' + (e.amount > 0 ? "pos" : "neg") + '"></span><span class="event-title">' + esc(e.title) + '</span><span class="event-when">' + app.dshort(e.date) + '</span><span class="event-amt ' + (e.amount > 0 ? "tone-pos" : "tone-neg") + '">' + app.fmtS(e.amount) + "</span></div>"
+        '<div class="event-row"><span class="event-dot ' + eventTone(e.amount) + '"></span><span class="event-title">' + esc(e.title) + '</span><span class="event-when">' + app.dshort(e.date) + '</span><span class="event-amt tone-' + eventTone(e.amount) + '">' + app.fmtS(e.amount) + "</span></div>"
       ).join("") + "</div>" : '<p class="muted">—</p>') +
     "</section>";
 
@@ -4171,15 +4180,25 @@ const UI = {
       // before this field existed (#30) -- the current month -- so the
       // edit form's own pre-filled value always matches what "Next" above
       // is actually computed from, not a stale/undefined blank.
-      const editArgs = JSON.stringify({ id: r.id, name: r.name, type: r.type, amount: r.amount, accountId: r.accountId, category: r.category, freq: r.freq, month: r.month != null ? r.month : new Date().getMonth(), day: r.day }).replace(/"/g, "&quot;");
+      const editArgs = JSON.stringify({ id: r.id, name: r.name, type: r.type, amount: r.amount, accountId: r.accountId, toAccountId: r.toAccountId || "", category: r.category, freq: r.freq, month: r.month != null ? r.month : new Date().getMonth(), day: r.day }).replace(/"/g, "&quot;");
       const canDelete = app.recurringCanDelete(r.id);
+      // A "transfer" rule (#35) is neither income nor expense -- same
+      // unsigned-plain-amount, neutral-tone treatment the plain "transfer"
+      // transaction type already gets everywhere else (txSign()'s own
+      // signed=0 convention), instead of misreporting it as always an
+      // outflow.
+      const amtTone = r.type === "income" ? "tone-pos" : (r.type === "transfer" ? "tone-neu" : "tone-neg");
+      const amtDisplay = r.type === "transfer" ? app.fmt(r.amount) : app.fmtS(r.type === "income" ? r.amount : -r.amount);
       return '<div class="card-row"><div class="card-row-top"><div><div class="card-row-title">' + esc(r.name) + '</div><div class="card-row-sub">' + freqLabel[r.freq] + " · " + esc(t.nextDate) + " " + app.dshort(next) + "</div></div>" +
-        '<div class="card-row-amt ' + (r.type === "income" ? "tone-pos" : "tone-neg") + '">' + app.fmtS(r.type === "income" ? r.amount : -r.amount) + "</div></div>" +
+        '<div class="card-row-amt ' + amtTone + '">' + amtDisplay + "</div></div>" +
         // Real bug fix: the account and category a rule actually posts
         // against used to be invisible here, findable only by opening
         // Edit -- now a first-class part of the card, same as every
-        // other list in the app shows its own account/category.
-        '<div class="card-row-meta"><span>' + esc(app.accName(r.accountId)) + '</span><span>' + esc(r.category || "—") + "</span></div>" +
+        // other list in the app shows its own account/category. A
+        // transfer rule shows "From → To" instead -- it has no category.
+        (r.type === "transfer"
+          ? '<div class="card-row-meta"><span>' + esc(app.accName(r.accountId)) + " → " + esc(app.accName(r.toAccountId)) + "</span></div>"
+          : '<div class="card-row-meta"><span>' + esc(app.accName(r.accountId)) + '</span><span>' + esc(r.category || "—") + "</span></div>") +
         '<div class="btn-row wrap">' +
         '<button class="btn btn-secondary small" onclick="UI.postRecurringC(\'' + r.id + '\')">' + esc(t.postNow) + "</button>" +
         // Real bug fix: a recurring rule had no Edit or Delete anywhere in
@@ -4223,7 +4242,7 @@ const UI = {
       svgIcon(heroDeltaPct >= 0 ? "M12 19V5M5 12l7-7 7 7" : "M12 5v14M5 12l7 7 7-7", 11) +
       '<span class="bdi">' + (heroDeltaPct >= 0 ? "+" : "") + heroDeltaPct + "%</span> " + esc(app.L("over " + S.horizon + " days", "خلال " + S.horizon + " يوم")) +
     "</div>" : "";
-    const events = fc.events.slice(0, 40).map(e => '<div class="event-row"><span class="event-dot ' + (e.amount > 0 ? "pos" : "neg") + '"></span><span class="event-title">' + esc(e.title) + '</span><span class="event-when">' + app.dshort(e.date) + '</span><span class="event-amt ' + (e.amount > 0 ? "tone-pos" : "tone-neg") + '">' + app.fmtS(e.amount) + "</span></div>").join("");
+    const events = fc.events.slice(0, 40).map(e => '<div class="event-row"><span class="event-dot ' + eventTone(e.amount) + '"></span><span class="event-title">' + esc(e.title) + '</span><span class="event-when">' + app.dshort(e.date) + '</span><span class="event-amt tone-' + eventTone(e.amount) + '">' + app.fmtS(e.amount) + "</span></div>").join("");
 
     // "What if" — a hypothetical, never-saved income/expense the user can
     // add to see its effect on the runway above. Lives in app.state.whatIf
