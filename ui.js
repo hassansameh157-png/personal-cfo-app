@@ -145,6 +145,11 @@ function categoryIcon(app, name, kind, styles) {
 const ICON_CHECK = "M20 6 9 17l-5-5";
 const ICON_PLUS = "M12 5v14M5 12h14";
 const ICON_SEARCH = "M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14zM21 21l-4.3-4.3";
+// New (#36/topbar refresh): the notification bell -- a bell body (closed
+// subpath) plus its clapper (a short open arc), same "one <path> with
+// several subpaths" trick every multi-stroke icon constant here already
+// relies on (svgIcon() only ever wraps a single <path d="...">).
+const ICON_BELL = "M6 8a6 6 0 0 1 12 0c0 4.5 1.5 6 2 7H4c.5-1 2-2.5 2-7Z M10 20a2 2 0 0 0 4 0";
 // Dashboard Recut #28 -- one icon per real money-bucket tile in "Where my
 // money is" (UI.renderDashboard). Multi-element inner markup (rect/circle,
 // not one path), so these hold full innerHTML rather than a single "d"
@@ -354,7 +359,7 @@ const UI = {
   },
 
   // ---- generic actions ---------------------------------------------------
-  setPage(p) { this.app.state.page = p; this.app.state.moreOpen = false; this.app.state.quickAddOpen = false; this.app.state.txVisible = 25; this._needsAttentionExpanded = false; this._txActionRow = null; this._txFiltersOpen = false; this._acctActionRow = null; this._personActionRow = null; this._peopleSettledExpanded = false; this._plansCompletedExpanded = false; this._groupActionRow = null; this._groupsCompletedExpanded = false; this._stmtActionRow = null; this._goalsCompletedExpanded = false; this._investActionRow = null; this._investClosedExpanded = false; this.render(); window.scrollTo({ top: 0 }); },
+  setPage(p) { this.app.state.page = p; this.app.state.moreOpen = false; this.app.state.quickAddOpen = false; this.app.state.searchOpen = false; this.app.state.txVisible = 25; this._needsAttentionExpanded = false; this._txActionRow = null; this._txFiltersOpen = false; this._acctActionRow = null; this._personActionRow = null; this._peopleSettledExpanded = false; this._plansCompletedExpanded = false; this._groupActionRow = null; this._groupsCompletedExpanded = false; this._stmtActionRow = null; this._goalsCompletedExpanded = false; this._investActionRow = null; this._investClosedExpanded = false; this.render(); window.scrollTo({ top: 0 }); },
   // A person's own page: every loan and installment plan tied to them (both
   // directions) in one place, instead of scattered across Receivables &
   // Payables and Installments — the gap that made juggling several loans
@@ -411,6 +416,32 @@ const UI = {
   // just a different sheet (see renderQuickAddSheet) and mutually
   // exclusive with it for the same reason openModal() above clears both.
   toggleQuickAdd() { this.app.state.quickAddOpen = !this.app.state.quickAddOpen; this.app.state.moreOpen = false; this.render(); },
+  // Unified search (#36) -- same mutually-exclusive-with-the-other-sheets
+  // reasoning toggleMore()/toggleQuickAdd() above already establish.
+  // openSearch() always resets the query rather than reopening on
+  // whatever was last typed -- a stale query from three pages ago
+  // reappearing unprompted would read as a bug, not a convenience.
+  openSearch() { this.app.state.searchOpen = true; this.app.state.searchQuery = ""; this.app.state.moreOpen = false; this.app.state.quickAddOpen = false; this.render(); },
+  closeSearch() { this.app.state.searchOpen = false; this.render(); },
+  // render(true) -- skip the focus-restore's own re-focus (it already
+  // restores #globalSearchInput's id/selection on every keystroke; a
+  // second explicit re-focus here would just fight that), same pattern
+  // every other live-filter input (setFilter('q', ...), setPeopleQuery())
+  // already uses.
+  setSearchQuery(v) { this.app.state.searchQuery = v; this.render(true); },
+  // Three thin wrappers, one per navigable result kind -- each closes the
+  // search sheet (setting the flag directly, not via closeSearch(), so
+  // this is one render() -- the navigation call right after already
+  // triggers its own) THEN reuses the app's own existing navigation (no
+  // second "go to this transaction/account/person" concept invented here).
+  searchGoTx(id) { this.app.state.searchOpen = false; this.openTxEdit(id); },
+  searchViewAccount(id) { this.app.state.searchOpen = false; this.viewAccountTx(id); },
+  searchViewPerson(id) { this.app.state.searchOpen = false; this.viewPerson(id); },
+  // Recurring rules/savings goals/savings groups have no per-item detail
+  // view of their own to jump to (just their list page) -- so a match
+  // among them takes you to that list rather than pretending to deep-link
+  // to a single row (this app has no such view to deep-link to).
+  searchGoPage(p) { this.app.state.searchOpen = false; this.setPage(p); },
   setLang(l) { this.app.state.lang = l; this.render(); },
   // Off by default -- the plain flat Transactions list is unchanged unless
   // the user turns this on. Mobile-only (see groupTxItems()'s own comment
@@ -855,6 +886,13 @@ const UI = {
   // already in place before rendering -- both land in state before the
   // one render() call reads either).
   setFilters(obj) { Object.assign(this.app.state.filt, obj); this.app.state.txVisible = 25; this.render(true); },
+  // Accounts' own type tabs (new) -- a plain page-local flag, not part of
+  // S.filt (that's Transactions' own filter set; an account-type view
+  // scoped narrows a different list entirely).
+  setAcctTab(key) { this.app.state.acctTab = key; this.render(); },
+  // People's own tabs (new) -- same page-local flag pattern as setAcctTab()
+  // just above.
+  setPeopleTab(key) { this.app.state.peopleTab = key; this.render(); },
   reverseTx(id) { this._txActionRow = null; this.app.reverse(id); this.render(); },
   // Opens the same add-modal a plain entry was created from (income,
   // expense, transfer, a loan or a payment against it, an installment or a
@@ -1234,6 +1272,7 @@ const UI = {
       this.renderQuickAddFab(t) +
       this.renderMoreSheet(t) +
       this.renderQuickAddSheet(t) +
+      this.renderSearchOverlay(t) +
       this.renderTxActionSheet() +
       this.renderAcctActionSheet() +
       this.renderPersonActionSheet() +
@@ -1256,15 +1295,43 @@ const UI = {
 
   // ---- chrome --------------------------------------------------------------
   renderTopbar(D, t) {
-    const S = this.app.state;
+    const app = this.app, S = app.state;
     const langs = ["en", "ar"].map(c => '<label class="seg-opt"><input type="radio" name="lang" ' + (S.lang === c ? "checked" : "") + ' onchange="UI.setLang(\'' + c + '\')"><span>' + (c === "en" ? "EN" : "ع") + "</span></label>").join("");
+    // Notification bell (new): reads this._badgeCount -- render() itself
+    // already computes/caches this via attentionCount(D) for the PWA app-
+    // icon badge (see updateBadge() just above render()'s own call site),
+    // so the bell's own number can never drift from what that badge (and
+    // the one-shot Notification permission summary) already show -- one
+    // count, three surfaces. Tapping it goes straight to the Dashboard's
+    // own Needs Attention section rather than duplicating a second list of
+    // the same alerts in a new place.
+    const bellCount = this._badgeCount || 0;
+    const bell = '<button type="button" class="bell-btn" aria-label="' + esc(app.L("Notifications", "التنبيهات")) + (bellCount ? " (" + bellCount + ")" : "") + '" onclick="UI.setPage(\'dashboard\')">' +
+      svgIcon(ICON_BELL, 18) +
+      (bellCount ? '<span class="bell-badge">' + (bellCount > 99 ? "99+" : bellCount) + "</span>" : "") +
+    "</button>";
+    // Unified search bar (#36): a plain button styled like a search input
+    // -- UI.openSearch() opens the real <input> inside its own sheet
+    // (renderSearchOverlay()), rather than this bar being a live input
+    // itself, so every page's topbar can share one static, cheap-to-render
+    // trigger instead of a real input (with its own focus/IME/selection
+    // state) re-rendering on every single render() this whole app already
+    // does constantly (any save, tab switch, keystroke elsewhere).
+    const searchBar = '<button type="button" class="search-bar" onclick="UI.openSearch()">' +
+      svgIcon(ICON_SEARCH, 16) +
+      '<span class="search-bar-ph">' + esc(app.L("Search transactions, people, accounts…", "دور في الحركات والناس والحسابات…")) + "</span>" +
+    "</button>";
     return '<header class="topbar">' +
-      '<div class="brand"><span class="brand-mark">₤</span><div><div class="brand-name">' + esc(t.brand) + '</div><div class="brand-sub">' + esc(t.brandSub) + "</div></div></div>" +
-      '<div class="topbar-tools">' +
-        '<div class="seg">' + langs + "</div>" +
-        '<button class="btn btn-ghost" aria-pressed="' + (S.privacy ? "true" : "false") + '" onclick="UI.togglePrivacy()">' + esc(S.privacy ? t.privacyOff : t.privacy) + "</button>" +
-        '<button class="btn btn-primary" onclick="UI.openModal(\'expense\')">' + esc(t.aExpense) + "</button>" +
+      '<div class="topbar-row">' +
+        '<div class="brand"><span class="brand-mark">₤</span><div><div class="brand-name">' + esc(t.brand) + '</div><div class="brand-sub">' + esc(t.brandSub) + "</div></div></div>" +
+        '<div class="topbar-tools">' +
+          '<div class="seg">' + langs + "</div>" +
+          '<button class="btn btn-ghost" aria-pressed="' + (S.privacy ? "true" : "false") + '" onclick="UI.togglePrivacy()">' + esc(S.privacy ? t.privacyOff : t.privacy) + "</button>" +
+          bell +
+          '<button class="btn btn-primary" onclick="UI.openModal(\'expense\')">' + esc(t.aExpense) + "</button>" +
+        "</div>" +
       "</div>" +
+      searchBar +
     "</header>";
   },
   renderMetricsRow(D, t) {
@@ -1419,6 +1486,48 @@ const UI = {
         '<div class="sheet-grid">' + items.map(([kind, path, label]) =>
           '<button class="sheet-item" onclick="UI.openModal(\'' + kind + '\')"><span class="nav-ico nav-ico-' + kind + '">' + svgIcon(path, 22) + '</span><span>' + esc(label) + "</span></button>"
         ).join("") + "</div>" +
+      "</div>";
+  },
+  // Unified search (#36) -- one query across every entity a person might
+  // actually be hunting for (see Engine.globalSearch()'s own comment for
+  // why it's a plain substring match capped at 6 per section, and why
+  // recurring/goals/groups link to their list page rather than a
+  // nonexistent per-item view). Reads app.globalSearch() fresh on every
+  // render -- cheap enough (a handful of Array.filter passes over data
+  // already in memory, same order of work as any other page's own filter)
+  // that memoizing it would just be premature complexity for a sheet that
+  // only exists while actively open.
+  renderSearchOverlay(t) {
+    const app = this.app, S = app.state;
+    if (!S.searchOpen) return "";
+    const q = S.searchQuery || "";
+    const trimmed = q.trim();
+    const r = app.globalSearch(q);
+    const hasAny = r.tx.length || r.accounts.length || r.people.length || r.recurring.length || r.goals.length || r.groups.length;
+    const section = (label, rowsHtml) => !rowsHtml ? "" : '<div class="search-section"><div class="search-section-title">' + esc(label) + '</div>' + rowsHtml + "</div>";
+    const txRows = r.tx.map(x => {
+      const item = Object.assign({ r: x }, this.txSign(x));
+      return '<button type="button" class="search-row" onclick="UI.searchGoTx(\'' + x.id + '\')"><span class="search-row-title">' + esc(x.desc || app.L("(no description)", "(من غير وصف)")) + '</span><span class="search-row-amt ' + item.tone + '">' + item.amtTxt + "</span></button>";
+    }).join("");
+    const accRows = r.accounts.map(a => '<button type="button" class="search-row" onclick="UI.searchViewAccount(\'' + a.id + '\')"><span class="search-row-title">' + esc(a.name) + '</span>' + (a.bank ? '<span class="search-row-sub">' + esc(a.bank) + "</span>" : "") + "</button>").join("");
+    const peopleRows = r.people.map(p => '<button type="button" class="search-row" onclick="UI.searchViewPerson(\'' + p.id + '\')"><span class="search-row-title">' + esc(p.name) + "</span></button>").join("");
+    const recurRows = r.recurring.map(x => '<button type="button" class="search-row" onclick="UI.searchGoPage(\'recurring\')"><span class="search-row-title">' + esc(x.name) + "</span></button>").join("");
+    const goalRows = r.goals.map(g => '<button type="button" class="search-row" onclick="UI.searchGoPage(\'goals\')"><span class="search-row-title">' + esc(g.name) + "</span></button>").join("");
+    const groupRows = r.groups.map(g => '<button type="button" class="search-row" onclick="UI.searchGoPage(\'groups\')"><span class="search-row-title">' + esc(g.name) + "</span></button>").join("");
+    const results = section(app.L("Transactions", "الحركات"), txRows) + section(app.L("Accounts", "الحسابات"), accRows) + section(app.L("People", "الأشخاص"), peopleRows) +
+      section(app.L("Recurring rules", "القواعد المتكررة"), recurRows) + section(app.L("Savings goals", "أهداف الادخار"), goalRows) + section(app.L("Savings groups", "جمعيات الادخار"), groupRows);
+    const body = trimmed.length < 2
+      ? '<p class="muted search-hint">' + esc(app.L("Type at least 2 characters to search.", "اكتب حرفين على الأقل عشان تدور.")) + "</p>"
+      : (hasAny ? results : '<p class="muted search-hint">' + esc(app.L("No matches.", "مفيش نتايج.")) + "</p>");
+    return '<div class="sheet-backdrop" onclick="UI.closeSearch()"></div>' +
+      '<div class="sheet search-sheet" role="dialog" aria-label="' + esc(app.L("Search", "بحث")) + '">' +
+        '<div class="sheet-handle"></div>' +
+        '<div class="search-input-row">' +
+          svgIcon(ICON_SEARCH, 17) +
+          '<input id="globalSearchInput" class="input" type="search" autofocus placeholder="' + esc(app.L("Search transactions, people, accounts…", "دور في الحركات والناس والحسابات…")) + '" value="' + esc(q) + '" oninput="UI.setSearchQuery(this.value)">' +
+          '<button type="button" class="link-btn small" onclick="UI.closeSearch()">' + esc(app.L("Cancel", "إلغاء")) + "</button>" +
+        "</div>" +
+        '<div class="search-results">' + body + "</div>" +
       "</div>";
   },
 
@@ -2174,6 +2283,24 @@ const UI = {
   },
 
   // ---- Accounts -------------------------------------------------------------
+  // Issuer-identity badge (real gap fixed, per direct user feedback on the
+  // "Ledger" refresh mockup): a real bank/wallet logo can't be drawn here
+  // (trademarked wordmarks, same reasoning cardBackground()'s own comment
+  // already gives for why this app only ever draws a plain color instead)
+  // -- so this derives short initials from whatever identifies the
+  // account, same "letters in a colored badge" technique this app's own
+  // person avatars already use for the identical problem (no real photo
+  // to show). a.bank when set (every seed card carries one); otherwise
+  // the account's own name -- a bank-type account here has no separate
+  // bank field of its own in this app's data model. Two words -> their
+  // first letters ("Banque Misr" -> "BM"); one word -> its own first
+  // three letters ("CIB" -> "CIB", "Instapay" -> "INS").
+  acctInitials(a) {
+    const src = (a.bank || a.name || "").trim();
+    if (!src) return "";
+    const words = src.split(/\s+/).filter(Boolean);
+    return words.length > 1 ? (words[0][0] + words[1][0]).toUpperCase() : words[0].slice(0, 3).toUpperCase();
+  },
   // Card face background -- pattern-driven (approved from the card
   // customizer preview). "diag1" is the long-standing default and needs
   // only the account's own color, auto-darkening a second stop the same
@@ -2473,9 +2600,10 @@ const UI = {
       // .cc-back-list's content the first time a given tile actually
       // flips, same lazy-on-first-expand pattern as the Dashboard's
       // nwTrendExpand.
+      const issuerInitials = this.acctInitials(a);
       return '<div class="credit-card-tile' + (isDebt ? "" : " balance-tile") + '"><div class="cc-flip" id="ccflip-' + a.id + '" data-acc-id="' + esc(a.id) + '">' +
         '<div class="cc-face cc-face-front" ' + faceStyle + '>' +
-          '<div class="cc-top"><span class="cc-bank">' + esc(a.bank || typeLabel[a.type]) + '</span><span style="display:flex;align-items:center;gap:6px"><span class="' + (isDebt ? "cc-chip" : "cc-mark") + '">' + markIcon + '</span>' + flipBtn(false) + "</span></div>" +
+          '<div class="cc-top"><span class="cc-issuer">' + (issuerInitials ? '<span class="cc-issuer-badge">' + esc(issuerInitials) + "</span>" : "") + '<span class="cc-bank">' + esc(a.bank || typeLabel[a.type]) + '</span></span><span style="display:flex;align-items:center;gap:6px"><span class="' + (isDebt ? "cc-chip" : "cc-mark") + '">' + markIcon + '</span>' + flipBtn(false) + "</span></div>" +
           '<button class="link-btn cc-name" onclick="UI.viewAccountTx(\'' + a.id + '\')">' + esc(a.name) + "</button>" +
           face + usageBar + stmtLine +
           '<div class="btn-row" style="margin-top:12px">' +
@@ -2508,17 +2636,39 @@ const UI = {
         "</div></div>";
     };
 
-    const tileBlocks = tileGroups.map(([, label, groupAccs]) =>
-      (showGroupHeadings ? '<h2 class="section-title">' + esc(label) + "</h2>" : "") +
+    // Type tabs (new -- real filter, not just cosmetic): only worth
+    // showing at all when there's more than one real tile group to
+    // narrow between, same gate showGroupHeadings just above already
+    // uses for the exact same reason (a ledger of nothing but bank
+    // accounts has nothing for "Credit cards" to filter out). "All" plus
+    // one tab per NON-EMPTY tileGroupDefs entry -- a type with zero
+    // accounts gets no tab, same as it gets no heading above.
+    const acctTab = app.state.acctTab || "all";
+    const acctTabs = tileGroups.length > 1 ? '<div class="pill-row">' +
+      '<button type="button" class="pill' + (acctTab === "all" ? " on" : "") + '" onclick="UI.setAcctTab(\'all\')">' + esc(app.L("All", "الكل")) + "</button>" +
+      tileGroups.map(([key, label]) => '<button type="button" class="pill' + (acctTab === key ? " on" : "") + '" onclick="UI.setAcctTab(\'' + key + '\')">' + esc(label) + "</button>").join("") +
+    "</div>" : "";
+    // "Other" (rowAccs) has no tab of its own -- it's the true catch-all
+    // with no tile shape (see the comment on tileTypes/rowAccs above), so
+    // it only ever shows on "All", same as it was always shown
+    // unconditionally before tabs existed at all.
+    const visibleTileGroups = acctTab === "all" ? tileGroups : tileGroups.filter(([key]) => key === acctTab);
+    // Heading suppressed once a specific tab narrows the list to one
+    // group -- the tab pill itself already says which one this is;
+    // repeating that as a heading right underneath would be pure
+    // redundancy the "All" view (where headings genuinely disambiguate
+    // several groups at once) doesn't have.
+    const tileBlocks = visibleTileGroups.map(([, label, groupAccs]) =>
+      (showGroupHeadings && acctTab === "all" ? '<h2 class="section-title">' + esc(label) + "</h2>" : "") +
       '<div class="card-list">' + groupAccs.map(tileHtml).join("") + "</div>"
     ).join("");
-    const rowsBlock = rowAccs.length ?
+    const rowsBlock = (acctTab === "all" && rowAccs.length) ?
       (showGroupHeadings ? '<h2 class="section-title">' + esc(typeLabel.other) + "</h2>" : "") +
       '<div class="card-list">' + rowAccs.map(rowHtml).join("") + "</div>" : "";
 
     return this.tabHeader(t.accounts, accs.length + app.L(" accounts · transfers never hit income or expense", " حساب · التحويلات لا تُحسب إيراداً ولا مصروفاً"),
       [[t.aAccount, "UI.openModal('account')"], [t.aCard, "UI.openModal('card')"], [t.transfer, "UI.openModal('transfer')"]]) +
-      heroCard + priorityStrip + ccSummary + tileBlocks + rowsBlock;
+      heroCard + priorityStrip + ccSummary + acctTabs + tileBlocks + rowsBlock;
   },
   // Opens the account-edit form pre-filled from the account itself -- same
   // shape (id/name/bank/opening/limit/color/color2/pattern/textColor) the
@@ -2958,6 +3108,25 @@ const UI = {
     if (F.category !== "all") rows = rows.filter(r => F.category === "Other" ? (catBucketTypes.includes(r.type) && (!r.category || r.category === "Other")) : r.category === F.category);
     if (F.q.trim()) { const q = F.q.toLowerCase(); rows = rows.filter(r => [r.desc, r.category, typeLabels[r.type], app.personName(r.personId), app.accName(r.accountId), app.accName(r.fromId), app.accName(r.toId), (r.tags || []).join(" ")].join(" ").toLowerCase().includes(q)); }
     const total = rows.length;
+    // KPI row (new): Income/Expense/Net/Records for exactly what's
+    // currently filtered -- `rows` (every active filter already applied,
+    // same set the "N records match your filters" header count and the
+    // account timeline above already read), not the unfiltered ledger.
+    // Genuine gap this closes: renderMetricsRow only ever shows an
+    // aggregate when scoped to a single account/category -- browsing a
+    // broader or multi-filtered view had no running total at all before
+    // this. Same isIncomeType()/"expense" convention Dashboard's own
+    // monthIncome/monthExpense use, just over the current filter instead
+    // of a calendar month.
+    const kpiIncome = rows.filter(r => app.isIncomeType(r.type)).reduce((s, r) => s + r.amount, 0);
+    const kpiExpense = rows.filter(r => r.type === "expense").reduce((s, r) => s + r.amount, 0);
+    const kpiNet = kpiIncome - kpiExpense;
+    const kpiRow = !total ? "" : '<div class="kpi-grid">' +
+      '<div class="kpi-card"><div class="ico-badge tone-pos">' + svgIcon("M12 19V5M5 12l7-7 7 7", 13) + '</div><div class="kpi-value tone-pos">' + app.fmt(kpiIncome) + '</div><div class="kpi-label">' + esc(t.income) + "</div></div>" +
+      '<div class="kpi-card"><div class="ico-badge tone-neg">' + svgIcon("M12 5v14M5 12l7 7 7-7", 13) + '</div><div class="kpi-value tone-neg">' + app.fmt(kpiExpense) + '</div><div class="kpi-label">' + esc(t.expenses) + "</div></div>" +
+      '<div class="kpi-card"><div class="ico-badge tone-neu">' + svgIcon("M4 17V9m5 8V5m5 12v-6m5 6v-3", 13) + '</div><div class="kpi-value ' + (kpiNet >= 0 ? "tone-pos" : "tone-neg") + '">' + app.fmt(kpiNet) + '</div><div class="kpi-label">' + esc(app.L("Net", "الصافي")) + "</div></div>" +
+      '<div class="kpi-card"><div class="ico-badge tone-neu">' + svgIcon("M4 5h16v14H4zM4 10h16", 13) + '</div><div class="kpi-value">' + total + '</div><div class="kpi-label">' + esc(app.L("Records", "السجلات")) + "</div></div>" +
+    "</div>";
     const visible = rows.slice(0, S.txVisible);
     const items = visible.map(r => Object.assign({ r }, this.txSign(r)));
     const tagChips = (r) => this.txTagChips(r);
@@ -3132,7 +3301,7 @@ const UI = {
 
     return this.tabHeader(t.transactions, total + app.L(" records match your filters", " حركة مطابقة للفلاتر"),
       [[t.aIncome, "UI.openModal('income')"], [t.aTransfer, "UI.openModal('transfer')"]]) +
-      timeline + searchRow + typePillRow + filters + groupToggle + (total ? table + cards + loadMore : this.emptyState(ICON_SEARCH, t.noMatches, app.L("Try a different search or clear a filter above.", "جرب بحث تاني أو امسح فلتر من فوق.")));
+      timeline + kpiRow + searchRow + typePillRow + filters + groupToggle + (total ? table + cards + loadMore : this.emptyState(ICON_SEARCH, t.noMatches, app.L("Try a different search or clear a filter above.", "جرب بحث تاني أو امسح فلتر من فوق.")));
   },
 
   // ---- People ----------------------------------------------------------------
@@ -3264,10 +3433,32 @@ const UI = {
     const owingMeCount = filteredRows.filter(row => row.net > 0.001).length;
     const owedByMeCount = filteredRows.filter(row => row.net < -0.001).length;
     const settledCount = filteredRows.length - owingMeCount - owedByMeCount;
+    // "Ledger" refresh: each tile now carries its own small colored icon
+    // badge (same up/down-arrow pair every existing delta-chip in this app
+    // already draws for a positive/negative trend, plus ICON_CHECK for
+    // "settled" -- no new iconography invented) instead of a bare number.
+    // Still the exact same 3 counts as before this, computed from
+    // filteredRows (search-scoped) and deliberately NOT re-scoped by the
+    // new tabs below -- these are the page's own totals; the tabs only
+    // narrow the list further down, same "hero/summary numbers stay
+    // global, tabs just filter the list" split Accounts' own new type
+    // tabs just established.
     const summaryTile = !filteredRows.length ? "" : '<div class="tile-grid" style="margin-bottom:10px">' +
-      '<div class="pos-tile"><div class="pos-label">' + esc(app.L("People who owe me", "ناس ليّا عندهم")) + '</div><div class="pos-value tone-pos">' + owingMeCount + "</div></div>" +
-      '<div class="pos-tile"><div class="pos-label">' + esc(app.L("People I owe", "ناس عليّا لهم")) + '</div><div class="pos-value tone-neg">' + owedByMeCount + "</div></div>" +
-      '<div class="pos-tile"><div class="pos-label">' + esc(app.L("Settled", "متسددين")) + '</div><div class="pos-value">' + settledCount + "</div></div>" +
+      '<div class="pos-tile"><div class="pos-tile-icon tone-pos">' + svgIcon("M12 19V5M5 12l7-7 7 7", 13) + '</div><div class="pos-label">' + esc(app.L("People who owe me", "ناس ليّا عندهم")) + '</div><div class="pos-value tone-pos">' + owingMeCount + "</div></div>" +
+      '<div class="pos-tile"><div class="pos-tile-icon tone-neg">' + svgIcon("M12 5v14M5 12l7 7 7-7", 13) + '</div><div class="pos-label">' + esc(app.L("People I owe", "ناس عليّا لهم")) + '</div><div class="pos-value tone-neg">' + owedByMeCount + "</div></div>" +
+      '<div class="pos-tile"><div class="pos-tile-icon tone-neu">' + svgIcon(ICON_CHECK, 13) + '</div><div class="pos-label">' + esc(app.L("Settled", "متسددين")) + '</div><div class="pos-value">' + settledCount + "</div></div>" +
+    "</div>";
+    // Tabs (new -- real filter over the list below, same reasoning and
+    // .pill-row/.pill markup Accounts' own new type tabs just established).
+    // "Settled" narrows to exactly the people the collapsed section below
+    // already lists once expanded -- a real destination, not a duplicate
+    // of the collapse toggle.
+    const peopleTab = S.peopleTab || "all";
+    const peopleTabs = !filteredRows.length ? "" : '<div class="pill-row mobile-only">' +
+      '<button type="button" class="pill' + (peopleTab === "all" ? " on" : "") + '" onclick="UI.setPeopleTab(\'all\')">' + esc(app.L("All", "الكل")) + "</button>" +
+      '<button type="button" class="pill' + (peopleTab === "owe_me" ? " on" : "") + '" onclick="UI.setPeopleTab(\'owe_me\')">' + esc(app.L("Owes me", "ليّا عنده")) + "</button>" +
+      '<button type="button" class="pill' + (peopleTab === "i_owe" ? " on" : "") + '" onclick="UI.setPeopleTab(\'i_owe\')">' + esc(app.L("I owe", "عليّا له")) + "</button>" +
+      '<button type="button" class="pill' + (peopleTab === "settled" ? " on" : "") + '" onclick="UI.setPeopleTab(\'settled\')">' + esc(app.L("Settled", "متسدد")) + "</button>" +
     "</div>";
 
     // 45 (People Recut): a fully-settled person (net effectively zero) is
@@ -3282,6 +3473,11 @@ const UI = {
     const activeRows = filteredRows.filter(row => Math.abs(row.net) > 0.001);
     const settledRows = filteredRows.filter(row => Math.abs(row.net) <= 0.001);
     const settledCollapsed = !q && !this._peopleSettledExpanded && settledRows.length > 0;
+    // The new tabs narrow what actually renders below -- activeRows/
+    // settledRows themselves stay as computed above (still what
+    // priorityStrip's own triage reads, unaffected by which tab is
+    // selected, same as Accounts' own priority strip staying put next to
+    // its new type tabs).
 
     // "Ledger" redesign: a triage strip ahead of the full list -- overdue
     // people float first (same tie-break priority Dashboard's own alerts
@@ -3344,14 +3540,25 @@ const UI = {
       '<div class="card-row-meta"><span>' + esc(t.owesMe) + ": " + app.fmt(r) + '</span><span>' + esc(t.iOwe) + ": " + app.fmt(y) + "</span>" + (lastActivity ? "<span>" + esc(lastActivity) + "</span>" : "") + "</div>" +
       '<div class="btn-row wrap"><button class="link-btn small" onclick="UI.viewPersonTx(\'' + p.id + '\')">' + esc(t.viewTx) + "</button>" + primaryAction(row) + "</div></div>";
     };
-    const cards = '<div class="card-list mobile-only">' + activeRows.map(cardHtml).join("") + "</div>";
-    const settledSection = !settledRows.length ? "" :
-      (settledCollapsed
-        ? '<button class="btn btn-secondary block mobile-only" onclick="UI.togglePeopleSettled()">' + esc(app.L(settledRows.length + " settled", settledRows.length + " متسدد")) + "</button>"
-        : '<h2 class="section-title mobile-only">' + esc(app.L("Settled", "متسدد")) + '</h2><div class="card-list mobile-only">' + settledRows.map(cardHtml).join("") + "</div>");
+    // Real filtering per tab -- "owe_me"/"i_owe" show only that direction
+    // (and hide the settled section entirely, same as it would for
+    // anyone genuinely narrowed to just active balances); "settled" shows
+    // exactly the settled section, uncollapsed (a real destination, not
+    // the collapse toggle's own preview); "all" is byte-for-byte the
+    // original behavior.
+    const listActiveRows = peopleTab === "owe_me" ? activeRows.filter(row => row.net > 0.001)
+      : peopleTab === "i_owe" ? activeRows.filter(row => row.net < -0.001)
+      : peopleTab === "settled" ? [] : activeRows;
+    const listSettledRows = peopleTab === "owe_me" || peopleTab === "i_owe" ? [] : settledRows;
+    const listSettledCollapsed = peopleTab === "settled" ? false : settledCollapsed;
+    const cards = '<div class="card-list mobile-only">' + listActiveRows.map(cardHtml).join("") + "</div>";
+    const settledSection = !listSettledRows.length ? "" :
+      (listSettledCollapsed
+        ? '<button class="btn btn-secondary block mobile-only" onclick="UI.togglePeopleSettled()">' + esc(app.L(listSettledRows.length + " settled", listSettledRows.length + " متسدد")) + "</button>"
+        : '<h2 class="section-title mobile-only">' + esc(app.L("Settled", "متسدد")) + '</h2><div class="card-list mobile-only">' + listSettledRows.map(cardHtml).join("") + "</div>");
 
     return this.tabHeader(t.people, d.people.length + app.L(" people · balances computed from the ledger", " شخص · الأرصدة محسوبة من السجل"), [[t.aPerson, "UI.openModal('person')"]]) +
-      heroCard + priorityStrip + summaryTile + searchRow + table + cards + settledSection;
+      heroCard + priorityStrip + summaryTile + peopleTabs + searchRow + table + cards + settledSection;
   },
 
   // ---- Person detail (everything tied to one person, in one place) --------

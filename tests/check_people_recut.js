@@ -54,7 +54,11 @@ require("./_watchdog"); // shared pass/fail detector -- see that file
   // A brand-new person has no balance yet, so #45 collapses them into the
   // "settled" section by default -- expand it first, or their card isn't
   // in the DOM at all to find.
-  const settledToggle = page.locator("button", { hasText: "settled" });
+  // Scoped to .btn-secondary.block -- since the "Ledger refresh" batch, a
+  // bare button:has-text("settled") also matches the new People tabs' own
+  // "Settled" pill (a different, always-present button), not just this
+  // collapse toggle.
+  const settledToggle = page.locator("button.btn-secondary.block", { hasText: "settled" });
   if (await settledToggle.count()) { await settledToggle.click(); await page.waitForTimeout(150); }
   const removableRow = page.locator(".card-row", { hasText: "Removable Person Test" });
   await removableRow.locator(".person-more-btn").click();
@@ -97,7 +101,9 @@ require("./_watchdog"); // shared pass/fail detector -- see that file
   await page.fill("#f_name", "New Neutral Person");
   await page.click("button:has-text('Save')"); await page.waitForTimeout(200);
   console.log("brand-new zero-balance person is NOT in the default visible list:", await page.locator(".card-row-title", { hasText: "New Neutral Person" }).count() === 0);
-  const settledBtn = page.locator("button", { hasText: "settled" });
+  // Same scoping as #41c above -- the new People tabs' own "Settled" pill
+  // would otherwise also match here.
+  const settledBtn = page.locator("button.btn-secondary.block", { hasText: "settled" });
   console.log("a 'N settled' expand button is present instead:", await settledBtn.count() > 0);
   await settledBtn.click(); await page.waitForTimeout(150);
   console.log("expanding reveals them:", await page.locator(".card-row-title", { hasText: "New Neutral Person" }).count() > 0);

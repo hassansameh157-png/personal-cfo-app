@@ -54,7 +54,7 @@ class Engine {
       // otherwise silently start overwriting whatever's still recoverable
       // in that raw stored string.
       loadError: false,
-      data: null, txVisible: 25, moreOpen: false, quickAddOpen: false, arabicNumerals: false, personDetailId: null, whatIf: [], payoffOrder: "largest",
+      data: null, txVisible: 25, moreOpen: false, quickAddOpen: false, searchOpen: false, searchQuery: "", arabicNumerals: false, personDetailId: null, whatIf: [], payoffOrder: "largest",
       locked: false, lockErr: "", pinMsg: "", payoffCalc: { personId: "all", amount: "" } };
   }
   // ---- app lock (Settings -> App lock) -------------------------------
@@ -167,6 +167,44 @@ class Engine {
     // never stay silent while a real Needs Attention card is showing.
     n += this.dueSoonTodos().length;
     return n;
+  }
+  // Unified search (#36) -- one query across every entity a person might
+  // actually be hunting for by name, not five separate per-page searches
+  // (Transactions' own F.q, People's own peopleQ...) that each only cover
+  // their own page. Plain case-insensitive substring match, same
+  // convention every existing per-page search already uses (Transactions'
+  // F.q, People's peopleQ) -- nothing fancier (no fuzzy/ranked matching)
+  // needed for a personal ledger's own data. Capped at 6 results per
+  // section so one very common word can't turn the results sheet into an
+  // unscrollable wall -- "more" is exactly what narrowing the query
+  // further is for, same reasoning FORMS() option lists never try to be
+  // exhaustive either.
+  // A query under 2 characters returns everything empty rather than
+  // matching (almost) every row in the ledger against a single letter --
+  // same "too short to mean anything yet" gate a real search box needs
+  // before it's worth the scan.
+  globalSearch(q) {
+    const empty = { tx: [], accounts: [], people: [], recurring: [], goals: [], groups: [] };
+    q = (q || "").trim().toLowerCase();
+    if (q.length < 2) return empty;
+    const d = this.state.data, CAP = 6;
+    const hit = (s) => (s || "").toLowerCase().includes(q);
+    // Real bug caught by its own regression test: without txEditable()
+    // here, a query could surface a system-generated row (an opening-
+    // balance "adjustment", a zero-amount reversal marker...) that
+    // UI.searchGoTx() -> openTxEdit() silently refuses to open -- no
+    // modal, no error, and (openTxEdit's own early return never calls
+    // render()) the search sheet itself stayed stuck open behind a stale
+    // DOM. Filtering to the exact same set FORMS()/openTxEdit() can
+    // actually act on means every transaction result here is genuinely
+    // tappable, not just genuinely matched.
+    const tx = d.tx.filter(x => this.txEditable(x) && (hit(x.desc) || hit(x.category) || hit(this.personName(x.personId)) || hit(this.accName(x.accountId)) || hit(this.accName(x.fromId)) || hit(this.accName(x.toId)))).slice(0, CAP);
+    const accounts = d.accounts.filter(a => a.active && (hit(a.name) || hit(a.bank))).slice(0, CAP);
+    const people = d.people.filter(p => hit(p.name) || hit(p.phone)).slice(0, CAP);
+    const recurring = (d.recurring || []).filter(r => hit(r.name)).slice(0, CAP);
+    const goals = (d.savingsGoals || []).filter(g => hit(g.name)).slice(0, CAP);
+    const groups = (d.groups || []).filter(g => hit(g.name)).slice(0, CAP);
+    return { tx, accounts, people, recurring, goals, groups };
   }
 
   // ---- bootstrap -----------------------------------------------------

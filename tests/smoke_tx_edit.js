@@ -64,7 +64,10 @@ require("./_watchdog"); // shared pass/fail detector -- see that file
   // card isn't in the DOM at all to find. "+ Debt I owe" itself now lives
   // behind the person's "..." trigger (see UI.renderPersonActionSheet()),
   // not an always-visible inline button.
-  const settledToggle = page.locator("button", { hasText: "settled" });
+  // Scoped to .btn-secondary.block -- a bare button:has-text("settled")
+  // also matches the People tabs' own always-present "Settled" pill
+  // (Ledger refresh batch), not just this collapse toggle.
+  const settledToggle = page.locator("button.btn-secondary.block", { hasText: "settled" });
   if (await settledToggle.count()) { await settledToggle.click(); await page.waitForTimeout(150); }
   const card = page.locator(".card-row", { hasText: "EditLoan Test" }).first();
   await card.locator(".person-more-btn").click(); await page.waitForTimeout(150);

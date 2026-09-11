@@ -72,7 +72,10 @@ require("./_watchdog"); // shared pass/fail detector -- see that file
   const isSettled = async (desc) => (await page.locator(".card-row", { hasText: desc }).first().locator("button:has-text('Record payment')").count()) === 0;
   console.log("Loan A now settled (no Record payment button):", await isSettled("Loan A"));
   console.log("Loan B still open (has a Record payment button):", !(await isSettled("Loan B")));
-  const settledToggle = page.locator("button:has-text('settled')");
+  // Scoped to .btn-secondary.block -- a bare button:has-text('settled')
+  // also matches the People tabs' own always-present "Settled" pill
+  // (Ledger refresh batch), not just this collapse toggle.
+  const settledToggle = page.locator("button.btn-secondary.block:has-text('settled')");
   const hasToggle = await settledToggle.count() > 0;
   console.log("Settled toggle present:", hasToggle);
   if (hasToggle) {

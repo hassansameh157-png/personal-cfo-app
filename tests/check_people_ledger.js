@@ -47,7 +47,12 @@ require("./_watchdog"); // shared pass/fail detector -- see that file
   await page.click("button:has-text('+ Person')"); await page.waitForTimeout(200);
   await page.fill("#f_name", "Ledger Ring Neutral Test");
   await page.click("button:has-text('Save')"); await page.waitForTimeout(200);
-  const settledToggle = page.locator("button", { hasText: "settled" });
+  // Scoped to .btn-secondary.block specifically -- since the "Ledger
+  // refresh" batch, a plain `button:has-text("settled")` also matches the
+  // new People tabs' own "Settled" pill (UI.setPeopleTab), which is a
+  // different real button (a tab, not the collapse toggle) sharing the
+  // same substring.
+  const settledToggle = page.locator("button.btn-secondary.block", { hasText: "settled" });
   if (await settledToggle.count()) { await settledToggle.click(); await page.waitForTimeout(150); }
   const settledSectionRow = page.locator(".person-card", { hasText: "Ledger Ring Neutral Test" });
   const settledRing = await settledSectionRow.locator(".avatar-ring").first().evaluate(el => el.style.getPropertyValue("--ring-c").trim());

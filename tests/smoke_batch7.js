@@ -30,7 +30,10 @@ require("./_watchdog"); // shared pass/fail detector -- see that file
   // A brand-new person has no balance yet, so People Recut #45 collapses
   // them into the "settled" section by default -- expand it first, or the
   // card genuinely isn't in the DOM at all to find.
-  const settledToggle = page.locator("button", { hasText: "settled" });
+  // Scoped to .btn-secondary.block -- a bare button:has-text("settled")
+  // also matches the People tabs' own always-present "Settled" pill
+  // (Ledger refresh batch), not just this collapse toggle.
+  const settledToggle = page.locator("button.btn-secondary.block", { hasText: "settled" });
   if (await settledToggle.count()) { await settledToggle.click(); await page.waitForTimeout(150); }
   const newCard = page.locator(".person-card", { hasText: "Mona Family Test" });
   console.log("new person card present:", await newCard.count() > 0);
@@ -48,7 +51,7 @@ require("./_watchdog"); // shared pass/fail detector -- see that file
   // "+ Lend"/"+ Debt"/Edit/Delete all live behind the person's "..."
   // trigger now (see UI.renderPersonActionSheet()), not always-visible
   // inline buttons -- Mona is still settled (net 0), so re-expand first.
-  const settledToggle2 = page.locator("button", { hasText: "settled" });
+  const settledToggle2 = page.locator("button.btn-secondary.block", { hasText: "settled" });
   if (await settledToggle2.count()) { await settledToggle2.click(); await page.waitForTimeout(150); }
   await newCard.locator(".person-more-btn").click(); await page.waitForTimeout(150);
   await page.click(".sheet-action:has-text('Edit')"); await page.waitForTimeout(200);

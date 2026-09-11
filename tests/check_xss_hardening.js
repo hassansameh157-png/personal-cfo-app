@@ -25,7 +25,10 @@ const PAYLOAD = "x\\');alert(document.cookie);//<script>alert(1)</script>&\"'";
   // them straight into the "settled" section by default -- expand it (if
   // it's even there) before looking for their card, or .last() would
   // resolve to whichever unrelated person is last among the visible ones.
-  const settledToggle = page.locator("button", { hasText: "settled" });
+  // Scoped to .btn-secondary.block -- a bare button:has-text("settled")
+  // also matches the People tabs' own always-present "Settled" pill
+  // (Ledger refresh batch), not just this collapse toggle.
+  const settledToggle = page.locator("button.btn-secondary.block", { hasText: "settled" });
   if (await settledToggle.count()) { await settledToggle.click(); await page.waitForTimeout(150); }
   const personRow = page.locator(".card-row.person-card").last();
   console.log("malicious name renders as inert escaped text on the person's own card, not executed:", (await personRow.locator(".card-row-title").innerText()).includes("alert(1)"));

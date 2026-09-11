@@ -1356,6 +1356,72 @@ account can be deleted, a card's Available/Limit stay consistent).
   reference of its own) proving a leftover `toAccountId` on a non-transfer
   rule no longer blocks deleting that account.
 
+- `check_global_search.js` -- new feature (#36): a unified search bar +
+  notification bell in every page's topbar, applied from a set of 4
+  approved design-canvas mockups (Dashboard/Accounts/People/Transactions).
+  `Engine.globalSearch(q)` matches transactions, accounts, people,
+  recurring rules, savings goals and savings groups by name/description in
+  one plain case-insensitive pass, capped at 6 per section and gated on
+  `q.length >= 2` (never scans the ledger against a near-empty query). The
+  bell reads `UI._badgeCount` -- the exact same `attentionCount(D)` already
+  computed for the PWA app-icon badge and the one-shot Notification
+  summary, so all three surfaces can never disagree.
+
+  **Real bug caught by its own regression test, fixed in the same pass:**
+  without filtering to `txEditable(x)`, a query could surface a system-
+  generated row (an opening-balance "adjustment") that `UI.searchGoTx()` ->
+  `openTxEdit()` silently refuses to open -- no modal, no error, and
+  (`openTxEdit()`'s own early return never calls `render()`) the search
+  sheet itself stayed stuck open behind a stale DOM. `globalSearch()` now
+  only ever returns transactions the tap can actually act on.
+
+- `check_ledger_refresh_batch.js` -- the rest of that same 4-screen batch,
+  applied to the real app. Dashboard gets NO new section: its own "This
+  month" already shows income/expense (with a diverge bar) and a per-
+  category bar-list with budget context a bare KPI-row/donut can't carry,
+  so a second, differently-styled copy at the top would be pure
+  duplication (same "match the app's own real structure first" call this
+  project made before for Installments/Cash Flow's own heroes). No new
+  "Quick Actions" grid anywhere either -- every screen already has
+  equivalent actions (`tabHeader`'s own header buttons, the global quick-
+  add FAB). What's real: Accounts gets functional type tabs (All/Cash &
+  bank/Wallets/Credit cards, narrowing `tileGroups` for real, not just
+  relabeling) and an issuer-initials badge on every tile (`UI.acctInitials()`
+  -- a real bank/wallet logo can't be drawn, trademarked, so this derives
+  short letters from `a.bank || a.name`, same technique person avatars
+  already use for the identical problem); People gets functional net-sign
+  tabs (All/Owes me/I owe/Settled, narrowing the list only -- the summary
+  tile's own totals stay global, unaffected by which tab is selected, same
+  split Accounts' tabs established first) and its summary tile gets icon
+  badges (the same up/down-arrow pair every delta-chip already draws, plus
+  `ICON_CHECK` for "settled"); Transactions gets a real KPI row (Income/
+  Expense/Net/Records) for whatever's currently filtered -- a genuine gap,
+  since `renderMetricsRow` only ever shows a total once scoped to a single
+  account/category.
+
+  **Real bug caught mid-implementation, fixed before it ever shipped:**
+  `renderAccounts()`'s own new tab code read `S.acctTab`, but that
+  function only ever destructures `app`/`d`, not `S` -- a bare
+  `ReferenceError` on every load of the Accounts page. Caught by the new
+  test itself (not a separate review pass) and fixed by reading
+  `app.state.acctTab` directly.
+
+  **Real regression this batch caused in 7 already-shipped test files**,
+  found by the first full-suite run after implementing and fixed by
+  scoping each locator to the real collapse-toggle's own
+  `.btn-secondary.block` class: the new People "Settled" tab pill shares
+  its exact visible text with the pre-existing "N settled" collapse-toggle
+  button, so every existing `button:has-text("settled")`/
+  `page.locator("button", {hasText: "settled"})` locator on the People
+  page (`check_people_ledger.js`, `check_people_recut.js` ×2,
+  `check_reconciliation.js`, `check_xss_hardening.js`, `smoke_batch7.js`
+  ×2, `smoke_tx_edit.js`) either threw a strict-mode "2 elements" error
+  once a real toggle also existed, or silently clicked the wrong button
+  (switching tabs instead of expanding) whenever it didn't.
+  `shot_person_history.js`'s own two occurrences were checked and left
+  alone -- both run on Person Detail, which never carries this pill at
+  all, so there was nothing there to collide.
+
 ## Adding a new one
 
 Match the existing shape: launch Chromium (respecting `PW_CHROMIUM_PATH`),
