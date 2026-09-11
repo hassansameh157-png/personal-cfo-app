@@ -62,10 +62,22 @@ require("./_watchdog"); // shared pass/fail detector -- see that file
   // above): confirms pointer routing genuinely lands on the content layer,
   // not the actions underneath it, regardless of visual opacity.
   const actionsBox = await firstRow.locator(".swipe-actions").boundingBox();
+  // Real bug caught chasing a CI flake: Transactions' new KPI row (Ledger
+  // refresh, #36/#37) pushes the whole list down by its own height, and the
+  // seed's first row is tall enough (multi-line notes/tags) that its lower
+  // half can now sit, unscrolled, behind the fixed .primary-nav bar (it's
+  // position:fixed + a real z-index above ordinary content -- see app.css).
+  // A raw box-center point there hits the nav itself, not this row at all --
+  // that's the fixed bottom bar winning a stacking fight nothing here is
+  // testing, not .swipe-content losing the one it IS testing. Clamp the
+  // sample point to stay above the nav's own top edge so it always lands
+  // inside the row's genuinely visible slice, same as a real finger would.
+  const navBox = await page.locator(".primary-nav").boundingBox();
+  const sampleY = navBox ? Math.min(actionsBox.y + actionsBox.height / 2, navBox.y - 4) : actionsBox.y + actionsBox.height / 2;
   const hitsContentNotActions = await firstRow.evaluate((row, [x, y]) => {
     const hit = document.elementFromPoint(x, y);
     return !!hit && row.querySelector(".swipe-content").contains(hit) && !row.querySelector(".swipe-actions").contains(hit);
-  }, [actionsBox.x + actionsBox.width / 2, actionsBox.y + actionsBox.height / 2]);
+  }, [actionsBox.x + actionsBox.width / 2, sampleY]);
   console.log("a real point over the actions area hit-tests to the content layer (pointer routing sanity check):", hitsContentNotActions);
 
   console.log("\n=== 2) A reversed (non-editable) transaction gets NO swipe wrapper ===");

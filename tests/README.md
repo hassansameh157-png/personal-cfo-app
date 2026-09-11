@@ -1422,6 +1422,22 @@ account can be deleted, a card's Available/Limit stay consistent).
   alone -- both run on Person Detail, which never carries this pill at
   all, so there was nothing there to collide.
 
+  **Real CI-only flake this batch caused in `check_swipe_actions.js`**,
+  caught by the very next push's CI run (passed locally every time before
+  that, then failed ~4/5 runs once actually chased down): Transactions'
+  new KPI row pushes the whole list down by its own height, and the
+  seed's first row (multi-line notes/tags) is tall enough that its lower
+  half now sits, unscrolled, behind the fixed `.primary-nav` bar --
+  `position:fixed` with a real `z-index` above ordinary content. Test 1b's
+  "pointer routing sanity check" sampled the dead center of
+  `.swipe-actions`' own bounding box, which for this specific row can now
+  be a point the nav bar itself wins, not `.swipe-content` -- that's the
+  fixed bottom bar beating a stacking fight the check was never about, not
+  the opacity fix regressing (the actual regression guard, the `alpha===1`
+  assertion right above it, was never affected and still passes). Fixed by
+  clamping the sample point to stay above `.primary-nav`'s own top edge,
+  same as where a real finger would actually land.
+
 ## Adding a new one
 
 Match the existing shape: launch Chromium (respecting `PW_CHROMIUM_PATH`),
