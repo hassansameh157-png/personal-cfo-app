@@ -2956,8 +2956,8 @@ const UI = {
   txTypeLabels() {
     const app = this.app;
     return app.state.lang === "ar"
-      ? { income: "إيراد", expense: "مصروف", transfer: "تحويل", receivable: "سلفة لي", receivable_payment: "تحصيل", payable: "دين عليّ", debt_payment: "سداد", investment_buy: "استثمار", investment_return: "عائد استثمار", installment_sale: "بيع بالتقسيط", installment_payment: "دفعة قسط", gam3ya_payment: "قسط جمعية", gam3ya_payout: "قبض جمعية", statement_payment: "سداد كشف حساب", refund: "مرتجع", adjustment: "تسوية", reversal_marker: "عكس قيد" }
-      : { income: "Income", expense: "Expense", transfer: "Transfer", receivable: "Receivable", receivable_payment: "Collection", payable: "Debt", debt_payment: "Repayment", investment_buy: "Investment", investment_return: "Inv. return", installment_sale: "Inst. sale", installment_payment: "Inst. payment", gam3ya_payment: "Gam3ya in", gam3ya_payout: "Gam3ya payout", statement_payment: "Statement payment", refund: "Refund", adjustment: "Adjustment", reversal_marker: "Reversal" };
+      ? { income: "إيراد", expense: "مصروف", transfer: "تحويل", receivable: "سلفة لي", receivable_payment: "تحصيل", payable: "دين عليّ", debt_payment: "سداد", investment_buy: "استثمار", investment_return: "عائد استثمار", installment_sale: "بيع بالتقسيط", installment_payment: "دفعة قسط", installment_cost: "تكلفة بضاعة مباعة", gam3ya_payment: "قسط جمعية", gam3ya_payout: "قبض جمعية", statement_payment: "سداد كشف حساب", refund: "مرتجع", adjustment: "تسوية", reversal_marker: "عكس قيد" }
+      : { income: "Income", expense: "Expense", transfer: "Transfer", receivable: "Receivable", receivable_payment: "Collection", payable: "Debt", debt_payment: "Repayment", investment_buy: "Investment", investment_return: "Inv. return", installment_sale: "Inst. sale", installment_payment: "Inst. payment", installment_cost: "Cost of goods", gam3ya_payment: "Gam3ya in", gam3ya_payout: "Gam3ya payout", statement_payment: "Statement payment", refund: "Refund", adjustment: "Adjustment", reversal_marker: "Reversal" };
   },
   // Same shape as Engine's own accName(id) -- just the color instead of the
   // name -- so txSign() below can hand every row's account(s) real colors
@@ -2975,6 +2975,12 @@ const UI = {
     const app = this.app;
     const outTypes = ["expense", "debt_payment", "receivable", "investment_buy", "gam3ya_payment"];
     const inTypes = ["income", "receivable_payment", "payable", "installment_payment", "investment_return", "refund", "gam3ya_payout"];
+    // installment_cost isn't in either list above: it's always a real
+    // outflow (see engine's applyTxToBalances/cashFlowBucket) -- unlike
+    // installment_sale/installment_payment, its sign never depends on the
+    // plan's own direction, so leaving it out of inTypes already gives it
+    // the right (negative) sign below with no planDir() special-case
+    // needed, the same way every type not listed in inTypes already works.
     // statement_payment moves money exactly like a transfer (fromId/toId,
     // no sign of its own) -- everywhere transfer gets special-cased below,
     // this does too, or it'd show as a plain negative with a blank account.
@@ -3971,22 +3977,37 @@ const UI = {
     // both directions get their own honestly-labeled row.
     const inPlans = D.plans.filter(p => p.direction === "in");
     const outPlans = D.plans.filter(p => p.direction === "out");
-    const kpiGroup = (plans, totalTone, dueLabel) => {
+    const kpiGroup = (plans, totalTone, dueLabel, extraKpis) => {
       const kpis = [
         [app.L("Total"), app.fmt(plans.reduce((s, p) => s + p.total, 0)), "neu"],
         [dueLabel, app.fmt(plans.reduce((s, p) => s + p.collected, 0)), "pos"],
         [t.remaining, app.fmt(plans.reduce((s, p) => s + p.remaining, 0)), totalTone],
         [app.L("Overdue"), app.fmt(plans.reduce((s, p) => s + p.overdueAmt, 0)), "neg"]
-      ];
+      ].concat(extraKpis || []);
       return '<div class="tile-grid four">' + kpis.map(([l, v, tone]) => '<div class="pos-tile"><div class="pos-label">' + esc(l) + '</div><div class="pos-value tone-' + tone + '">' + v + "</div></div>").join("") + "</div>";
     };
     const dueBanner = this.dueThisMonthBanner(D);
+    // Cost/Profit: real gap fixed, per direct user request -- Sale total
+    // was already shown above (as "Total"), but nothing surfaced the
+    // margin against what was actually spent to acquire the goods. Only
+    // shown once at least one "in" plan actually records a cost -- an
+    // account with only older sales, made before this field existed,
+    // shouldn't grow a permanent all-zero "Profit" row it can never act on
+    // (same reasoning as 49's own empty-KPI-section guard just above).
+    const saleProfitKpis = !inPlans.some(p => p.cost > 0) ? [] : (() => {
+      const totalProfit = Math.round(inPlans.reduce((s, p) => s + (p.profit || 0), 0) * 100) / 100;
+      const realizedProfit = Math.round(inPlans.reduce((s, p) => s + (p.profitRealized || 0), 0) * 100) / 100;
+      return [
+        [app.L("Profit margin", "هامش الربح"), app.fmt(totalProfit), totalProfit >= 0 ? "pos" : "neg"],
+        [app.L("Profit so far", "المحقق لحد دلوقتي"), app.fmt(realizedProfit), realizedProfit >= 0 ? "pos" : "neg"]
+      ];
+    })();
     // 49: a direction with no plans at all used to still show a full,
     // all-zero KPI section under its own header -- pure clutter, nothing
     // to act on.
-    const groupSection = (plans, label, dueLabel) => !plans.length ? "" :
-      '<h2 class="section-title">' + esc(label) + " · " + app.fmt(plans.reduce((s, p) => s + p.remaining, 0)) + "</h2>" + kpiGroup(plans, "neg", dueLabel);
-    const kpiRow = dueBanner + groupSection(inPlans, t.receivables, t.collected) + groupSection(outPlans, t.payables, t.paid);
+    const groupSection = (plans, label, dueLabel, extraKpis) => !plans.length ? "" :
+      '<h2 class="section-title">' + esc(label) + " · " + app.fmt(plans.reduce((s, p) => s + p.remaining, 0)) + "</h2>" + kpiGroup(plans, "neg", dueLabel, extraKpis);
+    const kpiRow = dueBanner + groupSection(inPlans, t.receivables, t.collected, saleProfitKpis) + groupSection(outPlans, t.payables, t.paid);
 
     // 55: most urgent first -- any plan carrying an overdue row, then by
     // its own next due date soonest-first, the same "surface what needs
@@ -4032,6 +4053,11 @@ const UI = {
         '<div class="card-row-meta"><span>' + esc(t.collected) + ": " + app.fmt(p.collected) + " / " + app.fmt(p.total) + '</span>' +
         (p.overdue > 0 ? '<span class="tone-neg">' + esc(app.L("Overdue: ")) + p.overdue + "</span>" : '<span>' + esc(app.L("No overdue")) + "</span>") +
         nextLine + "</div>" +
+        // Cost/Profit, sale plans only, and only once a cost is actually
+        // on record (an older plan, or one where the goods were already
+        // owned, has nothing to show here) -- see planState()'s own
+        // comment on why profit is null for a purchase plan.
+        (p.direction === "in" && p.cost > 0 ? '<div class="card-row-meta"><span>' + esc(app.L("Cost: ", "التكلفة: ")) + app.fmt(p.cost) + "</span><span class=\"tone-" + (p.profit >= 0 ? "pos" : "neg") + '">' + esc(app.L("Profit: ", "الربح: ")) + app.fmt(p.profit) + "</span></div>" : "") +
         // Real bug caught in review: this used app.L()'s generic ARW
         // lookup, which has no entry for either phrase and so silently
         // fell back to English under Arabic -- t.showSchedule/hideSchedule

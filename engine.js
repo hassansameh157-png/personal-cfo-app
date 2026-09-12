@@ -761,6 +761,12 @@ class Engine {
       case "investment_buy": if (t.accountId) A(t.accountId, -m); break;
       case "installment_sale": if (t.accountId) A(t.accountId, m * (this.planDir(t.planId) === "out" ? -1 : 1)); break;
       case "installment_payment": A(t.accountId, this.planDir(t.planId) === "out" ? -m : m); break;
+      // Unlike installment_sale/installment_payment, the cost of goods sold
+      // is always a real cash outflow -- it only ever exists on a sale
+      // (direction "in") plan, paid to acquire/produce what's being sold,
+      // so it never flips sign the way the plan's own down payment/
+      // installments do.
+      case "installment_cost": if (t.accountId) A(t.accountId, -m); break;
       case "gam3ya_payment": A(t.accountId, -m); break;
       case "gam3ya_payout": A(t.accountId, m); break;
       case "adjustment": A(t.accountId, m); break;
@@ -891,7 +897,21 @@ class Engine {
     const collected = Math.round((plan.down + pays.reduce((s, t) => s + t.amount, 0)) * 100) / 100;
     const remaining = Math.max(0, Math.round((plan.total - collected) * 100) / 100);
     const next = rows.find(r => r.rem > 0);
+    // Cost/Profit: cost only ever exists on a sale (direction "in") plan
+    // (see FORMS().sale's own comment) -- plan.cost is 0/undefined on
+    // every purchase and every sale made before this feature existed, so
+    // `cost` here is always a real number but `profit`/`profitRealized`
+    // stay null for a purchase, where "profit" isn't a meaningful concept.
+    // profit is the fixed total margin (Sale total − Cost); profitRealized
+    // is that same margin scaled down to how much of the sale has actually
+    // been collected so far (down payment + installments), matching the
+    // user's own framing -- the margin is "achieved gradually" as
+    // collection happens, not banked in full the moment the sale is made.
+    const cost = plan.cost || 0;
+    const profit = plan.direction === "in" ? Math.round((plan.total - cost) * 100) / 100 : null;
+    const profitRealized = plan.direction === "in" ? Math.round((profit * (plan.total > 0 ? collected / plan.total : 0)) * 100) / 100 : null;
     return { plan, id: plan.id, direction: plan.direction, personId: plan.personId, title: plan.title, total: plan.total, down: plan.down,
+      cost, costAccountId: plan.costAccountId || null, profit, profitRealized,
       collected, remaining, rows, credit: pool, paidCount: rows.filter(r => r.status === "paid").length, count: rows.length,
       overdue: rows.filter(r => r.status === "overdue").length, overdueAmt: rows.filter(r => r.status === "overdue").reduce((s, r) => s + r.rem, 0), next };
   }
@@ -1366,6 +1386,10 @@ class Engine {
       case "debt_payment": return { bucket: "financing", amt: -t.amount };
       case "installment_sale": return t.accountId ? { bucket: "financing", amt: this.planDir(t.planId) === "out" ? -t.amount : t.amount } : null;
       case "installment_payment": return { bucket: "financing", amt: this.planDir(t.planId) === "out" ? -t.amount : t.amount };
+      // Genuinely a cost of goods sold, same bucket as any other expense --
+      // not "financing" like the plan's own down payment/installments,
+      // which just move money between the schedule and an account.
+      case "installment_cost": return t.accountId ? { bucket: "operating", amt: -t.amount } : null;
       case "gam3ya_payment": return { bucket: "financing", amt: -t.amount };
       case "gam3ya_payout": return { bucket: "financing", amt: t.amount };
       case "statement_payment": return { bucket: "financing", amt: -t.amount };
@@ -1558,7 +1582,24 @@ class Engine {
       payable: { title: t.aDebt, fields: [D("date", t.date, "date"), D("amount", t.amount, "number"), D("personId", t.person, "select", { options: [{ v: "", l: "—" }].concat(ppl) }), D("accountId", "Received into", "select", { options: [{ v: "", l: "No cash movement (opening balance)" }].concat(accs) }), D("due", "Due date", "date"), D("desc", t.details, "text", { wide: true })] },
       receivable_payment: { title: t.aCollect, fields: [D("date", t.date, "date"), D("amount", t.amount, "number"), D("personId", t.person, "select", { options: [{ v: "", l: "—" }].concat(ppl), onchange: "UI.syncSettlesOptions(this.value,'receivable')" }), D("settlesId", this.L("Settles (optional)", "بتقفل (اختياري)"), "select", { options: [{ v: "", l: this.L("— No specific loan (auto)", "— من غير سلفة محددة (تلقائي)") }].concat(loanOptions("receivable")), hint: this.L("Pick which open loan this closes. Leave blank to settle the oldest one automatically.", "اختار انهي سلفة مفتوحة هتتقفل بالمبلغ ده. سيبها فاضية عشان تتقفل الأقدم تلقائيًا.") }), D("accountId", "Into account", "select", { options: accs }), D("desc", t.details, "text", { wide: true })] },
       debt_payment: { title: t.aRepay, fields: [D("date", t.date, "date"), D("amount", t.amount, "number"), D("personId", t.person, "select", { options: [{ v: "", l: "—" }].concat(ppl), onchange: "UI.syncSettlesOptions(this.value,'payable')" }), D("settlesId", this.L("Settles (optional)", "بتقفل (اختياري)"), "select", { options: [{ v: "", l: this.L("— No specific loan (auto)", "— من غير دين محدد (تلقائي)") }].concat(loanOptions("payable")), hint: this.L("Pick which open loan this closes. Leave blank to settle the oldest one automatically.", "اختار انهي دين مفتوح هيتقفل بالمبلغ ده. سيبه فاضي عشان يتقفل الأقدم تلقائيًا.") }), D("accountId", "Paid from", "select", { options: accs }), D("desc", t.details, "text", { wide: true })] },
-      sale: { title: t.aSale, fields: [D("date", "Sale date", "date"), D("personId", "Customer", "select", { options: ppl }), D("title", "What was sold", "text", { wide: true }), D("total", "Sale total", "number"), D("down", "Down payment", "number"), D("accountId", "Down payment into", "select", { options: [{ v: "", l: "No down payment" }].concat(accs) }), D("count", "Number of installments", "number"), D("freq", "Frequency", "select", { options: [{ v: "monthly", l: "Monthly" }, { v: "weekly", l: "Weekly" }, { v: "quarterly", l: "Quarterly" }] }), D("first", "First due date", "date"), D("balloon", "Final balloon payment", "number", { hint: "Optional. Leave 0 for equal installments." })] },
+      // Cost vs. Sale total vs. Revenue: real gap fixed, per direct user
+      // request. Before this, a sale's only money fields were its total
+      // (what the customer pays, split across installments) and an
+      // optional down payment -- nothing captured what the goods sold
+      // actually cost, so the account balance never reflected the real
+      // cash outlay at the moment of the sale, and there was no way to see
+      // the margin. Cost is entirely independent of Sale total/Down
+      // payment (it can be more, less, or equal -- a loss-leader or a
+      // markup are both real) and, unlike the down payment, is NOT split
+      // across the installment schedule: it's deducted in full, once,
+      // right when the sale is recorded (see submit()'s "sale"/"purchase"
+      // branch) -- because the cost was already incurred then, regardless
+      // of when the customer actually pays. Optional, defaults to 0 (see
+      // open()'s base form) for a good already owned with nothing new
+      // spent on it. Purchase plans have no Cost field: there's no
+      // separate "cost of goods" concept when the money owed already IS
+      // the cost.
+      sale: { title: t.aSale, fields: [D("date", "Sale date", "date"), D("personId", "Customer", "select", { options: ppl }), D("title", "What was sold", "text", { wide: true }), D("total", "Sale total", "number"), D("down", "Down payment", "number"), D("accountId", "Down payment into", "select", { options: [{ v: "", l: "No down payment" }].concat(accs) }), D("cost", "Cost of goods (optional)", "number", { hint: "What the goods cost you, separate from the sale price above -- deducted right away, not spread over the installments. Leave 0 if you're not tracking cost." }), D("costAccountId", "Cost paid from", "select", { options: [{ v: "", l: "No cost to deduct" }].concat(accs) }), D("count", "Number of installments", "number"), D("freq", "Frequency", "select", { options: [{ v: "monthly", l: "Monthly" }, { v: "weekly", l: "Weekly" }, { v: "quarterly", l: "Quarterly" }] }), D("first", "First due date", "date"), D("balloon", "Final balloon payment", "number", { hint: "Optional. Leave 0 for equal installments." })] },
       purchase: { title: t.aPurchasePlan, fields: [D("date", "Purchase date", "date"), D("personId", "Seller", "select", { options: ppl }), D("title", "What was bought", "text", { wide: true }), D("total", "Total price", "number"), D("down", "Down payment", "number"), D("accountId", "Down payment from", "select", { options: [{ v: "", l: "No down payment" }].concat(accs) }), D("count", "Number of installments", "number"), D("freq", "Frequency", "select", { options: [{ v: "monthly", l: "Monthly" }, { v: "weekly", l: "Weekly" }, { v: "quarterly", l: "Quarterly" }] }), D("first", "First due date", "date"), D("balloon", "Final balloon payment", "number")] },
       installment_payment: { title: t.recordPayment, fields: [D("date", t.date, "date"), D("planId", "Plan", "select", { options: planOptions }), D("amount", t.amount, "number", { hint: "Partial, exact or several installments at once — allocation is automatic." }), D("accountId", "Account", "select", { options: accs }), D("desc", t.details, "text", { wide: true })] },
       investment: { title: t.aInvest, fields: [D("name", t.name, "text"), D("type", t.type, "select", { options: ["Stocks", "Gold", "Mutual fund", "Fixed deposit", "Certificate", "Crypto", "Business", "Other"].map(v => ({ v, l: v })) }), D("invested", "Amount invested", "number"), D("value", "Current value", "number"), D("date", "Purchase date", "date"), D("accountId", "Funded from", "select", { options: [{ v: "", l: "No cash movement" }].concat(accs) })] },
@@ -1730,7 +1771,7 @@ class Engine {
     // NOTE: unlike the original, the "record collection" quick action does NOT
     // pre-fill a real person by default — this is one of the agreed P1 items,
     // left as a documented follow-up rather than silently changed here.
-    const form = { date: this.today(), freq: "monthly", count: 12, down: 0, balloon: 0, type: kind === "recurring" ? "expense" : undefined, day: 1,
+    const form = { date: this.today(), freq: "monthly", count: 12, down: 0, cost: 0, balloon: 0, type: kind === "recurring" ? "expense" : undefined, day: 1,
       // #30: a new yearly rule defaults to the CURRENT month, not the
       // generic "first option" fallback below (January) every select
       // field without its own default gets -- far more likely to be near
@@ -1872,8 +1913,26 @@ class Engine {
       }
     } else if (k === "sale" || k === "purchase") {
       const total = N("total"), down = N("down"), count = Math.max(1, Math.round(N("count"))), balloon = N("balloon");
+      // Cost only exists on the "sale" form (see FORMS().sale's own
+      // comment) -- N("cost") on a purchase submit reads f.cost, which
+      // that form never sets, so this is already 0 there without a
+      // separate k === "sale" guard.
+      const cost = N("cost");
       if (!need(total > 0, "Total must be greater than zero.")) return false;
       if (!need(down <= total, "Down payment cannot exceed the total.")) return false;
+      // Real bug caught by review: a negative cost (typo, or misused as a
+      // "discount") slipped past the account check just below (cost <= 0
+      // skips it) and posted no transaction at all -- but still got stored
+      // on the plan and fed straight into planState()'s profit math,
+      // silently inflating that plan's own profit AND the aggregate
+      // "Profit margin"/"Profit so far" KPIs on the Installments screen,
+      // with no transaction, no error, and no way to trace it back.
+      if (!need(cost >= 0, this.L("Cost cannot be negative.", "التكلفة متقدرش تكون رقم سالب."))) return false;
+      // Cost is a separate cash outlay from a separate (optional) account,
+      // not part of the total/down-payment math above -- so it needs its
+      // own "which account" check, same shape as any other form field that
+      // requires an account once its amount is actually > 0.
+      if (!need(cost <= 0 || f.costAccountId, this.L("Pick an account to deduct the cost from.", "اختار حساب يتم خصم التكلفة منه."))) return false;
       const financed = Math.round((total - down) * 100) / 100;
       if (!need(balloon < financed, "Balloon payment must be smaller than the financed amount.")) return false;
       const per = Math.round(((financed - balloon) / count) * 100) / 100;
@@ -1886,8 +1945,19 @@ class Engine {
       const drift = Math.round((financed - sched.reduce((s, r) => s + r.amount, 0)) * 100) / 100;
       if (drift) sched[sched.length - 1].amount = Math.round((sched[sched.length - 1].amount + drift) * 100) / 100;
       const id = this.uid("pl");
-      data.plans.push({ id, personId: f.personId, direction: k === "sale" ? "in" : "out", title: f.title || (k === "sale" ? "Installment sale" : "Installment purchase"), total, down, created: f.date, schedule: sched });
+      data.plans.push({ id, personId: f.personId, direction: k === "sale" ? "in" : "out", title: f.title || (k === "sale" ? "Installment sale" : "Installment purchase"), total, down, cost, costAccountId: cost > 0 ? (f.costAccountId || null) : null, created: f.date, schedule: sched });
       push({ date: f.date, type: "installment_sale", amount: down, accountId: down > 0 ? (f.accountId || null) : null, personId: f.personId, planId: id, desc: (down > 0 ? "Down payment — " : "Plan created — ") + (f.title || "") });
+      // Posted as its own transaction, tied to the same plan, so deletePlan()
+      // (which already removes every tx sharing a planId) reverses it right
+      // along with the down payment if the whole sale turns out to be a
+      // mistake -- no separate cleanup needed there. Deliberately its own
+      // type (installment_cost), not a plain "expense": it needs its own
+      // fixed outflow polarity in applyTxToBalances()/cashFlowBucket()
+      // (a cost is always money OUT, unlike installment_sale/_payment whose
+      // sign flips with the plan's own direction) and must stay out of
+      // txEditableTypes() the same way installment_sale already is (it's
+      // part of the plan's own opening entry, corrected by fixing the plan).
+      if (cost > 0) push({ date: f.date, type: "installment_cost", amount: cost, accountId: f.costAccountId || null, personId: f.personId, planId: id, desc: this.L("Cost of goods — ", "تكلفة البضاعة — ") + (f.title || "") });
       note = (k === "sale" ? "Installment sale " : "Installment purchase ") + this.fmt(total);
     } else if (k === "installment_payment") {
       if (!need(N("amount") > 0, "Amount must be greater than zero.")) return false;

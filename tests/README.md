@@ -1516,6 +1516,58 @@ account can be deleted, a card's Available/Limit stay consistent).
   to Arabic mid-run), and the "on"/`setCardTheme` match keys off a stable
   `data-theme-id` attribute, never the (localized) visible label.
 
+- `check_installment_sale_cost.js` -- Cost of goods sold on an "Installment
+  sale". Real gap fixed, per direct user request: an Installment sale's only
+  money fields were its total (split across the schedule) and an optional
+  down payment -- nothing captured what the goods actually cost, so no
+  account balance ever reflected the real cash outlay at the moment of the
+  sale, and there was no way to see the margin (the user's own framing: Cost
+  vs. Sale price vs. Revenue). `cost`/`costAccountId` (engine.js's
+  `FORMS().sale`, `submit()`) are a brand-new pair, fully independent of
+  total/down (can be more, less, or equal to either), deducted from their
+  own chosen account IN FULL, ONCE, at the moment the sale is recorded --
+  not spread over the installment schedule, since the cost was already
+  incurred then regardless of when the customer actually pays. Optional,
+  defaults to 0 (a good already owned, nothing new spent). Deliberately its
+  own transaction type (`installment_cost`, not a plain `expense`): it
+  needs a FIXED outflow polarity in `applyTxToBalances()`/`cashFlowBucket()`
+  (always money out, unlike `installment_sale`/`installment_payment` whose
+  sign flips with the plan's own direction), and it rides along on the same
+  `planId` so `deletePlan()` -- which already removes every transaction
+  sharing a plan's id -- reverses it right along with the down payment with
+  no extra code. Only exists on "sale" (direction "in"), never "purchase":
+  a purchase's own total already IS the cost, there's no separate "cost of
+  the goods" concept to track on top of it. `planState()` adds
+  `cost`/`profit` (= Sale total − Cost, sale plans only)/`profitRealized`
+  (that same margin scaled to how much has actually been collected so far,
+  down payment + installments) -- shown on the Installments screen as a
+  per-plan Cost/Profit line and as an aggregate "Profit margin"/"Profit so
+  far" KPI pair, both hidden entirely unless at least one plan actually
+  records a cost (an account with only older sales, made before this
+  field existed, doesn't grow a permanent all-zero row it can never act
+  on). Tests 1-2 cover the field itself (present on Sale, absent on
+  Purchase, defaults matching Down payment/Balloon's own 0-not-blank
+  convention) and the "cost > 0 needs an account" validation; 3 proves the
+  three money fields are genuinely independent by using three different
+  numbers into three different accounts and checking each account's real
+  balance; 4-5 cover the Installments screen (KPIs, per-plan line, and that
+  an older cost-less plan stays clutter-free); 6 covers the Transactions
+  list (labeled, signed as an outflow, filterable); 7 covers `deletePlan()`
+  reversing both the down payment and the cost; 8 covers Arabic labels.
+
+  **Real bug caught by code review, fixed before it ever shipped:** the
+  "cost > 0 needs an account" check (`cost <= 0 || f.costAccountId`) let a
+  NEGATIVE cost straight through, since `-200 <= 0` is true same as `0`
+  is -- no transaction got posted (guarded by `cost > 0` further down), but
+  `-200` still landed on the plan itself and fed straight into
+  `planState()`'s profit math, silently inflating that plan's own profit
+  AND the aggregate KPIs with a number no real cash movement backs, and
+  with no way to trace it since a negative-cost plan's own Cost/Profit line
+  stays hidden (it only shows for `cost > 0`). Fixed by adding an explicit
+  `cost >= 0` check ahead of it. Test 2b reproduces the exact scenario
+  (submit a sale with cost = -200 and a real account picked) and checks
+  both that it's refused and that nothing was created from the attempt.
+
 ## Adding a new one
 
 Match the existing shape: launch Chromium (respecting `PW_CHROMIUM_PATH`),
