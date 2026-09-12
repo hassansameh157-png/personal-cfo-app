@@ -1460,40 +1460,61 @@ account can be deleted, a card's Available/Limit stay consistent).
   15 consecutive local runs where the unscoped version had been failing
   roughly half the time.
 
-- `check_card_themes.js` -- real gap fixed, per direct user feedback on
-  Accounts after the "Ledger" refresh: the raw color/color2/pattern trio
-  (`cardStyleFields()`) was flexible but never actually LOOKED like a
-  distinctive card until composed by hand, and none of the existing
-  patterns (diag1/diag2/radial/split) genuinely blend two colors the way a
-  real bank card's face does -- split in particular is a hard edge, not a
-  blend. `CARD_THEMES`/`UI.setCardTheme` (ui.js) add a one-tap gallery of
-  12 curated looks (each bundling color/color2/pattern) in front of the
-  same three raw fields, which stay for anyone fine-tuning past a preset;
-  a new `mesh` pattern (two soft ambient color pools anchored at opposite
-  corners over a diagonal base, `UI.cardBackground`) gives the actually-
-  blended look, available both through presets and directly from the plain
-  Pattern dropdown for any hand-picked pair. Shared `cardStyleFields()`
-  means the gallery is free on the Person form too -- a person's avatar
-  renders through the same `cardBackground()`/`cardTextColor()`.
+- `check_card_themes.js` -- card style gallery, round 2. Round 1 (real gap
+  fixed per direct user feedback: the raw color/color2/pattern trio was
+  flexible but never actually LOOKED like a distinctive card until composed
+  by hand) shipped 12 gradient presets across `diag2`/`radial`/`mesh`; the
+  same user, unprompted, called the result "traditional, not nice at all"
+  and asked for genuinely different options -- several rounds of exported
+  mockup comparisons later, landed on two deliberately OPPOSITE new
+  patterns instead of another gradient variant: `gem` (`GEM_THEMES`, 8
+  presets) -- a real triangulated facet mesh (`buildGemMesh`/
+  `gemPatternSvgDataUri`, ui.js) shaded from an actual virtual light-source
+  position, so it reads as a physically cut, light-catching surface, not
+  flat colored triangles or another soft gradient -- and `solid`
+  (`PLAIN_THEMES`, 6 presets), genuinely flat, the explicit "let me make it
+  plain too" ask that came with the gem request. Both are one-color
+  patterns available directly from the plain Pattern dropdown too, not
+  preset-only, and both are pure functions of the account's own `color`
+  (gem derives hue/saturation from it) -- no new fields needed on the data
+  model. The gallery groups the two under "Faceted"/"Plain" labels so
+  "plain" reads as a real, separate choice, not an afterthought at the end
+  of a long gem grid.
 
-  **Real bug caught by code review, fixed before it ever shipped:** the
-  first pass hardcoded every theme name in English only, breaking the
-  app's own "every label goes through `this.L(en, ar)`" convention --
-  visibly half-translated for an Arabic-language user on an otherwise
-  fully Arabic form. Fixed by adding `nameAr` per theme and rendering
-  through `app.L()` like everything else. Caught in the same pass: the
-  "on" (currently-selected) highlight and `UI.setCardTheme`'s own match
-  were keyed off the swatch's visible `aria-label` text -- exactly the
-  fragile "match on a rendered label, not a stable identifier" pattern
-  this same session's `check_swipe_actions.js`/
-  `check_goals_groups_forecast_ledger.js` fixes (above) had just spent a
-  while chasing as TEST bugs, just written into the app itself this time:
-  switching to Arabic would have made every theme's own selection
-  matching silently stop working. Fixed by matching on a stable
-  `data-theme-id` attribute instead, unrelated to whichever language the
-  visible name renders in -- test 8 below switches the app to Arabic
-  mid-run and checks the real Arabic label renders, not just that nothing
-  crashes.
+  **Real bug (a real security-adjacent one) caught by this test itself
+  before it ever shipped:** `gemPatternSvgDataUri()`'s first pass wrapped
+  its data: URI in `url("...")` -- double quotes -- dropped straight into
+  this exact element's own double-quoted `style="background:...;color:..."`
+  attribute (`faceStyle` in `renderAccounts()`). That closes the HTML
+  attribute early and silently truncates everything after it, INCLUDING
+  the `color:` property -- both the swatch preview and every real gem tile
+  rendered with no visible facets and no real text-color rule at all, just
+  whatever the browser's own default happened to be. Fixed by wrapping in
+  single quotes instead (`url('data:image/svg+xml,...')` -- the SVG's own
+  markup is entirely inside `encodeURIComponent()`, so it can never leak a
+  raw quote of its own into the attribute). Test 4 asserts the actual
+  computed `color`, not just that a background exists -- a "background
+  looks non-empty" check alone would not have caught this, since the
+  broken markup still painted *something*.
+
+  **Real bug caught by code review, fixed before it ever shipped:**
+  `UI.setCardTheme()` wrote the preset's `color`/`pattern` but left
+  Secondary color (`color2`) exactly as it was -- fine for the gem/solid
+  patterns themselves (both ignore color2 entirely), but `cardStyleFields()`
+  explicitly invites fine-tuning past a preset, including switching
+  Pattern straight to a two-color one (`diag2`/`radial`/`mesh`/`split`)
+  afterward. Left alone, color2 was still whichever shade the account's
+  OLD color had auto-darkened it to, so that follow-up gradient had no
+  relation to the theme just picked. Fixed by calling
+  `syncColor2Default(th.color)` from `setCardTheme()`, same as clicking the
+  raw color swatch already does -- test 5b reproduces the exact scenario
+  (pick a preset, then switch Pattern to a two-color one) and checks the
+  resulting gradient actually matches the new color, not the old one.
+
+  Also carried over from round 1 and still guarded here: theme names go
+  through `app.L(en, ar)` like every other label (test 9, switches the app
+  to Arabic mid-run), and the "on"/`setCardTheme` match keys off a stable
+  `data-theme-id` attribute, never the (localized) visible label.
 
 ## Adding a new one
 

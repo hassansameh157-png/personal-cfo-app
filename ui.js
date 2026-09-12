@@ -169,39 +169,137 @@ const COLOR_PALETTE = [
   "#7c3aed", "#8b5cf6", "#a855f7", "#6d28d9", "#db2777", "#ec4899", "#be185d", "#e11d48",
   "#dc2626", "#f43f5e", "#d97706", "#f59e0b", "#ca8a04", "#334155", "#1e293b", "#475569"
 ];
-// Curated card themes (real gap fixed per direct user feedback: the raw
-// color1/color2/pattern trio was flexible but never actually looked like a
-// distinctive card until composed by hand) -- each bundles a name plus the
-// exact color/color2/pattern UI.setCardTheme writes in one tap. color/
-// color2 pulled from (or close kin of) COLOR_PALETTE above so a themed
-// card and a hand-picked one still read as the same family; `pattern`
-// picked per pair for how it actually looks (mostly "mesh" -- see
-// UI.cardBackground -- for the soft, blended-corners look real bank cards
-// have, not a hard diagonal/split edge). textColor is deliberately NOT
-// stored here -- setCardTheme always resets it to "auto" so legibility
-// stays the existing tested algorithm's job, never a guess baked into a
-// preset that could go stale if a color above ever changes.
-// `id` is the only thing UI.setCardTheme/the "on" match ever key off of --
-// `name`/`nameAr` are display-only (run through app.L at render time, same
-// as every other label in this form), so switching the app to Arabic can
-// never break which swatch is selected the way matching on the visible
-// label itself would (the exact class of bug this session already hit
-// twice today with fragile text-based locators, just in the app's own UI
-// logic instead of a test this time).
-const CARD_THEMES = [
-  { id: "ocean", name: "Ocean Current", nameAr: "تيار المحيط", color: "#0ea5e9", color2: "#1d4ed8", pattern: "mesh" },
-  { id: "amethyst", name: "Midnight Amethyst", nameAr: "جمشت الليل", color: "#7c3aed", color2: "#1e1b4b", pattern: "mesh" },
-  { id: "rosegold", name: "Rose Gold", nameAr: "ذهبي وردي", color: "#ec4899", color2: "#f59e0b", pattern: "mesh" },
-  { id: "emerald", name: "Emerald Tide", nameAr: "موجة الزمرد", color: "#10b981", color2: "#0d9488", pattern: "mesh" },
-  { id: "sunset", name: "Sunset Blaze", nameAr: "توهج الغروب", color: "#f43f5e", color2: "#d97706", pattern: "radial" },
-  { id: "sapphire", name: "Royal Sapphire", nameAr: "ياقوت ملكي", color: "#1d4ed8", color2: "#172554", pattern: "diag2" },
-  { id: "graphite", name: "Graphite Noir", nameAr: "جرافيت داكن", color: "#334155", color2: "#0b0f19", pattern: "mesh" },
-  { id: "berry", name: "Berry Punch", nameAr: "توت منعش", color: "#be185d", color2: "#6d28d9", pattern: "mesh" },
-  { id: "goldhour", name: "Golden Hour", nameAr: "الساعة الذهبية", color: "#f59e0b", color2: "#b45309", pattern: "radial" },
-  { id: "crimson", name: "Crimson Eclipse", nameAr: "كسوف قرمزي", color: "#dc2626", color2: "#18181b", pattern: "radial" },
-  { id: "tealcurrent", name: "Teal Current", nameAr: "تيار فيروزي", color: "#0d9488", color2: "#0369a1", pattern: "mesh" },
-  { id: "onyx", name: "Onyx", nameAr: "أونيكس", color: "#27272a", color2: "#09090b", pattern: "diag2" }
+// Faceted "gem cut" card pattern (round 2 of the card-style gallery, after
+// direct user feedback that the first round's mesh/radial gradients still
+// looked "generic gradient-generator", not distinctive) -- a real
+// triangulated facet mesh, each facet's own shade computed from an actual
+// virtual light-source position, the same technique the approved design
+// mockup used: it reads as a physically cut, light-catching surface rather
+// than flat colored triangles. Pure function of ONE color's own hue/
+// saturation (see cardBackground()'s "gem" case) -- no new fields needed on
+// the account, so it works for any hand-picked color too, not just the
+// curated presets below.
+//
+// The mesh geometry (points + which triangles) never depends on color, so
+// it's built ONCE here, not on every cardBackground() call -- a fixed,
+// slightly-jittered 4x3 grid split into 24 triangles reads as a believable
+// irregular gem cut without looking like a rigid checkerboard.
+function buildGemMesh(w, h, cols, rows, seed) {
+  let s = seed;
+  const rand = () => { s = (s * 1103515245 + 12345) & 0x7fffffff; return s / 0x7fffffff; };
+  const pts = [];
+  for (let r = 0; r <= rows; r++) {
+    for (let c = 0; c <= cols; c++) {
+      // Only jitter interior points -- the outer edge stays flush with the
+      // card's own border, so the mesh never leaves a gap/seam at the edge.
+      const jx = (c > 0 && c < cols) ? (rand() - 0.5) * (w / cols) * 0.5 : 0;
+      const jy = (r > 0 && r < rows) ? (rand() - 0.5) * (h / rows) * 0.5 : 0;
+      pts.push([(c / cols) * w + jx, (r / rows) * h + jy]);
+    }
+  }
+  const idx = (r, c) => r * (cols + 1) + c;
+  const tris = [];
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const a = pts[idx(r, c)], b = pts[idx(r, c + 1)], cc = pts[idx(r + 1, c)], d = pts[idx(r + 1, c + 1)];
+      // Alternates which diagonal splits each quad so neighboring facets
+      // don't all share the same crease direction (the "rigid grid" look).
+      if ((r + c) % 2 === 0) { tris.push([a, b, cc]); tris.push([b, d, cc]); }
+      else { tris.push([a, b, d]); tris.push([a, d, cc]); }
+    }
+  }
+  return tris;
+}
+const GEM_W = 320, GEM_H = 200;
+const GEM_LIGHT = [0.25, 0.2]; // fixed corner -- same light direction on every gem card, for a consistent family look
+const GEM_MESH = buildGemMesh(GEM_W, GEM_H, 4, 3, 42);
+// hexToRgb already exists on Engine (see cardTextColor()'s own use of it) --
+// this is the one extra conversion step (RGB -> HSL) the gem pattern needs
+// that nothing else in the app does yet, so it lives here rather than on
+// Engine, next to the one feature that uses it.
+function rgbToHsl(r, g, b) {
+  r /= 255; g /= 255; b /= 255;
+  const max = Math.max(r, g, b), min = Math.min(r, g, b), l = (max + min) / 2;
+  let h = 0, s = 0;
+  if (max !== min) {
+    const d = max - min;
+    s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+    if (max === r) h = (g - b) / d + (g < b ? 6 : 0);
+    else if (max === g) h = (b - r) / d + 2;
+    else h = (r - g) / d + 4;
+    h *= 60;
+  }
+  return { h, s: s * 100, l: l * 100 };
+}
+// Renders GEM_MESH shaded for one hue/saturation, as a ready-to-use CSS
+// background-image data: URI. Facet noise uses its OWN fixed seed (not the
+// mesh's) so every gem-colored card gets the identical facet-to-facet
+// variance pattern -- only the hue/lightness differ -- which is what makes
+// a Sapphire and a Ruby read as "the same cut", just a different stone.
+function gemPatternSvgDataUri(hue, sat) {
+  let s = 17;
+  const rand = () => { s = (s * 1103515245 + 12345) & 0x7fffffff; return s / 0x7fffffff; };
+  const lx = GEM_LIGHT[0] * GEM_W, ly = GEM_LIGHT[1] * GEM_H;
+  const maxDist = Math.hypot(GEM_W, GEM_H);
+  const polys = GEM_MESH.map((tri) => {
+    const cx = (tri[0][0] + tri[1][0] + tri[2][0]) / 3, cy = (tri[0][1] + tri[1][1] + tri[2][1]) / 3;
+    const dist = Math.hypot(cx - lx, cy - ly) / maxDist;
+    const t = Math.max(0, Math.min(1, dist + (rand() - 0.5) * 0.12));
+    const l = 62 - t * (62 - 12); // facets near the light run bright, far ones run into shadow
+    const h = hue + (rand() - 0.5) * 10; // a few degrees of per-facet hue drift -- no two facets read identical
+    const pts = tri.map((p) => p[0].toFixed(1) + "," + p[1].toFixed(1)).join(" ");
+    return '<polygon points="' + pts + '" fill="hsl(' + h.toFixed(1) + " " + sat.toFixed(1) + "% " + l.toFixed(1) + '%)" ' +
+      'stroke="hsl(' + h.toFixed(1) + " " + (sat * 0.6).toFixed(1) + "% " + Math.max(0, l - 6).toFixed(1) + '%)" stroke-width="0.5"/>';
+  }).join("");
+  // A soft bright ellipse right at the light source, like a facet directly
+  // catching it -- the one detail that sells "gem", not just "triangles".
+  const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + GEM_W + " " + GEM_H + '" preserveAspectRatio="none">' + polys +
+    '<ellipse cx="' + lx + '" cy="' + ly + '" rx="' + (GEM_W * 0.1) + '" ry="' + (GEM_H * 0.1) + '" fill="white" opacity="0.22" filter="url(#gemblur)"/>' +
+    '<defs><filter id="gemblur"><feGaussianBlur stdDeviation="6"/></filter></defs></svg>';
+  // Single-quoted url(...), not double: every call site drops this whole
+  // return value straight into a double-quoted style="..." HTML attribute
+  // (see faceStyle in renderAccounts() and the "cardTheme" swatch preview
+  // below) -- a literal " here would close that attribute early and
+  // silently truncate everything after it (color, any later background),
+  // the real bug this exact line caused the first time around. Safe
+  // either way against the SVG's OWN markup, which is entirely inside
+  // encodeURIComponent() and never leaks a raw quote of its own.
+  return "url('data:image/svg+xml," + encodeURIComponent(svg) + "')";
+}
+
+// Curated card themes -- real gap fixed per direct, iterated user feedback:
+// round 1 (mesh/radial gradient pairs) still read as "generic gradient
+// generator", not distinctive; this round replaces it with two genuinely
+// different families instead -- "gem" (see above) for anyone who wants a
+// standout card, and flat single-color "solid" for anyone who explicitly
+// wants the opposite, a plain card (both live in the same gallery, see
+// renderModal's "cardTheme" field type, so switching between the two looks
+// is still one tap). Every entry is single-color on purpose -- neither
+// pattern uses a second color, so color2 is never touched by a click here
+// (see setCardTheme) and can't go stale/inert the way a two-color preset's
+// color2 could. `id` is the only thing UI.setCardTheme/the "on" match ever
+// key off of -- `name`/`nameAr` are display-only (run through app.L at
+// render time), so switching the app to Arabic can never break which
+// swatch is selected the way matching on the visible label itself would.
+const GEM_THEMES = [
+  { id: "sapphire", name: "Sapphire", nameAr: "ياقوت أزرق", color: "#1d4ed8", pattern: "gem" },
+  { id: "emerald", name: "Emerald", nameAr: "زمرد", color: "#10b981", pattern: "gem" },
+  { id: "citrine", name: "Citrine", nameAr: "سترين", color: "#f59e0b", pattern: "gem" },
+  { id: "amethyst", name: "Amethyst", nameAr: "جمشت", color: "#a855f7", pattern: "gem" },
+  { id: "ruby", name: "Ruby", nameAr: "ياقوت أحمر", color: "#dc2626", pattern: "gem" },
+  { id: "blackdiamond", name: "Black Diamond", nameAr: "الماس أسود", color: "#334155", pattern: "gem" },
+  { id: "peacockore", name: "Peacock Ore", nameAr: "بيكوك أور", color: "#0d9488", pattern: "gem" },
+  { id: "rosequartz", name: "Rose Quartz Cut", nameAr: "كوارتز وردي", color: "#d4a5a5", pattern: "gem" }
 ];
+const PLAIN_THEMES = [
+  { id: "onyxblack", name: "Onyx Black", nameAr: "أونيكس أسود", color: "#18181b", pattern: "solid" },
+  { id: "slategrey", name: "Slate Grey", nameAr: "رمادي إردوازي", color: "#475569", pattern: "solid" },
+  { id: "deepnavy", name: "Deep Navy", nameAr: "كحلي غامق", color: "#1e3a8a", pattern: "solid" },
+  { id: "forestgreen", name: "Forest Green", nameAr: "أخضر غابة", color: "#14532d", pattern: "solid" },
+  { id: "winered", name: "Wine Red", nameAr: "نبيتي", color: "#7f1d1d", pattern: "solid" },
+  { id: "bronze", name: "Bronze", nameAr: "برونزي", color: "#78350f", pattern: "solid" }
+];
+const CARD_THEMES = GEM_THEMES.concat(PLAIN_THEMES);
 
 const UI = {
   app: null,
@@ -591,25 +689,33 @@ const UI = {
       b.setAttribute("aria-pressed", on ? "true" : "false");
     });
   },
-  // A card-theme swatch click (see CARD_THEMES/the "cardTheme" field type
-  // above) -- writes all four real fields at once, same direct-set,
-  // no-render() reasoning as setColorField/setIconField. Marks BOTH color
-  // touch flags: a theme is exactly as deliberate a Secondary-color choice
-  // as clicking its own swatch would be, so syncColor2Default must not
-  // later overwrite it if the user nudges the primary color afterward.
-  // Resets Text color to "auto" too -- picking a theme is meant to be a
-  // clean one-tap replacement, not layered on top of a stale white/dark
-  // pin left over from a previous edit.
+  // A card-theme swatch click (see GEM_THEMES/PLAIN_THEMES/the "cardTheme"
+  // field type above) -- writes color/pattern together, same direct-set,
+  // no-render() reasoning as setColorField/setIconField. Every current
+  // theme is "gem" or "solid", both one-color patterns that ignore color2
+  // entirely (see cardBackground()), so this never sets color2 to the
+  // theme's own value the way it does color/pattern -- there isn't one.
+  // Real bug caught by review, fixed before shipping: that's not the same
+  // as leaving color2 alone entirely. cardStyleFields()'s own comment
+  // promises fine-tuning past a preset, including switching Pattern
+  // straight to a two-color one afterward (diag2/radial/split/mesh) -- if
+  // color2 is still whatever auto-darkened shade the ACCOUNT'S OLD color
+  // seeded it with, that combination has no relation to the theme just
+  // picked. syncColor2Default(th.color) re-derives it from the new color
+  // instead, same as clicking the raw color swatch already does -- a no-op
+  // once the user has ever touched color2 themselves (that function's own
+  // _color2Touched guard). Resets Text color to "auto" too -- picking a
+  // theme is meant to be a clean one-tap replacement, not layered on top
+  // of a stale white/dark pin left over from a previous edit.
   setCardTheme(id) {
     const th = CARD_THEMES.find(x => x.id === id);
     if (!th) return;
     const setVal = (k, v) => { const el = document.getElementById("f_" + k); if (el) el.value = v; };
     setVal("color", th.color);
-    setVal("color2", th.color2);
+    this.syncColor2Default(th.color);
     setVal("pattern", th.pattern);
     setVal("textColor", "auto");
     this._catColorTouched = true;
-    this._color2Touched = true;
     document.querySelectorAll(".card-theme-swatch").forEach(b => {
       const on = b.getAttribute("data-theme-id") === id;
       b.classList.toggle("on", on);
@@ -2386,6 +2492,23 @@ const UI = {
       case "mesh": return "radial-gradient(90% 90% at 12% 15%, " + c1 + " 0%, transparent 60%), " +
         "radial-gradient(90% 90% at 88% 85%, " + c2 + " 0%, transparent 60%), " +
         "linear-gradient(135deg, " + c1 + ", " + c2 + ")";
+      // Round 2 of the card-style gallery (real gap fixed, per direct user
+      // feedback that round 1's gradients above still looked "generic" and
+      // asking for both a genuinely distinctive option AND its opposite,
+      // a plain one): "gem" renders GEM_MESH (see its own comment) shaded
+      // from THIS color's own hue/saturation -- ignores color2 entirely,
+      // it's a one-color pattern, same as "solid" below. The SVG data: URI
+      // is the background-image; the plain color after the comma is only
+      // ever seen for a split second before that image decodes, or if it
+      // somehow can't (never observed, but costs nothing to guard).
+      case "gem": {
+        const rgb = this.app.hexToRgb(c1) || { r: 99, g: 102, b: 241 };
+        const hsl = rgbToHsl(rgb.r, rgb.g, rgb.b);
+        return gemPatternSvgDataUri(hsl.h, hsl.s) + " center/cover no-repeat, " + c1;
+      }
+      // Deliberately the ONE pattern with no gradient math at all -- the
+      // explicit "I want a plain card" option asked for alongside "gem".
+      case "solid": return c1;
       default: return "linear-gradient(135deg, " + c1 + ", " + dark + ")";
     }
   },
@@ -2422,7 +2545,12 @@ const UI = {
       return 0.299 * rgb.r + 0.587 * rgb.g + 0.114 * rgb.b;
     };
     let lum = yiq(a.color || "#7d7979");
-    if (a.pattern && a.pattern !== "diag1" && a.color2) {
+    // "gem"/"solid" (round 2 of the card-style gallery) are one-color
+    // patterns -- cardBackground() never even reads color2 for either of
+    // them, so blending it in here too would let a stale color2 left over
+    // from an earlier two-color pattern (mesh/diag2/...) skew the text
+    // color for a card that no longer visually depends on it at all.
+    if (a.pattern && a.pattern !== "diag1" && a.pattern !== "gem" && a.pattern !== "solid" && a.color2) {
       const w = a.pattern === "radial" ? 0.8 : 0.5; // c1's share of the visible face
       lum = w * lum + (1 - w) * yiq(a.color2);
     }
@@ -5080,24 +5208,32 @@ const UI = {
         const swatches = ICON_PICKER.map(([key, path]) => '<button type="button" class="icon-swatch' + (cur === key ? " on" : "") + '" onclick="UI.setIconField(\'' + key + '\')" aria-label="' + esc(key) + '" aria-pressed="' + (cur === key ? "true" : "false") + '">' + svgIcon(path, 18) + "</button>").join("");
         input = '<div class="icon-swatch-row">' + swatches + '</div><input type="hidden" id="f_' + f.k + '" name="' + f.k + '" value="' + esc(cur) + '">';
       } else if (f.type === "cardTheme") {
-        // One-tap curated looks -- see CARD_THEMES/UI.setCardTheme. No
-        // hidden input (unlike the icon swatches above): this field isn't
-        // real account data of its own, purely a fast path that writes
-        // into the real color/color2/pattern/textColor fields below, so a
-        // plain, non-form-associated button is enough (same reasoning the
-        // raw color swatches already rely on). "on" is a genuine match
-        // against the form's CURRENT color/color2/pattern rather than a
-        // separate stored choice, so reopening Edit on an account that
-        // already happens to match a preset exactly highlights it too.
-        const curColor = (form.color || "").toLowerCase(), curColor2 = (form.color2 || "").toLowerCase(), curPattern = form.pattern || "diag1";
-        const swatches = CARD_THEMES.map(th => {
-          const on = curColor === th.color.toLowerCase() && curColor2 === th.color2.toLowerCase() && curPattern === th.pattern;
+        // One-tap curated looks -- see GEM_THEMES/PLAIN_THEMES/UI.setCardTheme.
+        // No hidden input (unlike the icon swatches above): this field
+        // isn't real account data of its own, purely a fast path that
+        // writes into the real color/pattern fields below, so a plain,
+        // non-form-associated button is enough (same reasoning the raw
+        // color swatches already rely on). "on" is a genuine match against
+        // the form's CURRENT color/pattern rather than a separate stored
+        // choice, so reopening Edit on an account that already happens to
+        // match a preset exactly highlights it too -- every current theme
+        // is single-color, so color2 plays no part in the match (compare
+        // GEM_THEMES/PLAIN_THEMES' own comment on why it's never set).
+        // Two explicit groups, not one flat gallery: the "make it plain"
+        // option asked for right alongside "gem" needs to read as its own
+        // deliberate choice, not buried at the end of a long grid of gems.
+        const curColor = (form.color || "").toLowerCase(), curPattern = form.pattern || "diag1";
+        const swatchesFor = (themes) => themes.map(th => {
+          const on = curColor === th.color.toLowerCase() && curPattern === th.pattern;
           const label = app.L(th.name, th.nameAr);
           // data-theme-id, not the (localized) label, is what UI.setCardTheme
-          // actually matches against -- see CARD_THEMES' own comment on why.
+          // actually matches against -- see GEM_THEMES' own comment on why.
           return '<button type="button" class="card-theme-swatch' + (on ? " on" : "") + '" style="background:' + this.cardBackground(th) + '" onclick="UI.setCardTheme(\'' + th.id + '\')" data-theme-id="' + th.id + '" aria-label="' + esc(label) + '" aria-pressed="' + (on ? "true" : "false") + '"><span class="card-theme-name">' + esc(label) + "</span></button>";
         }).join("");
-        input = '<div class="card-theme-row">' + swatches + "</div>";
+        input = '<div class="card-theme-group-label">' + esc(app.L("Faceted", "قطع مضلعة")) + '</div>' +
+          '<div class="card-theme-row">' + swatchesFor(GEM_THEMES) + '</div>' +
+          '<div class="card-theme-group-label">' + esc(app.L("Plain", "سادة")) + '</div>' +
+          '<div class="card-theme-row">' + swatchesFor(PLAIN_THEMES) + "</div>";
       } else {
         // Description → category autocomplete, income/expense only: as the
         // user types, suggest whatever category their past entries with a

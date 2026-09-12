@@ -1379,17 +1379,23 @@ button.bar-row{width:100%;border:0;background:none;padding:6px 0;min-height:44px
 .icon-swatch{width:34px;height:34px;border-radius:50%;border:2px solid transparent;background:var(--c-surface-2);color:var(--c-text-soft);cursor:pointer;padding:0;flex:none;display:flex;align-items:center;justify-content:center}
 .icon-swatch:hover{transform:scale(1.06)}
 .icon-swatch.on{border-color:var(--c-accent);color:var(--c-accent);background:var(--c-surface-3)}
-/* Card theme gallery (CARD_THEMES/UI.setCardTheme, "cardTheme" field type)
-   -- each button's own background IS a real UI.cardBackground() gradient
-   (the exact CSS the account/card tile itself would render), so a tap
-   previews precisely what picking it produces, not a stand-in swatch. Name
-   sits at the bottom on a dark scrim (always -- these gradients are all
-   rich/saturated by design, see CARD_THEMES' own comment, so a fixed
+/* Card theme gallery (GEM_THEMES/PLAIN_THEMES/UI.setCardTheme, "cardTheme"
+   field type) -- each button's own background IS a real
+   UI.cardBackground() output (the exact CSS/SVG the account/card tile
+   itself would render, "gem" mesh included), so a tap previews precisely
+   what picking it produces, not a stand-in swatch. Name sits at the bottom
+   on a dark scrim (always -- every theme is rich/saturated or a deep
+   solid by design, see GEM_THEMES/PLAIN_THEMES' own comment, so a fixed
    light-on-dark label reads reliably regardless of theme, the same
    "picked, not computed" reasoning .cc-name already uses on the real
    tiles). A 3-up grid keeps every swatch a genuine mini card (2.5:1-ish),
    not a cramped chip -- narrower still wraps to fewer columns rather than
-   shrinking the aspect ratio away. */
+   shrinking the aspect ratio away. Two separate rows (Faceted/Plain), each
+   with its own small label above it -- "make it plain" is a real,
+   explicitly separate choice, not an afterthought buried at the end of one
+   long gem gallery. */
+.card-theme-group-label{font-size:11.5px;font-weight:600;color:var(--c-text-faint);text-transform:uppercase;letter-spacing:.04em;margin:8px 0 6px}
+.card-theme-group-label:first-child{margin-top:0}
 .card-theme-row{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:6px}
 .card-theme-swatch{position:relative;aspect-ratio:2.2/1;border-radius:10px;border:2px solid transparent;cursor:pointer;padding:0;overflow:hidden}
 .card-theme-swatch:hover{transform:scale(1.03)}
